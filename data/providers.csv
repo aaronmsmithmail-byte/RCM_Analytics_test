@@ -1,0 +1,26 @@
+provider_id,provider_name,npi,department,specialty
+PROV001,Dr. Sarah Chen,2340426053,Cardiology,Cardiology
+PROV002,Dr. James Wilson,5736095750,Orthopedics,Orthopedics
+PROV003,Dr. Maria Rodriguez,2314754322,Internal Medicine,Internal Medicine
+PROV004,Dr. Robert Kim,5491326131,Emergency,Emergency
+PROV005,Dr. Emily Johnson,9368586475,Pediatrics,Pediatrics
+PROV006,Dr. David Patel,7546035453,Neurology,Neurology
+PROV007,Dr. Lisa Thompson,5869588539,Oncology,Oncology
+PROV008,Dr. Michael Brown,7400268709,Radiology,Radiology
+PROV009,Dr. Jennifer Davis,4221721910,General Surgery,General Surgery
+PROV010,Dr. William Garcia,8782516473,Family Medicine,Family Medicine
+PROV011,Dr. Amanda White,1082140117,Cardiology,Cardiology
+PROV012,Dr. Christopher Lee,5230025371,Orthopedics,Orthopedics
+PROV013,Dr. Stephanie Martinez,9684051360,Internal Medicine,Internal Medicine
+PROV014,Dr. Brian Anderson,3167384632,Emergency,Emergency
+PROV015,Dr. Nicole Taylor,5823943986,Pediatrics,Pediatrics
+PROV016,Dr. Kevin Moore,4402160254,Neurology,Neurology
+PROV017,Dr. Rachel Clark,8045125420,Oncology,Oncology
+PROV018,Dr. Steven Harris,3676343517,Radiology,Radiology
+PROV019,Dr. Laura Lewis,9795922823,General Surgery,General Surgery
+PROV020,Dr. Andrew Robinson,4591108099,Family Medicine,Family Medicine
+PROV021,Dr. Michelle Walker,9797102584,Cardiology,Cardiology
+PROV022,Dr. Jason Hall,5792280830,Orthopedics,Orthopedics
+PROV023,Dr. Angela Young,7203282627,Internal Medicine,Internal Medicine
+PROV024,Dr. Ryan Allen,6380470008,Emergency,Emergency
+PROV025,Dr. Samantha King,4014501050,Pediatrics,Pediatrics

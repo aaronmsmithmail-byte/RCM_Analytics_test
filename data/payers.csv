@@ -1,0 +1,11 @@
+payer_id,payer_name,payer_type,avg_reimbursement_pct,contract_id
+PYR001,Blue Cross Blue Shield,Commercial,0.84,CON-PYR001-2024
+PYR002,Aetna,Commercial,0.71,CON-PYR002-2024
+PYR003,Cigna,Commercial,0.76,CON-PYR003-2024
+PYR004,UnitedHealthcare,Commercial,0.75,CON-PYR004-2024
+PYR005,Humana,Commercial,0.86,CON-PYR005-2024
+PYR006,Medicare,Government,0.8,CON-PYR006-2024
+PYR007,Medicaid,Government,0.65,CON-PYR007-2024
+PYR008,Tricare,Government,0.75,CON-PYR008-2024
+PYR009,Self-Pay,Self-Pay,0.4,CON-PYR009-2024
+PYR010,Kaiser Permanente,Commercial,0.71,CON-PYR010-2024
