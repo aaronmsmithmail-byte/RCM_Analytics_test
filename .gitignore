@@ -1,3 +1,4 @@
 __pycache__/
 *.pyc
-.streamlit/
+# Ignore Streamlit secrets but track config
+.streamlit/secrets.toml
