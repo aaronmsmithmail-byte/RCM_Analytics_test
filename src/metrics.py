@@ -11,12 +11,19 @@ def add_year_month(df, date_col):
     return df
 
 
+def _empty_trend(*columns):
+    """Return an empty DataFrame with the given columns for use as a fallback trend."""
+    return pd.DataFrame(columns=list(columns))
+
+
 # =====================================================================
 # 1. DAYS IN ACCOUNTS RECEIVABLE (DAR)
 # =====================================================================
 def calc_days_in_ar(claims, payments):
     """DAR = Total AR / (Average Daily Charges).
     Also compute monthly trend."""
+    if claims.empty:
+        return 0.0, _empty_trend("charges", "payments", "ar_balance", "days_in_ar")
     claims = add_year_month(claims, "date_of_service")
     # Total charges by month
     monthly_charges = claims.groupby("year_month")["total_charge_amount"].sum()
@@ -49,6 +56,8 @@ def calc_days_in_ar(claims, payments):
 # =====================================================================
 def calc_net_collection_rate(claims, payments, adjustments):
     """NCR = Payments / (Charges - Contractual Adjustments)."""
+    if claims.empty or payments.empty:
+        return 0.0, _empty_trend("charges", "payments", "contractual_adj", "ncr")
     total_charges = claims["total_charge_amount"].sum()
     total_payments = payments["payment_amount"].sum()
     contractual_adj = adjustments[
@@ -85,6 +94,8 @@ def calc_net_collection_rate(claims, payments, adjustments):
 # =====================================================================
 def calc_gross_collection_rate(claims, payments):
     """GCR = Total Payments / Total Charges."""
+    if claims.empty or payments.empty:
+        return 0.0, _empty_trend("charges", "payments", "gcr")
     total_charges = claims["total_charge_amount"].sum()
     total_payments = payments["payment_amount"].sum()
     gcr = (total_payments / total_charges * 100) if total_charges > 0 else 0
@@ -104,6 +115,8 @@ def calc_gross_collection_rate(claims, payments):
 # =====================================================================
 def calc_clean_claim_rate(claims):
     """CCR = Clean Claims / Total Claims."""
+    if claims.empty:
+        return 0.0, _empty_trend("total_claims", "clean_claims", "ccr")
     total = len(claims)
     clean = claims["is_clean_claim"].sum()
     ccr = (clean / total * 100) if total > 0 else 0
@@ -123,6 +136,8 @@ def calc_clean_claim_rate(claims):
 # =====================================================================
 def calc_denial_rate(claims):
     """Denial Rate = Denied Claims / Total Claims."""
+    if claims.empty:
+        return 0.0, _empty_trend("total_claims", "denied_claims", "denial_rate")
     total = len(claims)
     denied = len(claims[claims["claim_status"].isin(["Denied", "Appealed"])])
     rate = (denied / total * 100) if total > 0 else 0
@@ -142,6 +157,9 @@ def calc_denial_rate(claims):
 # =====================================================================
 def calc_denial_reasons(denials):
     """Group denials by reason code."""
+    if denials.empty:
+        return pd.DataFrame(columns=["denial_reason_code", "denial_reason_description",
+                                     "count", "total_denied_amount", "total_recovered", "recovery_rate"])
     breakdown = denials.groupby(["denial_reason_code", "denial_reason_description"]).agg(
         count=("denial_id", "count"),
         total_denied_amount=("denied_amount", "sum"),
@@ -160,6 +178,8 @@ def calc_denial_reasons(denials):
 # =====================================================================
 def calc_first_pass_rate(claims):
     """FPRR = Claims Paid on First Submission / Total Claims."""
+    if claims.empty:
+        return 0.0, _empty_trend("total", "paid", "fpr")
     total = len(claims)
     first_pass = len(claims[claims["claim_status"] == "Paid"])
     rate = (first_pass / total * 100) if total > 0 else 0
@@ -179,6 +199,8 @@ def calc_first_pass_rate(claims):
 # =====================================================================
 def calc_charge_lag(charges):
     """Charge Lag = Post Date - Service Date."""
+    if charges.empty:
+        return 0.0, _empty_trend("lag_days"), pd.Series(dtype=float)
     charges = charges.copy()
     charges["service_date"] = pd.to_datetime(charges["service_date"])
     charges["post_date"] = pd.to_datetime(charges["post_date"])
@@ -198,6 +220,8 @@ def calc_charge_lag(charges):
 # =====================================================================
 def calc_cost_to_collect(operating_costs, claims, payments):
     """Cost to Collect = Total RCM Costs / Total Collections."""
+    if operating_costs.empty or payments.empty:
+        return 0.0, _empty_trend("rcm_cost", "collections", "cost_to_collect_pct")
     total_cost = operating_costs["total_rcm_cost"].sum()
     total_collected = payments["payment_amount"].sum()
     ctc = (total_cost / total_collected * 100) if total_collected > 0 else 0
@@ -229,6 +253,12 @@ def calc_cost_to_collect(operating_costs, claims, payments):
 # =====================================================================
 def calc_ar_aging(claims, payments):
     """Categorize outstanding AR into aging buckets."""
+    if claims.empty:
+        empty = pd.DataFrame(
+            {"claim_count": [0] * 5, "total_ar": [0.0] * 5, "pct_of_total": [0.0] * 5},
+            index=["0-30", "31-60", "61-90", "91-120", "120+"],
+        )
+        return empty, 0.0
     # Calculate total paid per claim
     paid_per_claim = payments.groupby("claim_id")["payment_amount"].sum().reset_index()
     paid_per_claim.columns = ["claim_id", "total_paid"]
@@ -269,6 +299,8 @@ def calc_ar_aging(claims, payments):
 # =====================================================================
 def calc_payment_accuracy(payments):
     """Payment Accuracy = Accurate Payments / Total Payments."""
+    if payments.empty:
+        return 0.0
     total = len(payments)
     accurate = payments["is_accurate_payment"].sum()
     rate = (accurate / total * 100) if total > 0 else 0
@@ -280,6 +312,8 @@ def calc_payment_accuracy(payments):
 # =====================================================================
 def calc_bad_debt_rate(claims, adjustments):
     """Bad Debt Rate = Bad Debt Write-offs / Total Charges."""
+    if claims.empty:
+        return 0.0, 0.0, 0.0
     total_charges = claims["total_charge_amount"].sum()
     bad_debt = adjustments[
         adjustments["adjustment_type_code"] == "WRITEOFF"
@@ -293,6 +327,8 @@ def calc_bad_debt_rate(claims, adjustments):
 # =====================================================================
 def calc_appeal_success_rate(denials):
     """Appeal Success = Won Appeals / Total Appeals."""
+    if denials.empty:
+        return 0.0, 0, 0
     appealed = denials[denials["appeal_status"].isin(["Won", "Lost", "In Progress"])]
     total_appealed = len(appealed)
     won = len(appealed[appealed["appeal_status"] == "Won"])
@@ -305,6 +341,8 @@ def calc_appeal_success_rate(denials):
 # =====================================================================
 def calc_avg_reimbursement(claims, payments):
     """Average $ reimbursed per encounter."""
+    if claims.empty or payments.empty:
+        return 0.0, _empty_trend("payment_amount")
     pay_per_claim = payments.groupby("claim_id")["payment_amount"].sum().reset_index()
     merged = claims.merge(pay_per_claim, on="claim_id", how="left")
     merged["payment_amount"] = merged["payment_amount"].fillna(0)
@@ -321,6 +359,9 @@ def calc_avg_reimbursement(claims, payments):
 # =====================================================================
 def calc_payer_mix(claims, payments, payers):
     """Revenue and volume breakdown by payer."""
+    if claims.empty or payers.empty:
+        return pd.DataFrame(columns=["payer_id", "payer_name", "payer_type",
+                                     "claim_count", "total_charges", "total_payments", "collection_rate"])
     pay_per_claim = payments.groupby("claim_id")["payment_amount"].sum().reset_index()
     merged = claims.merge(pay_per_claim, on="claim_id", how="left")
     merged["payment_amount"] = merged["payment_amount"].fillna(0)
@@ -344,6 +385,8 @@ def calc_payer_mix(claims, payments, payers):
 # =====================================================================
 def calc_denial_rate_by_payer(claims, payers):
     """Denial rate broken down by payer."""
+    if claims.empty or payers.empty:
+        return pd.DataFrame(columns=["payer_id", "payer_name", "total_claims", "denied", "denial_rate"])
     merged = claims.merge(payers[["payer_id", "payer_name"]], on="payer_id", how="left")
     summary = merged.groupby(["payer_id", "payer_name"]).agg(
         total_claims=("claim_id", "count"),
@@ -362,6 +405,9 @@ def calc_denial_rate_by_payer(claims, payers):
 # =====================================================================
 def calc_department_performance(encounters, claims, payments):
     """Revenue metrics by department."""
+    if encounters.empty or claims.empty:
+        return pd.DataFrame(columns=["department", "encounter_count", "total_charges",
+                                     "total_payments", "collection_rate", "avg_payment_per_encounter"])
     enc_claims = encounters[["encounter_id", "department"]].merge(
         claims[["claim_id", "encounter_id", "total_charge_amount"]], on="encounter_id", how="inner"
     )

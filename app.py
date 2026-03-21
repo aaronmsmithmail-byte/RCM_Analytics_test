@@ -78,7 +78,18 @@ def get_data():
     return load_all_data()
 
 
-data = get_data()
+try:
+    data = get_data()
+except FileNotFoundError as e:
+    st.error(f"**Data files not found.** {e}")
+    st.info("Run `python generate_sample_data.py` from the project root to create the required data files.")
+    st.stop()
+except ValueError as e:
+    st.error(f"**Data validation error.** {e}")
+    st.stop()
+except Exception as e:
+    st.error(f"**Unexpected error loading data:** {e}")
+    st.stop()
 claims = data["claims"]
 payments = data["payments"]
 denials = data["denials"]
@@ -150,6 +161,10 @@ f_charges = charges[charges["encounter_id"].isin(f_encounters["encounter_id"].un
 # ── Header ───────────────────────────────────────────────────────────
 st.title("Healthcare RCM Analytics Dashboard")
 st.caption(f"Analyzing {len(f_claims):,} claims | {len(f_encounters):,} encounters | Date range: {start_dt.strftime('%b %Y')} to {end_dt.strftime('%b %Y')}")
+
+if f_claims.empty:
+    st.warning("No claims match the selected filters. Adjust the sidebar filters to see data.")
+    st.stop()
 
 # ── Tabs ─────────────────────────────────────────────────────────────
 tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
