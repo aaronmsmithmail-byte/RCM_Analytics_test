@@ -296,6 +296,23 @@ f_denials = denials[denials["claim_id"].isin(claim_ids)].copy()
 f_adjustments = adjustments[adjustments["claim_id"].isin(claim_ids)].copy()
 f_charges = charges[charges["encounter_id"].isin(f_encounters["encounter_id"].unique())].copy()
 
+# ── Metadata navigation (sidebar) ────────────────────────────────────
+# These buttons must render BEFORE the page router so they appear on
+# every page, including metadata pages that call st.stop() early.
+st.sidebar.divider()
+st.sidebar.markdown("### Metadata")
+if st.sidebar.button("Data Catalog", use_container_width=True):
+    st.session_state["active_page"] = "data_catalog"
+if st.sidebar.button("Data Lineage", use_container_width=True):
+    st.session_state["active_page"] = "data_lineage"
+if st.sidebar.button("Knowledge Graph", use_container_width=True):
+    st.session_state["active_page"] = "knowledge_graph"
+if st.sidebar.button("Semantic Layer", use_container_width=True):
+    st.session_state["active_page"] = "semantic_layer"
+if st.session_state["active_page"] != "dashboard":
+    if st.sidebar.button("Back to Dashboard", type="primary", use_container_width=True):
+        st.session_state["active_page"] = "dashboard"
+
 # ── Page router ──────────────────────────────────────────────────────
 _active = st.session_state["active_page"]
 if _active == "data_catalog":
@@ -1052,20 +1069,6 @@ if _validation_issues:
         for issue in _validation_issues:
             icon = "🔴" if issue["level"] == "error" else "🟡"
             st.markdown(f"{icon} **{issue['table']}**: {issue['message']}")
-
-st.sidebar.divider()
-st.sidebar.markdown("### Metadata")
-if st.sidebar.button("Data Catalog", use_container_width=True):
-    st.session_state["active_page"] = "data_catalog"
-if st.sidebar.button("Data Lineage", use_container_width=True):
-    st.session_state["active_page"] = "data_lineage"
-if st.sidebar.button("Knowledge Graph", use_container_width=True):
-    st.session_state["active_page"] = "knowledge_graph"
-if st.sidebar.button("Semantic Layer", use_container_width=True):
-    st.session_state["active_page"] = "semantic_layer"
-if st.session_state["active_page"] != "dashboard":
-    if st.sidebar.button("Back to Dashboard", type="primary", use_container_width=True):
-        st.session_state["active_page"] = "dashboard"
 
 st.sidebar.divider()
 st.sidebar.caption("Healthcare RCM Analytics Dashboard v1.0")
