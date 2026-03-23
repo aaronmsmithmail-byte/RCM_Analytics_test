@@ -49,6 +49,8 @@ Running the Dashboard:
     streamlit run app.py
 """
 
+import io
+
 import streamlit as st
 import pandas as pd
 import plotly.express as px
@@ -57,6 +59,7 @@ from plotly.subplots import make_subplots
 
 # Import our custom modules
 from src.data_loader import load_all_data       # Loads all tables from SQLite
+from src.validators import validate_all         # Data integrity checks
 from src.metrics import (                        # 17 KPI calculation functions
     calc_days_in_ar,
     calc_net_collection_rate,
@@ -136,6 +139,40 @@ def metric_card(label, value, benchmark="", status="neutral"):
     )
 
 
+# ── Export Helpers ───────────────────────────────────────────────────
+def df_to_csv(df: pd.DataFrame) -> bytes:
+    return df.to_csv(index=False).encode("utf-8")
+
+
+def dfs_to_excel(sheets: dict[str, pd.DataFrame]) -> bytes:
+    """Write multiple DataFrames to an in-memory Excel file, one sheet each."""
+    buf = io.BytesIO()
+    with pd.ExcelWriter(buf, engine="openpyxl") as writer:
+        for sheet_name, df in sheets.items():
+            df.to_excel(writer, sheet_name=sheet_name[:31], index=False)
+    return buf.getvalue()
+
+
+def export_buttons(label: str, sheets: dict[str, pd.DataFrame]):
+    """Render side-by-side CSV and Excel download buttons."""
+    primary_df = next(iter(sheets.values()))
+    col_csv, col_xlsx, _ = st.columns([1, 1, 4])
+    with col_csv:
+        st.download_button(
+            label="Download CSV",
+            data=df_to_csv(primary_df),
+            file_name=f"{label}.csv",
+            mime="text/csv",
+        )
+    with col_xlsx:
+        st.download_button(
+            label="Download Excel",
+            data=dfs_to_excel(sheets),
+            file_name=f"{label}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+
+
 # ── Load Data ────────────────────────────────────────────────────────
 # @st.cache_data is a Streamlit decorator that caches the return value.
 # On the first run, it calls load_all_data() (which queries SQLite).
@@ -153,7 +190,18 @@ def get_data():
     return load_all_data()
 
 
-data = get_data()
+try:
+    data = get_data()
+except FileNotFoundError as e:
+    st.error(f"**Data files not found.** {e}")
+    st.info("Run `python generate_sample_data.py` from the project root to create the required data files.")
+    st.stop()
+except ValueError as e:
+    st.error(f"**Data validation error.** {e}")
+    st.stop()
+except Exception as e:
+    st.error(f"**Unexpected error loading data:** {e}")
+    st.stop()
 claims = data["claims"]
 payments = data["payments"]
 denials = data["denials"]
@@ -162,6 +210,9 @@ encounters = data["encounters"]
 charges = data["charges"]
 payers = data["payers"]
 operating_costs = data["operating_costs"]
+
+# ── Data Validation ───────────────────────────────────────────────────
+_validation_issues = validate_all(data)
 
 # ── Sidebar Filters ─────────────────────────────────────────────────
 # Sidebar filters allow users to slice data interactively. The filter
@@ -239,6 +290,10 @@ f_charges = charges[charges["encounter_id"].isin(f_encounters["encounter_id"].un
 # ── Header ───────────────────────────────────────────────────────────
 st.title("Healthcare RCM Analytics Dashboard")
 st.caption(f"Analyzing {len(f_claims):,} claims | {len(f_encounters):,} encounters | Date range: {start_dt.strftime('%b %Y')} to {end_dt.strftime('%b %Y')}")
+
+if f_claims.empty:
+    st.warning("No claims match the selected filters. Adjust the sidebar filters to see data.")
+    st.stop()
 
 # ── Tabs ─────────────────────────────────────────────────────────────
 tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
@@ -440,7 +495,14 @@ with tab2:
             f"${net_revenue:,.2f}",
         ]
     }
-    st.dataframe(pd.DataFrame(fin_data), hide_index=True, use_container_width=True)
+    fin_df = pd.DataFrame(fin_data)
+    st.dataframe(fin_df, hide_index=True, use_container_width=True)
+    export_buttons("collections_revenue", {
+        "Financial Summary": fin_df,
+        "Filtered Claims": f_claims,
+        "Filtered Payments": f_payments,
+        "Filtered Adjustments": f_adjustments,
+    })
 
 
 # =====================================================================
@@ -540,11 +602,15 @@ with tab3:
 
     # Denial details table
     with st.expander("Denial Reasons Detail Table"):
-        st.dataframe(
-            denial_reasons[["denial_reason_code", "denial_reason_description", "count",
-                            "total_denied_amount", "total_recovered", "recovery_rate"]].round(2),
-            hide_index=True, use_container_width=True,
-        )
+        denial_detail_df = denial_reasons[["denial_reason_code", "denial_reason_description", "count",
+                        "total_denied_amount", "total_recovered", "recovery_rate"]].round(2)
+        st.dataframe(denial_detail_df, hide_index=True, use_container_width=True)
+
+    export_buttons("claims_denials", {
+        "Denial Reasons": denial_detail_df,
+        "Filtered Claims": f_claims,
+        "Filtered Denials": f_denials,
+    })
 
 
 # =====================================================================
@@ -646,6 +712,11 @@ with tab4:
         aging_detail["% of Total"] = aging_detail["% of Total"].apply(lambda x: f"{x:.1f}%")
         st.dataframe(aging_detail, hide_index=True, use_container_width=True)
 
+    export_buttons("ar_aging_cashflow", {
+        "AR Aging Summary": aging_df,
+        "Cash Flow": cf,
+    })
+
 
 # =====================================================================
 # TAB 5: PAYER ANALYSIS
@@ -715,6 +786,12 @@ with tab5:
                            "Collection Rate (%)", "Denial Rate (%)"]
     st.dataframe(payer_table, hide_index=True, use_container_width=True)
 
+    export_buttons("payer_analysis", {
+        "Payer Comparison": payer_table,
+        "Payer Mix": payer_mix,
+        "Denial by Payer": denial_by_payer,
+    })
+
     # Payer type summary
     st.subheader("Performance by Payer Type")
     type_summary = payer_mix.groupby("payer_type").agg(
@@ -728,6 +805,64 @@ with tab5:
                  labels={"value": "Amount ($)", "payer_type": "Payer Type", "variable": "Metric"})
     fig.update_layout(height=350, margin=dict(t=30, b=30))
     st.plotly_chart(fig, use_container_width=True)
+
+    # ── Payer Drill-Down ──────────────────────────────────────────────
+    st.divider()
+    st.subheader("Payer Drill-Down")
+    payer_names = sorted(payer_mix["payer_name"].tolist())
+    selected_drilldown_payer = st.selectbox("Select a payer to inspect", payer_names, key="payer_drilldown")
+    if selected_drilldown_payer:
+        drill_payer_id = payers[payers["payer_name"] == selected_drilldown_payer]["payer_id"].values[0]
+        drill_claims = f_claims[f_claims["payer_id"] == drill_payer_id].copy()
+        drill_payments = f_payments[f_payments["claim_id"].isin(drill_claims["claim_id"])].copy()
+        drill_denials = f_denials[f_denials["claim_id"].isin(drill_claims["claim_id"])].copy()
+
+        kc1, kc2, kc3, kc4 = st.columns(4)
+        with kc1:
+            st.metric("Claims", f"{len(drill_claims):,}")
+        with kc2:
+            st.metric("Total Charges", f"${drill_claims['total_charge_amount'].sum():,.0f}")
+        with kc3:
+            st.metric("Total Payments", f"${drill_payments['payment_amount'].sum():,.0f}")
+        with kc4:
+            denied_count = drill_claims["claim_status"].isin(["Denied", "Appealed"]).sum()
+            st.metric("Denied Claims", f"{denied_count:,}")
+
+        col_d1, col_d2 = st.columns(2)
+        with col_d1:
+            status_counts = drill_claims["claim_status"].value_counts().reset_index()
+            status_counts.columns = ["Status", "Count"]
+            fig = px.pie(status_counts, values="Count", names="Status",
+                         title="Claim Status Mix",
+                         color_discrete_sequence=px.colors.qualitative.Set2)
+            fig.update_layout(height=300, margin=dict(t=40, b=10))
+            st.plotly_chart(fig, use_container_width=True)
+        with col_d2:
+            if not drill_denials.empty:
+                denial_reasons_drill = drill_denials["denial_reason_description"].value_counts().reset_index()
+                denial_reasons_drill.columns = ["Reason", "Count"]
+                fig = px.bar(denial_reasons_drill, x="Count", y="Reason", orientation="h",
+                             title="Denial Reasons",
+                             labels={"Count": "# Denials", "Reason": ""})
+                fig.update_layout(height=300, margin=dict(t=40, b=10),
+                                  yaxis={"categoryorder": "total ascending"})
+                st.plotly_chart(fig, use_container_width=True)
+            else:
+                st.info("No denials for this payer in the selected date range.")
+
+        with st.expander("Claim-Level Detail"):
+            claim_detail = drill_claims[["claim_id", "date_of_service", "submission_date",
+                                          "total_charge_amount", "claim_status", "is_clean_claim"]].copy()
+            pay_totals = drill_payments.groupby("claim_id")["payment_amount"].sum().reset_index()
+            claim_detail = claim_detail.merge(pay_totals, on="claim_id", how="left")
+            claim_detail["payment_amount"] = claim_detail["payment_amount"].fillna(0)
+            claim_detail.columns = ["Claim ID", "Date of Service", "Submission Date",
+                                     "Charge Amount", "Status", "Clean Claim", "Payment Amount"]
+            st.dataframe(claim_detail, hide_index=True, use_container_width=True)
+            export_buttons(f"payer_drilldown_{selected_drilldown_payer.replace(' ', '_')}", {
+                "Claims": claim_detail,
+                "Denials": drill_denials,
+            })
 
 
 # =====================================================================
@@ -804,6 +939,70 @@ with tab6:
     dept_table.columns = ["Department", "Encounters", "Total Charges", "Total Payments",
                           "Collection Rate", "Avg $/Encounter"]
     st.dataframe(dept_table, hide_index=True, use_container_width=True)
+    export_buttons("department_performance", {
+        "Department Summary": dept_perf,
+        "Encounter Type Mix": dept_enc,
+    })
+
+    # ── Department Drill-Down ─────────────────────────────────────────
+    st.divider()
+    st.subheader("Department Drill-Down")
+    dept_names = sorted(dept_perf["department"].tolist())
+    selected_drilldown_dept = st.selectbox("Select a department to inspect", dept_names, key="dept_drilldown")
+    if selected_drilldown_dept:
+        drill_encs = f_encounters[f_encounters["department"] == selected_drilldown_dept].copy()
+        drill_enc_ids = drill_encs["encounter_id"].unique()
+        drill_dept_claims = f_claims[f_claims["encounter_id"].isin(drill_enc_ids)].copy()
+        drill_dept_payments = f_payments[f_payments["claim_id"].isin(drill_dept_claims["claim_id"])].copy()
+        drill_dept_denials = f_denials[f_denials["claim_id"].isin(drill_dept_claims["claim_id"])].copy()
+
+        kd1, kd2, kd3, kd4 = st.columns(4)
+        with kd1:
+            st.metric("Encounters", f"{len(drill_encs):,}")
+        with kd2:
+            st.metric("Claims", f"{len(drill_dept_claims):,}")
+        with kd3:
+            st.metric("Total Charges", f"${drill_dept_claims['total_charge_amount'].sum():,.0f}")
+        with kd4:
+            st.metric("Total Payments", f"${drill_dept_payments['payment_amount'].sum():,.0f}")
+
+        col_dd1, col_dd2 = st.columns(2)
+        with col_dd1:
+            enc_type_counts = drill_encs["encounter_type"].value_counts().reset_index()
+            enc_type_counts.columns = ["Type", "Count"]
+            fig = px.pie(enc_type_counts, values="Count", names="Type",
+                         title="Encounter Type Mix",
+                         color_discrete_sequence=px.colors.qualitative.Pastel)
+            fig.update_layout(height=300, margin=dict(t=40, b=10))
+            st.plotly_chart(fig, use_container_width=True)
+        with col_dd2:
+            status_counts_dept = drill_dept_claims["claim_status"].value_counts().reset_index()
+            status_counts_dept.columns = ["Status", "Count"]
+            fig = px.bar(status_counts_dept, x="Status", y="Count",
+                         title="Claim Status",
+                         color="Status",
+                         color_discrete_sequence=px.colors.qualitative.Set2)
+            fig.update_layout(height=300, margin=dict(t=40, b=10), showlegend=False)
+            st.plotly_chart(fig, use_container_width=True)
+
+        with st.expander("Encounter & Claim Detail"):
+            enc_detail = drill_encs[["encounter_id", "date_of_service", "encounter_type",
+                                      "patient_id", "provider_id"]].copy()
+            enc_detail = enc_detail.merge(
+                drill_dept_claims[["encounter_id", "claim_id", "total_charge_amount", "claim_status"]],
+                on="encounter_id", how="left"
+            )
+            pay_totals_dept = drill_dept_payments.groupby("claim_id")["payment_amount"].sum().reset_index()
+            enc_detail = enc_detail.merge(pay_totals_dept, on="claim_id", how="left")
+            enc_detail["payment_amount"] = enc_detail["payment_amount"].fillna(0)
+            enc_detail.columns = ["Encounter ID", "Date of Service", "Encounter Type",
+                                   "Patient ID", "Provider ID", "Claim ID",
+                                   "Charge Amount", "Claim Status", "Payment Amount"]
+            st.dataframe(enc_detail, hide_index=True, use_container_width=True)
+            export_buttons(f"dept_drilldown_{selected_drilldown_dept.replace(' ', '_')}", {
+                "Encounters & Claims": enc_detail,
+                "Denials": drill_dept_denials,
+            })
 
 
 # ── Sidebar Footer ───────────────────────────────────────────────────
@@ -817,6 +1016,18 @@ st.sidebar.markdown(f"- **Encounters:** {len(f_encounters):,}")
 st.sidebar.markdown(f"- **Claims:** {len(f_claims):,}")
 st.sidebar.markdown(f"- **Payments:** {len(f_payments):,}")
 st.sidebar.markdown(f"- **Denials:** {len(f_denials):,}")
+
+if _validation_issues:
+    st.sidebar.divider()
+    errors = [i for i in _validation_issues if i["level"] == "error"]
+    warnings = [i for i in _validation_issues if i["level"] == "warning"]
+    with st.sidebar.expander(
+        f"{'🔴' if errors else '🟡'} Data Quality ({len(_validation_issues)} issue{'s' if len(_validation_issues) != 1 else ''})",
+        expanded=bool(errors),
+    ):
+        for issue in _validation_issues:
+            icon = "🔴" if issue["level"] == "error" else "🟡"
+            st.markdown(f"{icon} **{issue['table']}**: {issue['message']}")
 
 st.sidebar.divider()
 st.sidebar.caption("Healthcare RCM Analytics Dashboard v1.0")

@@ -1,5 +1,6 @@
 __pycache__/
 *.pyc
-.streamlit/
+# Ignore Streamlit secrets but track config
+.streamlit/secrets.toml
 # SQLite database is generated from CSVs — no need to track in git
 *.db

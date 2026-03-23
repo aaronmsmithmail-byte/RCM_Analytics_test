@@ -85,6 +85,32 @@ def _parse_booleans(df, bool_columns):
             df[col] = df[col].astype(bool)
     return df
 
+# Required columns for each table — used for validation after load
+REQUIRED_COLUMNS = {
+    "payers": ["payer_id", "payer_name", "payer_type"],
+    "patients": ["patient_id", "primary_payer_id"],
+    "providers": ["provider_id", "department"],
+    "encounters": ["encounter_id", "patient_id", "provider_id", "date_of_service", "department", "encounter_type"],
+    "charges": ["charge_id", "encounter_id", "charge_amount", "service_date", "post_date"],
+    "claims": ["claim_id", "encounter_id", "patient_id", "payer_id", "date_of_service",
+               "submission_date", "total_charge_amount", "claim_status", "is_clean_claim"],
+    "payments": ["payment_id", "claim_id", "payer_id", "payment_amount", "is_accurate_payment"],
+    "denials": ["denial_id", "claim_id", "denial_reason_code", "denial_reason_description",
+                "denied_amount", "appeal_status", "recovered_amount"],
+    "adjustments": ["adjustment_id", "claim_id", "adjustment_type_code", "adjustment_amount"],
+    "operating_costs": ["period", "total_rcm_cost"],
+}
+
+
+def _validate_columns(df, key, path):
+    """Raise ValueError if any required columns are missing."""
+    required = REQUIRED_COLUMNS.get(key, [])
+    missing = [c for c in required if c not in df.columns]
+    if missing:
+        raise ValueError(
+            f"Data file '{path}' is missing required columns: {missing}"
+        )
+
 
 def load_all_data():
     """
@@ -203,6 +229,7 @@ def load_all_data():
         if table_name == "operating_costs" and "period" in df.columns:
             df["period"] = pd.to_datetime(df["period"], format="%Y-%m")
 
+        _validate_columns(df, table_name, config["query"])
         data[table_name] = df
 
     return data
