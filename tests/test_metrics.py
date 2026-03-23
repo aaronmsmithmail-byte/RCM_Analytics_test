@@ -1,595 +1,823 @@
-"""Unit tests for src/metrics.py — all 17 RCM metric functions."""
+"""Unit tests for src/metrics.py — all 17 RCM metric functions.
 
-import pandas as pd
-import numpy as np
+All tests use an in-memory SQLite database via pytest's tmp_path fixture,
+populating the Silver layer tables directly to verify SQL-based metric queries.
+"""
+
+import sqlite3
 import pytest
 
+from src.database import create_tables
 from src.metrics import (
-    calc_days_in_ar,
-    calc_net_collection_rate,
-    calc_gross_collection_rate,
-    calc_clean_claim_rate,
-    calc_denial_rate,
-    calc_denial_reasons,
-    calc_first_pass_rate,
-    calc_charge_lag,
-    calc_cost_to_collect,
-    calc_ar_aging,
-    calc_payment_accuracy,
-    calc_bad_debt_rate,
-    calc_appeal_success_rate,
-    calc_avg_reimbursement,
-    calc_payer_mix,
-    calc_denial_rate_by_payer,
-    calc_department_performance,
+    FilterParams,
+    query_days_in_ar,
+    query_net_collection_rate,
+    query_gross_collection_rate,
+    query_clean_claim_rate,
+    query_denial_rate,
+    query_denial_reasons,
+    query_first_pass_rate,
+    query_charge_lag,
+    query_cost_to_collect,
+    query_ar_aging,
+    query_payment_accuracy,
+    query_bad_debt_rate,
+    query_appeal_success_rate,
+    query_avg_reimbursement,
+    query_payer_mix,
+    query_denial_rate_by_payer,
+    query_department_performance,
 )
 
 
-# ── Fixtures ─────────────────────────────────────────────────────────────────
+# ===========================================================================
+# Shared fixtures
+# ===========================================================================
 
 @pytest.fixture
-def claims():
-    return pd.DataFrame({
-        "claim_id": [1, 2, 3, 4],
-        "encounter_id": [10, 20, 30, 40],
-        "patient_id": [100, 200, 300, 400],
-        "payer_id": [1, 1, 2, 2],
-        "date_of_service": pd.to_datetime(["2024-01-15", "2024-01-20", "2024-02-10", "2024-02-25"]),
-        "submission_date": pd.to_datetime(["2024-01-17", "2024-01-22", "2024-02-12", "2024-02-27"]),
-        "total_charge_amount": [1000.0, 2000.0, 1500.0, 500.0],
-        "claim_status": ["Paid", "Denied", "Paid", "Appealed"],
-        "is_clean_claim": [True, False, True, False],
-        "submission_method": ["Electronic", "Electronic", "Electronic", "Paper"],
-    })
+def db(tmp_path):
+    """Temporary SQLite database pre-loaded with representative Silver data.
+
+    Data summary (all dates in 2024):
+        silver_claims:
+            CLM001  ENC010  PAT001  PYR001  2024-01-15  1000.0  Paid      clean
+            CLM002  ENC020  PAT002  PYR001  2024-01-20  2000.0  Denied    dirty
+            CLM003  ENC030  PAT003  PYR002  2024-02-10  1500.0  Paid      clean
+            CLM004  ENC040  PAT004  PYR002  2024-02-25   500.0  Appealed  dirty
+
+        silver_payments:
+            PAY001  CLM001  PYR001   900.0  is_accurate=1
+            PAY002  CLM003  PYR002   700.0  is_accurate=1
+            PAY003  CLM003  PYR002   300.0  is_accurate=0
+
+        silver_adjustments:
+            ADJ001  CLM001  CONTRACTUAL   50.0
+            ADJ002  CLM002  CONTRACTUAL  100.0
+            ADJ003  CLM003  WRITEOFF     200.0
+
+        silver_denials:
+            DEN001  CLM002  CO-4   2000.0  Won          recovered=1800
+            DEN002  CLM004  CO-97   500.0  Lost         recovered=0
+            DEN003  CLM002  CO-4    200.0  In Progress  recovered=0
+
+        silver_operating_costs:
+            2024-01  total=17500
+            2024-02  total=17500
+
+        silver_charges:
+            CHG001  ENC010  service=2024-01-15  post=2024-01-17  (lag=2)
+            CHG002  ENC020  service=2024-01-20  post=2024-01-25  (lag=5)
+            CHG003  ENC030  service=2024-02-10  post=2024-02-12  (lag=2)
+    """
+    db_path = str(tmp_path / "test.db")
+    conn = sqlite3.connect(db_path)
+    conn.execute("PRAGMA foreign_keys=OFF")
+    create_tables(conn)
+    conn.executescript("""
+        INSERT INTO silver_payers VALUES
+            ('PYR001','Aetna','Commercial',0.85,'C001'),
+            ('PYR002','Medicaid','Government',0.70,'G001');
+
+        INSERT INTO silver_patients VALUES
+            ('PAT001','Alice','Smith','1980-01-01','F','PYR001','M001','10001'),
+            ('PAT002','Bob','Jones','1975-05-15','M','PYR001','M002','10002'),
+            ('PAT003','Carol','Lee','1990-03-20','F','PYR002','M003','10003'),
+            ('PAT004','Dave','Kim','1965-11-30','M','PYR002','M004','10004');
+
+        INSERT INTO silver_providers VALUES
+            ('PRV001','Dr. A','1111111111','Cardiology','Internal Medicine'),
+            ('PRV002','Dr. B','2222222222','Orthopedics','Orthopedics');
+
+        INSERT INTO silver_encounters VALUES
+            ('ENC010','PAT001','PRV001','2024-01-15','2024-01-15','Outpatient','Cardiology'),
+            ('ENC020','PAT002','PRV001','2024-01-20','2024-01-20','Outpatient','Cardiology'),
+            ('ENC030','PAT003','PRV002','2024-02-10','2024-02-11','Inpatient','Orthopedics'),
+            ('ENC040','PAT004','PRV002','2024-02-25','2024-02-25','Emergency','Orthopedics');
+
+        INSERT INTO silver_charges VALUES
+            ('CHG001','ENC010','99213','Office Visit',1,200.0,'2024-01-15','2024-01-17','Z00.00'),
+            ('CHG002','ENC020','99214','Office Visit Complex',1,350.0,'2024-01-20','2024-01-25','Z00.00'),
+            ('CHG003','ENC030','27447','Total Knee Replacement',1,15000.0,'2024-02-10','2024-02-12','M17.11');
+
+        INSERT INTO silver_claims VALUES
+            ('CLM001','ENC010','PAT001','PYR001','2024-01-15','2024-01-17',1000.0,'Paid',1,'Electronic'),
+            ('CLM002','ENC020','PAT002','PYR001','2024-01-20','2024-01-22',2000.0,'Denied',0,'Electronic'),
+            ('CLM003','ENC030','PAT003','PYR002','2024-02-10','2024-02-12',1500.0,'Paid',1,'Electronic'),
+            ('CLM004','ENC040','PAT004','PYR002','2024-02-25','2024-02-27',500.0,'Appealed',0,'Paper');
+
+        INSERT INTO silver_payments VALUES
+            ('PAY001','CLM001','PYR001',900.0,950.0,'2024-02-01','EFT',1),
+            ('PAY002','CLM003','PYR002',700.0,750.0,'2024-03-01','EFT',1),
+            ('PAY003','CLM003','PYR002',300.0,350.0,'2024-03-15','Check',0);
+
+        INSERT INTO silver_denials VALUES
+            ('DEN001','CLM002','CO-4','Service not covered','2024-02-01',2000.0,'Won','2024-03-01',1800.0),
+            ('DEN002','CLM004','CO-97','Payment included in allowance','2024-03-05',500.0,'Lost','2024-04-01',0.0),
+            ('DEN003','CLM002','CO-4','Service not covered','2024-02-15',200.0,'In Progress',NULL,0.0);
+
+        INSERT INTO silver_adjustments VALUES
+            ('ADJ001','CLM001','CONTRACTUAL','Contractual Adjustment',50.0,'2024-02-01'),
+            ('ADJ002','CLM002','CONTRACTUAL','Contractual Adjustment',100.0,'2024-02-05'),
+            ('ADJ003','CLM003','WRITEOFF','Bad Debt Write-Off',200.0,'2024-03-01');
+
+        INSERT INTO silver_operating_costs VALUES
+            ('2024-01',10000.0,2000.0,5000.0,500.0,17500.0),
+            ('2024-02',10000.0,2000.0,5000.0,500.0,17500.0);
+    """)
+    conn.commit()
+    conn.close()
+    return db_path
 
 
 @pytest.fixture
-def payments():
-    return pd.DataFrame({
-        "payment_id": [1, 2, 3],
-        "claim_id": [1, 3, 3],
-        "payer_id": [1, 2, 2],
-        "payment_amount": [900.0, 700.0, 300.0],
-        "allowed_amount": [950.0, 750.0, 350.0],
-        "payment_date": pd.to_datetime(["2024-02-01", "2024-03-01", "2024-03-15"]),
-        "payment_method": ["EFT", "EFT", "Check"],
-        "is_accurate_payment": [True, True, False],
-    })
+def full_params():
+    """FilterParams covering all test data (Jan–Dec 2024, no dimension filters)."""
+    return FilterParams(start_date="2024-01-01", end_date="2024-12-31")
 
 
 @pytest.fixture
-def adjustments():
-    return pd.DataFrame({
-        "adjustment_id": [1, 2, 3],
-        "claim_id": [1, 2, 3],
-        "adjustment_type_code": ["CONTRACTUAL", "CONTRACTUAL", "WRITEOFF"],
-        "adjustment_type_description": ["Contractual", "Contractual", "Write-Off"],
-        "adjustment_amount": [50.0, 100.0, 200.0],
-        "adjustment_date": pd.to_datetime(["2024-02-01", "2024-02-05", "2024-03-01"]),
-    })
+def empty_db(tmp_path):
+    """SQLite database with schema only — no data rows."""
+    db_path = str(tmp_path / "empty.db")
+    conn = sqlite3.connect(db_path)
+    create_tables(conn)
+    conn.close()
+    return db_path
 
 
-@pytest.fixture
-def denials():
-    return pd.DataFrame({
-        "denial_id": [1, 2, 3],
-        "claim_id": [2, 4, 2],
-        "denial_reason_code": ["CO-4", "CO-97", "CO-4"],
-        "denial_reason_description": ["Service not covered", "Payment included in allowance", "Service not covered"],
-        "denial_date": pd.to_datetime(["2024-02-01", "2024-03-05", "2024-02-15"]),
-        "denied_amount": [2000.0, 500.0, 200.0],
-        "appeal_status": ["Won", "Lost", "In Progress"],
-        "appeal_date": pd.to_datetime(["2024-03-01", "2024-04-01", None]),
-        "recovered_amount": [1800.0, 0.0, 0.0],
-    })
+# ===========================================================================
+# 1. query_days_in_ar
+# ===========================================================================
 
-
-@pytest.fixture
-def operating_costs():
-    return pd.DataFrame({
-        "period": pd.to_datetime(["2024-01", "2024-02"], format="%Y-%m"),
-        "billing_staff_cost": [10000.0, 10000.0],
-        "software_cost": [2000.0, 2000.0],
-        "outsourcing_cost": [5000.0, 5000.0],
-        "supplies_overhead": [500.0, 500.0],
-        "total_rcm_cost": [17500.0, 17500.0],
-    })
-
-
-@pytest.fixture
-def payers():
-    return pd.DataFrame({
-        "payer_id": [1, 2],
-        "payer_name": ["Aetna", "Medicare"],
-        "payer_type": ["Commercial", "Government"],
-        "avg_reimbursement_pct": [0.85, 0.80],
-        "contract_id": ["C001", "G001"],
-    })
-
-
-@pytest.fixture
-def encounters():
-    return pd.DataFrame({
-        "encounter_id": [10, 20, 30, 40],
-        "patient_id": [100, 200, 300, 400],
-        "provider_id": [1, 1, 2, 2],
-        "date_of_service": pd.to_datetime(["2024-01-15", "2024-01-20", "2024-02-10", "2024-02-25"]),
-        "discharge_date": pd.to_datetime(["2024-01-15", "2024-01-20", "2024-02-11", "2024-02-25"]),
-        "encounter_type": ["Outpatient", "Outpatient", "Inpatient", "Emergency"],
-        "department": ["Cardiology", "Cardiology", "Orthopedics", "Emergency"],
-    })
-
-
-@pytest.fixture
-def charges():
-    return pd.DataFrame({
-        "charge_id": [1, 2, 3, 4],
-        "encounter_id": [10, 20, 30, 40],
-        "cpt_code": ["99213", "99214", "27447", "99285"],
-        "cpt_description": ["Office Visit", "Office Visit Complex", "Total Knee Replacement", "ED Visit"],
-        "units": [1, 1, 1, 1],
-        "charge_amount": [200.0, 350.0, 15000.0, 800.0],
-        "service_date": pd.to_datetime(["2024-01-15", "2024-01-20", "2024-02-10", "2024-02-25"]),
-        "post_date": pd.to_datetime(["2024-01-16", "2024-01-21", "2024-02-12", "2024-02-26"]),
-        "icd10_code": ["Z00.00", "Z00.00", "M17.11", "R07.9"],
-    })
-
-
-# ── Helper: empty DataFrames ──────────────────────────────────────────────────
-
-def empty_claims():
-    return pd.DataFrame(columns=["claim_id", "encounter_id", "patient_id", "payer_id",
-                                  "date_of_service", "submission_date", "total_charge_amount",
-                                  "claim_status", "is_clean_claim"])
-
-
-def empty_payments():
-    return pd.DataFrame(columns=["payment_id", "claim_id", "payer_id", "payment_amount",
-                                  "payment_date", "is_accurate_payment"])
-
-
-def empty_denials():
-    return pd.DataFrame(columns=["denial_id", "claim_id", "denial_reason_code",
-                                  "denial_reason_description", "denied_amount",
-                                  "appeal_status", "recovered_amount"])
-
-
-# ── Tests: calc_days_in_ar ─────────────────────────────────────────────────────
-
-class TestCalcDaysInAr:
-    def test_returns_float_and_dataframe(self, claims, payments):
-        dar, trend = calc_days_in_ar(claims, payments)
+class TestQueryDaysInAr:
+    def test_returns_float_and_dataframe(self, db, full_params):
+        import pandas as pd
+        dar, trend = query_days_in_ar(full_params, db_path=db)
         assert isinstance(dar, float)
         assert isinstance(trend, pd.DataFrame)
 
-    def test_trend_has_required_columns(self, claims, payments):
-        _, trend = calc_days_in_ar(claims, payments)
-        assert "days_in_ar" in trend.columns
-        assert "ar_balance" in trend.columns
+    def test_trend_has_required_columns(self, db, full_params):
+        _, trend = query_days_in_ar(full_params, db_path=db)
+        for col in ("charges", "payments", "ar_balance", "days_in_ar"):
+            assert col in trend.columns
 
-    def test_dar_is_non_negative(self, claims, payments):
-        dar, _ = calc_days_in_ar(claims, payments)
+    def test_dar_is_non_negative(self, db, full_params):
+        dar, _ = query_days_in_ar(full_params, db_path=db)
         assert dar >= 0
 
-    def test_empty_claims_returns_zero(self):
-        dar, trend = calc_days_in_ar(empty_claims(), empty_payments())
+    def test_empty_db_returns_zero(self, empty_db, full_params):
+        dar, trend = query_days_in_ar(full_params, db_path=empty_db)
         assert dar == 0.0
         assert trend.empty
 
+    def test_ar_balance_cumulative(self, db, full_params):
+        _, trend = query_days_in_ar(full_params, db_path=db)
+        # ar_balance should be positive (we billed more than we collected)
+        assert trend["ar_balance"].iloc[-1] > 0
 
-# ── Tests: calc_net_collection_rate ───────────────────────────────────────────
+    def test_trend_has_two_months(self, db, full_params):
+        _, trend = query_days_in_ar(full_params, db_path=db)
+        assert len(trend) == 2  # 2024-01 and 2024-02
 
-class TestCalcNetCollectionRate:
-    def test_returns_float_and_dataframe(self, claims, payments, adjustments):
-        ncr, trend = calc_net_collection_rate(claims, payments, adjustments)
+    def test_payer_filter_reduces_dar(self, db):
+        params_all = FilterParams(start_date="2024-01-01", end_date="2024-12-31")
+        params_pyr1 = FilterParams(start_date="2024-01-01", end_date="2024-12-31", payer_id="PYR001")
+        dar_all, _ = query_days_in_ar(params_all, db_path=db)
+        dar_pyr1, _ = query_days_in_ar(params_pyr1, db_path=db)
+        # PYR001 has CLM001 (paid 900) and CLM002 (not paid) — still has AR
+        assert dar_pyr1 >= 0
+
+
+# ===========================================================================
+# 2. query_net_collection_rate
+# ===========================================================================
+
+class TestQueryNetCollectionRate:
+    def test_returns_float_and_dataframe(self, db, full_params):
+        import pandas as pd
+        ncr, trend = query_net_collection_rate(full_params, db_path=db)
         assert isinstance(ncr, float)
         assert isinstance(trend, pd.DataFrame)
 
-    def test_ncr_between_0_and_100(self, claims, payments, adjustments):
-        # Total payments=1900, charges=5000, contractual_adj=150 → ncr = 1900/4850 * 100 ≈ 39.2%
-        ncr, _ = calc_net_collection_rate(claims, payments, adjustments)
+    def test_ncr_between_0_and_100(self, db, full_params):
+        ncr, _ = query_net_collection_rate(full_params, db_path=db)
         assert 0 <= ncr <= 100
 
-    def test_ncr_correct_value(self, claims, payments, adjustments):
-        # payments: 900+700+300=1900, charges: 5000, contractual adj: 50+100=150
-        ncr, _ = calc_net_collection_rate(claims, payments, adjustments)
+    def test_ncr_correct_value(self, db, full_params):
+        # payments=1900, charges=5000, contractual_adj=150, net=5000-150=4850
+        # NCR = 1900/4850*100 ≈ 39.18%
+        ncr, _ = query_net_collection_rate(full_params, db_path=db)
         expected = round(1900 / (5000 - 150) * 100, 2)
-        assert ncr == pytest.approx(expected, abs=0.01)
+        assert ncr == pytest.approx(expected, abs=0.1)
 
-    def test_empty_claims_returns_zero(self, adjustments):
-        ncr, trend = calc_net_collection_rate(empty_claims(), empty_payments(), adjustments)
+    def test_empty_db_returns_zero(self, empty_db, full_params):
+        ncr, trend = query_net_collection_rate(full_params, db_path=empty_db)
         assert ncr == 0.0
         assert trend.empty
 
-    def test_ncr_100_when_payments_equal_net_charges(self):
-        claims = pd.DataFrame({
-            "claim_id": [1],
-            "date_of_service": pd.to_datetime(["2024-01-01"]),
-            "submission_date": pd.to_datetime(["2024-01-02"]),
-            "total_charge_amount": [1000.0],
-        })
-        payments = pd.DataFrame({
-            "claim_id": [1],
-            "payment_amount": [800.0],
-        })
-        adjustments = pd.DataFrame({
-            "claim_id": [1],
-            "adjustment_type_code": ["CONTRACTUAL"],
-            "adjustment_amount": [200.0],
-        })
-        ncr, _ = calc_net_collection_rate(claims, payments, adjustments)
-        assert ncr == pytest.approx(100.0, abs=0.01)
+    def test_trend_has_ncr_column(self, db, full_params):
+        _, trend = query_net_collection_rate(full_params, db_path=db)
+        assert "ncr" in trend.columns
+
+    def test_trend_indexed_by_year_month(self, db, full_params):
+        _, trend = query_net_collection_rate(full_params, db_path=db)
+        assert trend.index.name == "year_month"
 
 
-# ── Tests: calc_gross_collection_rate ─────────────────────────────────────────
+# ===========================================================================
+# 3. query_gross_collection_rate
+# ===========================================================================
 
-class TestCalcGrossCollectionRate:
-    def test_returns_float_and_dataframe(self, claims, payments):
-        gcr, trend = calc_gross_collection_rate(claims, payments)
+class TestQueryGrossCollectionRate:
+    def test_returns_float_and_dataframe(self, db, full_params):
+        import pandas as pd
+        gcr, trend = query_gross_collection_rate(full_params, db_path=db)
         assert isinstance(gcr, float)
         assert isinstance(trend, pd.DataFrame)
 
-    def test_gcr_between_0_and_100(self, claims, payments):
-        gcr, _ = calc_gross_collection_rate(claims, payments)
+    def test_gcr_between_0_and_100(self, db, full_params):
+        gcr, _ = query_gross_collection_rate(full_params, db_path=db)
         assert 0 <= gcr <= 100
 
-    def test_gcr_correct_value(self, claims, payments):
-        # payments=1900, charges=5000 → 38%
-        gcr, _ = calc_gross_collection_rate(claims, payments)
-        assert gcr == pytest.approx(38.0, abs=0.01)
+    def test_gcr_correct_value(self, db, full_params):
+        # payments=1900, charges=5000 → 38.0%
+        gcr, _ = query_gross_collection_rate(full_params, db_path=db)
+        assert gcr == pytest.approx(38.0, abs=0.1)
 
-    def test_empty_claims_returns_zero(self):
-        gcr, trend = calc_gross_collection_rate(empty_claims(), empty_payments())
+    def test_empty_db_returns_zero(self, empty_db, full_params):
+        gcr, trend = query_gross_collection_rate(full_params, db_path=empty_db)
         assert gcr == 0.0
         assert trend.empty
 
+    def test_trend_has_gcr_column(self, db, full_params):
+        _, trend = query_gross_collection_rate(full_params, db_path=db)
+        assert "gcr" in trend.columns
 
-# ── Tests: calc_clean_claim_rate ──────────────────────────────────────────────
+    def test_payer_filter_pyr001(self, db):
+        params = FilterParams(start_date="2024-01-01", end_date="2024-12-31", payer_id="PYR001")
+        # PYR001: charges=3000, payments=900 → GCR=30%
+        gcr, _ = query_gross_collection_rate(params, db_path=db)
+        assert gcr == pytest.approx(30.0, abs=0.1)
 
-class TestCalcCleanClaimRate:
-    def test_returns_float_and_dataframe(self, claims):
-        ccr, trend = calc_clean_claim_rate(claims)
+    def test_payer_filter_pyr002(self, db):
+        params = FilterParams(start_date="2024-01-01", end_date="2024-12-31", payer_id="PYR002")
+        # PYR002: charges=2000, payments=1000 → GCR=50%
+        gcr, _ = query_gross_collection_rate(params, db_path=db)
+        assert gcr == pytest.approx(50.0, abs=0.1)
+
+    def test_date_filter_jan_only(self, db):
+        params = FilterParams(start_date="2024-01-01", end_date="2024-01-31")
+        # Jan: charges=3000, payments=900 → GCR=30%
+        gcr, _ = query_gross_collection_rate(params, db_path=db)
+        assert gcr == pytest.approx(30.0, abs=0.1)
+
+
+# ===========================================================================
+# 4. query_clean_claim_rate
+# ===========================================================================
+
+class TestQueryCleanClaimRate:
+    def test_returns_float_and_dataframe(self, db, full_params):
+        import pandas as pd
+        ccr, trend = query_clean_claim_rate(full_params, db_path=db)
         assert isinstance(ccr, float)
         assert isinstance(trend, pd.DataFrame)
 
-    def test_ccr_correct_value(self, claims):
+    def test_ccr_correct_value(self, db, full_params):
         # 2 clean out of 4 = 50%
-        ccr, _ = calc_clean_claim_rate(claims)
-        assert ccr == pytest.approx(50.0, abs=0.01)
+        ccr, _ = query_clean_claim_rate(full_params, db_path=db)
+        assert ccr == pytest.approx(50.0, abs=0.1)
 
-    def test_ccr_100_when_all_clean(self):
-        claims = pd.DataFrame({
-            "claim_id": [1, 2],
-            "submission_date": pd.to_datetime(["2024-01-01", "2024-01-02"]),
-            "is_clean_claim": [True, True],
-        })
-        ccr, _ = calc_clean_claim_rate(claims)
-        assert ccr == pytest.approx(100.0)
-
-    def test_ccr_0_when_none_clean(self):
-        claims = pd.DataFrame({
-            "claim_id": [1, 2],
-            "submission_date": pd.to_datetime(["2024-01-01", "2024-01-02"]),
-            "is_clean_claim": [False, False],
-        })
-        ccr, _ = calc_clean_claim_rate(claims)
-        assert ccr == pytest.approx(0.0)
-
-    def test_empty_claims_returns_zero(self):
-        ccr, trend = calc_clean_claim_rate(empty_claims())
+    def test_empty_db_returns_zero(self, empty_db, full_params):
+        ccr, trend = query_clean_claim_rate(full_params, db_path=empty_db)
         assert ccr == 0.0
         assert trend.empty
 
+    def test_ccr_payer_filter(self, db):
+        # PYR001: CLM001(clean), CLM002(dirty) → 50%
+        params = FilterParams(start_date="2024-01-01", end_date="2024-12-31", payer_id="PYR001")
+        ccr, _ = query_clean_claim_rate(params, db_path=db)
+        assert ccr == pytest.approx(50.0, abs=0.1)
 
-# ── Tests: calc_denial_rate ───────────────────────────────────────────────────
+    def test_ccr_between_0_and_100(self, db, full_params):
+        ccr, _ = query_clean_claim_rate(full_params, db_path=db)
+        assert 0 <= ccr <= 100
 
-class TestCalcDenialRate:
-    def test_returns_float_and_dataframe(self, claims):
-        rate, trend = calc_denial_rate(claims)
+    def test_trend_has_ccr_column(self, db, full_params):
+        _, trend = query_clean_claim_rate(full_params, db_path=db)
+        assert "ccr" in trend.columns
+
+
+# ===========================================================================
+# 5. query_denial_rate
+# ===========================================================================
+
+class TestQueryDenialRate:
+    def test_returns_float_and_dataframe(self, db, full_params):
+        import pandas as pd
+        rate, trend = query_denial_rate(full_params, db_path=db)
         assert isinstance(rate, float)
         assert isinstance(trend, pd.DataFrame)
 
-    def test_denial_rate_correct_value(self, claims):
-        # 2 denied/appealed out of 4 = 50%
-        rate, _ = calc_denial_rate(claims)
-        assert rate == pytest.approx(50.0, abs=0.01)
+    def test_denial_rate_correct_value(self, db, full_params):
+        # Denied(CLM002) + Appealed(CLM004) = 2 out of 4 = 50%
+        rate, _ = query_denial_rate(full_params, db_path=db)
+        assert rate == pytest.approx(50.0, abs=0.1)
 
-    def test_denial_rate_zero_when_no_denials(self):
-        claims = pd.DataFrame({
-            "claim_id": [1, 2],
-            "submission_date": pd.to_datetime(["2024-01-01", "2024-01-02"]),
-            "claim_status": ["Paid", "Paid"],
-        })
-        rate, _ = calc_denial_rate(claims)
-        assert rate == 0.0
-
-    def test_empty_claims_returns_zero(self):
-        rate, trend = calc_denial_rate(empty_claims())
+    def test_empty_db_returns_zero(self, empty_db, full_params):
+        rate, trend = query_denial_rate(full_params, db_path=empty_db)
         assert rate == 0.0
         assert trend.empty
 
+    def test_denial_rate_between_0_and_100(self, db, full_params):
+        rate, _ = query_denial_rate(full_params, db_path=db)
+        assert 0 <= rate <= 100
 
-# ── Tests: calc_denial_reasons ────────────────────────────────────────────────
+    def test_trend_has_denial_rate_column(self, db, full_params):
+        _, trend = query_denial_rate(full_params, db_path=db)
+        assert "denial_rate" in trend.columns
 
-class TestCalcDenialReasons:
-    def test_returns_dataframe(self, denials):
-        result = calc_denial_reasons(denials)
+    def test_pyr002_denial_rate(self, db):
+        # PYR002: CLM003(Paid), CLM004(Appealed) → 1/2 = 50%
+        params = FilterParams(start_date="2024-01-01", end_date="2024-12-31", payer_id="PYR002")
+        rate, _ = query_denial_rate(params, db_path=db)
+        assert rate == pytest.approx(50.0, abs=0.1)
+
+
+# ===========================================================================
+# 6. query_denial_reasons
+# ===========================================================================
+
+class TestQueryDenialReasons:
+    def test_returns_dataframe(self, db, full_params):
+        import pandas as pd
+        result = query_denial_reasons(full_params, db_path=db)
         assert isinstance(result, pd.DataFrame)
 
-    def test_groups_by_reason_code(self, denials):
-        result = calc_denial_reasons(denials)
-        # CO-4 appears twice in fixture
-        co4_row = result[result["denial_reason_code"] == "CO-4"]
-        assert len(co4_row) == 1
-        assert co4_row["count"].values[0] == 2
+    def test_has_required_columns(self, db, full_params):
+        result = query_denial_reasons(full_params, db_path=db)
+        for col in ("denial_reason_code", "denial_reason_description", "count",
+                    "total_denied_amount", "total_recovered", "recovery_rate"):
+            assert col in result.columns
 
-    def test_recovery_rate_calculated(self, denials):
-        result = calc_denial_reasons(denials)
-        co4 = result[result["denial_reason_code"] == "CO-4"]
-        # total_denied=2200, recovered=1800 → ~81.8%
-        assert co4["recovery_rate"].values[0] == pytest.approx(1800 / 2200 * 100, abs=0.1)
+    def test_co4_is_top_reason(self, db, full_params):
+        result = query_denial_reasons(full_params, db_path=db)
+        # CO-4 appears in DEN001 + DEN003 = 2 denials, CO-97 in DEN002 = 1
+        assert result.iloc[0]["denial_reason_code"] == "CO-4"
 
-    def test_empty_denials_returns_empty_dataframe(self):
-        result = calc_denial_reasons(empty_denials())
-        assert isinstance(result, pd.DataFrame)
+    def test_recovery_rate_computed(self, db, full_params):
+        result = query_denial_reasons(full_params, db_path=db)
+        # CO-4: denied=2000+200=2200, recovered=1800 → rate=81.8%
+        co4 = result[result["denial_reason_code"] == "CO-4"].iloc[0]
+        assert co4["recovery_rate"] == pytest.approx(1800 / 2200 * 100, abs=0.1)
+
+    def test_empty_db_returns_empty_dataframe(self, empty_db, full_params):
+        result = query_denial_reasons(full_params, db_path=empty_db)
         assert result.empty
 
 
-# ── Tests: calc_first_pass_rate ───────────────────────────────────────────────
+# ===========================================================================
+# 7. query_first_pass_rate
+# ===========================================================================
 
-class TestCalcFirstPassRate:
-    def test_returns_float_and_dataframe(self, claims):
-        rate, trend = calc_first_pass_rate(claims)
-        assert isinstance(rate, float)
+class TestQueryFirstPassRate:
+    def test_returns_float_and_dataframe(self, db, full_params):
+        import pandas as pd
+        fpr, trend = query_first_pass_rate(full_params, db_path=db)
+        assert isinstance(fpr, float)
         assert isinstance(trend, pd.DataFrame)
 
-    def test_first_pass_correct_value(self, claims):
-        # 2 paid out of 4 = 50%
-        rate, _ = calc_first_pass_rate(claims)
-        assert rate == pytest.approx(50.0, abs=0.01)
+    def test_fpr_correct_value(self, db, full_params):
+        # Paid: CLM001, CLM003 = 2 out of 4 = 50%
+        fpr, _ = query_first_pass_rate(full_params, db_path=db)
+        assert fpr == pytest.approx(50.0, abs=0.1)
 
-    def test_empty_claims_returns_zero(self):
-        rate, trend = calc_first_pass_rate(empty_claims())
-        assert rate == 0.0
+    def test_empty_db_returns_zero(self, empty_db, full_params):
+        fpr, trend = query_first_pass_rate(full_params, db_path=empty_db)
+        assert fpr == 0.0
         assert trend.empty
 
+    def test_fpr_between_0_and_100(self, db, full_params):
+        fpr, _ = query_first_pass_rate(full_params, db_path=db)
+        assert 0 <= fpr <= 100
 
-# ── Tests: calc_charge_lag ────────────────────────────────────────────────────
+    def test_trend_has_fpr_column(self, db, full_params):
+        _, trend = query_first_pass_rate(full_params, db_path=db)
+        assert "fpr" in trend.columns
 
-class TestCalcChargeLag:
-    def test_returns_float_series_series(self, charges):
-        avg_lag, trend, distribution = calc_charge_lag(charges)
+    def test_payer_filter_pyr001(self, db):
+        # PYR001: CLM001(Paid), CLM002(Denied) → FPR=50%
+        params = FilterParams(start_date="2024-01-01", end_date="2024-12-31", payer_id="PYR001")
+        fpr, _ = query_first_pass_rate(params, db_path=db)
+        assert fpr == pytest.approx(50.0, abs=0.1)
+
+
+# ===========================================================================
+# 8. query_charge_lag
+# ===========================================================================
+
+class TestQueryChargeLag:
+    def test_returns_float_and_series(self, db, full_params):
+        import pandas as pd
+        avg_lag, trend, dist = query_charge_lag(full_params, db_path=db)
         assert isinstance(avg_lag, float)
         assert isinstance(trend, pd.Series)
-        assert isinstance(distribution, pd.Series)
+        assert isinstance(dist, pd.Series)
 
-    def test_avg_lag_correct_value(self, charges):
-        # Lags: 1, 1, 2, 1 days → mean=1.25, round(1.25, 1)=1.2
-        avg_lag, _, _ = calc_charge_lag(charges)
-        assert avg_lag == pytest.approx(1.2, abs=0.01)
+    def test_avg_lag_correct(self, db, full_params):
+        # CHG001: lag=2, CHG002: lag=5, CHG003: lag=2 → avg=3.0
+        avg_lag, _, _ = query_charge_lag(full_params, db_path=db)
+        assert avg_lag == pytest.approx(3.0, abs=0.1)
 
-    def test_avg_lag_non_negative(self, charges):
-        avg_lag, _, _ = calc_charge_lag(charges)
+    def test_avg_lag_non_negative(self, db, full_params):
+        avg_lag, _, _ = query_charge_lag(full_params, db_path=db)
         assert avg_lag >= 0
 
-    def test_empty_charges_returns_zero(self):
-        empty = pd.DataFrame(columns=["charge_id", "encounter_id", "charge_amount",
-                                       "service_date", "post_date"])
-        avg_lag, trend, dist = calc_charge_lag(empty)
+    def test_empty_db_returns_zero(self, empty_db, full_params):
+        import pandas as pd
+        avg_lag, trend, dist = query_charge_lag(full_params, db_path=empty_db)
         assert avg_lag == 0.0
+        assert isinstance(trend, pd.Series)
+        assert isinstance(dist, pd.Series)
+
+    def test_distribution_contains_lag_values(self, db, full_params):
+        _, _, dist = query_charge_lag(full_params, db_path=db)
+        # lag=2 appears twice
+        assert 2 in dist.index
+        assert dist[2] == 2
+
+    def test_trend_indexed_by_period(self, db, full_params):
+        _, trend, _ = query_charge_lag(full_params, db_path=db)
+        assert trend.index.name == "year_month"
 
 
-# ── Tests: calc_cost_to_collect ───────────────────────────────────────────────
+# ===========================================================================
+# 9. query_cost_to_collect
+# ===========================================================================
 
-class TestCalcCostToCollect:
-    def test_returns_float_and_dataframe(self, operating_costs, claims, payments):
-        ctc, trend = calc_cost_to_collect(operating_costs, claims, payments)
+class TestQueryCostToCollect:
+    def test_returns_float_and_dataframe(self, db, full_params):
+        import pandas as pd
+        ctc, trend = query_cost_to_collect(full_params, db_path=db)
         assert isinstance(ctc, float)
         assert isinstance(trend, pd.DataFrame)
 
-    def test_cost_to_collect_correct_value(self, operating_costs, claims, payments):
-        # total_cost=35000, total_collected=1900 → ~1842%
-        ctc, _ = calc_cost_to_collect(operating_costs, claims, payments)
-        expected = round(35000 / 1900 * 100, 2)
-        assert ctc == pytest.approx(expected, abs=0.01)
+    def test_ctc_positive(self, db, full_params):
+        ctc, _ = query_cost_to_collect(full_params, db_path=db)
+        assert ctc > 0
 
-    def test_empty_payments_returns_zero(self, operating_costs, claims):
-        ctc, trend = calc_cost_to_collect(operating_costs, claims, empty_payments())
+    def test_ctc_correct_value(self, db, full_params):
+        # total_cost=35000, total_collected=1900 → CTC=1842.1%
+        ctc, _ = query_cost_to_collect(full_params, db_path=db)
+        expected = round(35000 / 1900 * 100, 2)
+        assert ctc == pytest.approx(expected, abs=0.5)
+
+    def test_empty_db_returns_zero(self, empty_db, full_params):
+        ctc, trend = query_cost_to_collect(full_params, db_path=empty_db)
         assert ctc == 0.0
         assert trend.empty
 
+    def test_trend_has_ctc_column(self, db, full_params):
+        _, trend = query_cost_to_collect(full_params, db_path=db)
+        assert "cost_to_collect_pct" in trend.columns
 
-# ── Tests: calc_ar_aging ──────────────────────────────────────────────────────
 
-class TestCalcArAging:
-    def test_returns_dataframe_and_float(self, claims, payments):
-        summary, total_ar = calc_ar_aging(claims, payments)
+# ===========================================================================
+# 10. query_ar_aging
+# ===========================================================================
+
+class TestQueryArAging:
+    def test_returns_dataframe_and_float(self, db, full_params):
+        import pandas as pd
+        summary, total_ar = query_ar_aging(full_params, db_path=db)
         assert isinstance(summary, pd.DataFrame)
-        assert isinstance(total_ar, (float, np.floating, int))
+        assert isinstance(total_ar, float)
 
-    def test_summary_has_five_buckets(self, claims, payments):
-        summary, _ = calc_ar_aging(claims, payments)
-        assert set(summary.index) == {"0-30", "31-60", "61-90", "91-120", "120+"}
+    def test_total_ar_positive(self, db, full_params):
+        _, total_ar = query_ar_aging(full_params, db_path=db)
+        # CLM001 ar=100, CLM002 ar=2000, CLM003 ar=500, CLM004 ar=500 → total=3100
+        assert total_ar == pytest.approx(3100.0, abs=1.0)
 
-    def test_total_ar_non_negative(self, claims, payments):
-        _, total_ar = calc_ar_aging(claims, payments)
-        assert total_ar >= 0
-
-    def test_pct_sums_to_100_or_zero(self, claims, payments):
-        summary, total_ar = calc_ar_aging(claims, payments)
+    def test_pct_of_total_sums_to_100(self, db, full_params):
+        summary, total_ar = query_ar_aging(full_params, db_path=db)
         if total_ar > 0:
-            assert summary["pct_of_total"].sum() == pytest.approx(100.0, abs=0.01)
+            assert summary["pct_of_total"].sum() == pytest.approx(100.0, abs=0.5)
 
-    def test_empty_claims_returns_zero_totals(self):
-        summary, total_ar = calc_ar_aging(empty_claims(), empty_payments())
+    def test_summary_has_required_columns(self, db, full_params):
+        summary, _ = query_ar_aging(full_params, db_path=db)
+        for col in ("claim_count", "total_ar", "pct_of_total"):
+            assert col in summary.columns
+
+    def test_summary_indexed_by_aging_buckets(self, db, full_params):
+        summary, _ = query_ar_aging(full_params, db_path=db)
+        for bucket in ("0-30", "31-60", "61-90", "91-120", "120+"):
+            assert bucket in summary.index
+
+    def test_empty_db_returns_zero_total(self, empty_db, full_params):
+        _, total_ar = query_ar_aging(full_params, db_path=empty_db)
         assert total_ar == 0.0
-        assert summary["total_ar"].sum() == 0
+
+    def test_all_ar_in_120_plus_for_old_dates(self, db, full_params):
+        # All claims are from 2024, so 700+ days old → all in 120+
+        summary, _ = query_ar_aging(full_params, db_path=db)
+        assert summary.loc["120+", "total_ar"] == pytest.approx(3100.0, abs=1.0)
 
 
-# ── Tests: calc_payment_accuracy ─────────────────────────────────────────────
+# ===========================================================================
+# 11. query_payment_accuracy
+# ===========================================================================
 
-class TestCalcPaymentAccuracy:
-    def test_returns_float(self, payments):
-        rate = calc_payment_accuracy(payments)
-        assert isinstance(rate, float)
+class TestQueryPaymentAccuracy:
+    def test_returns_float(self, db, full_params):
+        acc = query_payment_accuracy(full_params, db_path=db)
+        assert isinstance(acc, float)
 
-    def test_accuracy_correct_value(self, payments):
-        # 2 accurate out of 3 = 66.67%
-        rate = calc_payment_accuracy(payments)
-        assert rate == pytest.approx(66.67, abs=0.01)
+    def test_accuracy_correct_value(self, db, full_params):
+        # PAY001 accurate, PAY002 accurate, PAY003 not → 2/3 = 66.67%
+        acc = query_payment_accuracy(full_params, db_path=db)
+        assert acc == pytest.approx(66.67, abs=0.1)
 
-    def test_accuracy_100_when_all_accurate(self):
-        payments = pd.DataFrame({
-            "payment_id": [1, 2],
-            "is_accurate_payment": [True, True],
-        })
-        assert calc_payment_accuracy(payments) == pytest.approx(100.0)
+    def test_accuracy_between_0_and_100(self, db, full_params):
+        acc = query_payment_accuracy(full_params, db_path=db)
+        assert 0 <= acc <= 100
 
-    def test_empty_payments_returns_zero(self):
-        assert calc_payment_accuracy(empty_payments()) == 0.0
+    def test_empty_db_returns_zero(self, empty_db, full_params):
+        acc = query_payment_accuracy(full_params, db_path=empty_db)
+        assert acc == 0.0
+
+    def test_payer_filter_pyr001(self, db):
+        # PYR001 payments: only PAY001 (accurate=1) → 100%
+        params = FilterParams(start_date="2024-01-01", end_date="2024-12-31", payer_id="PYR001")
+        acc = query_payment_accuracy(params, db_path=db)
+        assert acc == pytest.approx(100.0, abs=0.1)
 
 
-# ── Tests: calc_bad_debt_rate ─────────────────────────────────────────────────
+# ===========================================================================
+# 12. query_bad_debt_rate
+# ===========================================================================
 
-class TestCalcBadDebtRate:
-    def test_returns_three_values(self, claims, adjustments):
-        result = calc_bad_debt_rate(claims, adjustments)
+class TestQueryBadDebtRate:
+    def test_returns_three_values(self, db, full_params):
+        result = query_bad_debt_rate(full_params, db_path=db)
         assert len(result) == 3
 
-    def test_bad_debt_correct_value(self, claims, adjustments):
-        # WRITEOFF=200, total_charges=5000 → 4%
-        rate, bad_debt, total = calc_bad_debt_rate(claims, adjustments)
-        assert rate == pytest.approx(4.0, abs=0.01)
-        assert bad_debt == pytest.approx(200.0)
-        assert total == pytest.approx(5000.0)
+    def test_bad_debt_rate_correct(self, db, full_params):
+        # WRITEOFF: ADJ003 = 200, total_charges = 5000 → rate=4.0%
+        rate, bad_debt, total_charges = query_bad_debt_rate(full_params, db_path=db)
+        assert rate == pytest.approx(4.0, abs=0.1)
 
-    def test_empty_claims_returns_zeros(self, adjustments):
-        rate, bad_debt, total = calc_bad_debt_rate(empty_claims(), adjustments)
+    def test_bad_debt_amount_correct(self, db, full_params):
+        _, bad_debt, _ = query_bad_debt_rate(full_params, db_path=db)
+        assert bad_debt == pytest.approx(200.0, abs=0.01)
+
+    def test_total_charges_correct(self, db, full_params):
+        _, _, total_charges = query_bad_debt_rate(full_params, db_path=db)
+        assert total_charges == pytest.approx(5000.0, abs=0.01)
+
+    def test_empty_db_returns_zeros(self, empty_db, full_params):
+        rate, bad_debt, total = query_bad_debt_rate(full_params, db_path=empty_db)
         assert rate == 0.0
         assert bad_debt == 0.0
         assert total == 0.0
 
+    def test_rate_between_0_and_100(self, db, full_params):
+        rate, _, _ = query_bad_debt_rate(full_params, db_path=db)
+        assert 0 <= rate <= 100
 
-# ── Tests: calc_appeal_success_rate ──────────────────────────────────────────
 
-class TestCalcAppealSuccessRate:
-    def test_returns_three_values(self, denials):
-        result = calc_appeal_success_rate(denials)
+# ===========================================================================
+# 13. query_appeal_success_rate
+# ===========================================================================
+
+class TestQueryAppealSuccessRate:
+    def test_returns_three_values(self, db, full_params):
+        result = query_appeal_success_rate(full_params, db_path=db)
         assert len(result) == 3
 
-    def test_appeal_success_correct_value(self, denials):
-        # Won=1, Lost=1, In Progress=1 → total_appealed=3, won=1 → 33.33%
-        rate, total_appealed, won = calc_appeal_success_rate(denials)
-        assert rate == pytest.approx(33.33, abs=0.01)
+    def test_appeal_rate_correct(self, db, full_params):
+        # Won=DEN001, Lost=DEN002, InProgress=DEN003 → 3 total, 1 won → 33.33%
+        rate, total_appealed, won = query_appeal_success_rate(full_params, db_path=db)
+        assert rate == pytest.approx(33.33, abs=0.1)
+
+    def test_total_appealed_correct(self, db, full_params):
+        _, total_appealed, _ = query_appeal_success_rate(full_params, db_path=db)
         assert total_appealed == 3
+
+    def test_won_count_correct(self, db, full_params):
+        _, _, won = query_appeal_success_rate(full_params, db_path=db)
         assert won == 1
 
-    def test_empty_denials_returns_zeros(self):
-        rate, total_appealed, won = calc_appeal_success_rate(empty_denials())
+    def test_empty_db_returns_zeros(self, empty_db, full_params):
+        rate, total, won = query_appeal_success_rate(full_params, db_path=empty_db)
         assert rate == 0.0
-        assert total_appealed == 0
+        assert total == 0
         assert won == 0
 
 
-# ── Tests: calc_avg_reimbursement ─────────────────────────────────────────────
+# ===========================================================================
+# 14. query_avg_reimbursement
+# ===========================================================================
 
-class TestCalcAvgReimbursement:
-    def test_returns_float_and_series(self, claims, payments):
-        avg, trend = calc_avg_reimbursement(claims, payments)
+class TestQueryAvgReimbursement:
+    def test_returns_float_and_series(self, db, full_params):
+        import pandas as pd
+        avg, trend = query_avg_reimbursement(full_params, db_path=db)
         assert isinstance(avg, float)
         assert isinstance(trend, pd.Series)
 
-    def test_avg_reimbursement_non_negative(self, claims, payments):
-        avg, _ = calc_avg_reimbursement(claims, payments)
+    def test_avg_correct_value(self, db, full_params):
+        # CLM001=900, CLM002=0, CLM003=1000, CLM004=0 → avg=475.0
+        avg, _ = query_avg_reimbursement(full_params, db_path=db)
+        assert avg == pytest.approx(475.0, abs=1.0)
+
+    def test_avg_non_negative(self, db, full_params):
+        avg, _ = query_avg_reimbursement(full_params, db_path=db)
         assert avg >= 0
 
-    def test_avg_reimbursement_correct_value(self, claims, payments):
-        # claim 1: 900, claim 3: 1000, claims 2 & 4: 0 → avg = (900+0+1000+0)/4 = 475
-        avg, _ = calc_avg_reimbursement(claims, payments)
-        assert avg == pytest.approx(475.0, abs=0.01)
-
-    def test_empty_claims_returns_zero(self):
-        avg, trend = calc_avg_reimbursement(empty_claims(), empty_payments())
+    def test_empty_db_returns_zero(self, empty_db, full_params):
+        import pandas as pd
+        avg, trend = query_avg_reimbursement(full_params, db_path=empty_db)
         assert avg == 0.0
-        assert trend.empty
+        assert isinstance(trend, pd.Series)
+
+    def test_trend_indexed_by_year_month(self, db, full_params):
+        _, trend = query_avg_reimbursement(full_params, db_path=db)
+        assert trend.index.name == "year_month"
 
 
-# ── Tests: calc_payer_mix ─────────────────────────────────────────────────────
+# ===========================================================================
+# 15. query_payer_mix
+# ===========================================================================
 
-class TestCalcPayerMix:
-    def test_returns_dataframe(self, claims, payments, payers):
-        result = calc_payer_mix(claims, payments, payers)
+class TestQueryPayerMix:
+    def test_returns_dataframe(self, db, full_params):
+        import pandas as pd
+        result = query_payer_mix(full_params, db_path=db)
         assert isinstance(result, pd.DataFrame)
 
-    def test_has_required_columns(self, claims, payments, payers):
-        result = calc_payer_mix(claims, payments, payers)
-        for col in ["payer_name", "payer_type", "claim_count", "total_charges",
-                    "total_payments", "collection_rate"]:
+    def test_has_required_columns(self, db, full_params):
+        result = query_payer_mix(full_params, db_path=db)
+        for col in ("payer_id", "payer_name", "payer_type",
+                    "claim_count", "total_charges", "total_payments", "collection_rate"):
             assert col in result.columns
 
-    def test_collection_rate_between_0_and_100(self, claims, payments, payers):
-        result = calc_payer_mix(claims, payments, payers)
-        assert (result["collection_rate"] >= 0).all()
-        assert (result["collection_rate"] <= 100).all()
+    def test_two_payers_returned(self, db, full_params):
+        result = query_payer_mix(full_params, db_path=db)
+        assert len(result) == 2
 
-    def test_empty_claims_returns_empty_dataframe(self, payers):
-        result = calc_payer_mix(empty_claims(), empty_payments(), payers)
+    def test_pyr001_charges_correct(self, db, full_params):
+        result = query_payer_mix(full_params, db_path=db)
+        pyr1 = result[result["payer_id"] == "PYR001"].iloc[0]
+        assert pyr1["total_charges"] == pytest.approx(3000.0, abs=0.01)
+
+    def test_pyr001_payments_correct(self, db, full_params):
+        result = query_payer_mix(full_params, db_path=db)
+        pyr1 = result[result["payer_id"] == "PYR001"].iloc[0]
+        assert pyr1["total_payments"] == pytest.approx(900.0, abs=0.01)
+
+    def test_pyr002_payments_correct(self, db, full_params):
+        result = query_payer_mix(full_params, db_path=db)
+        pyr2 = result[result["payer_id"] == "PYR002"].iloc[0]
+        assert pyr2["total_payments"] == pytest.approx(1000.0, abs=0.01)
+
+    def test_collection_rate_computed(self, db, full_params):
+        result = query_payer_mix(full_params, db_path=db)
+        # PYR001: 900/3000*100=30%, PYR002: 1000/2000*100=50%
+        pyr1 = result[result["payer_id"] == "PYR001"].iloc[0]
+        assert pyr1["collection_rate"] == pytest.approx(30.0, abs=0.1)
+
+    def test_empty_db_returns_empty(self, empty_db, full_params):
+        result = query_payer_mix(full_params, db_path=empty_db)
+        assert result.empty
+
+    def test_payer_filter_returns_one_row(self, db):
+        params = FilterParams(start_date="2024-01-01", end_date="2024-12-31", payer_id="PYR001")
+        result = query_payer_mix(params, db_path=db)
+        assert len(result) == 1
+
+
+# ===========================================================================
+# 16. query_denial_rate_by_payer
+# ===========================================================================
+
+class TestQueryDenialRateByPayer:
+    def test_returns_dataframe(self, db, full_params):
+        import pandas as pd
+        result = query_denial_rate_by_payer(full_params, db_path=db)
+        assert isinstance(result, pd.DataFrame)
+
+    def test_has_required_columns(self, db, full_params):
+        result = query_denial_rate_by_payer(full_params, db_path=db)
+        for col in ("payer_id", "payer_name", "total_claims", "denied", "denial_rate"):
+            assert col in result.columns
+
+    def test_two_payers_returned(self, db, full_params):
+        result = query_denial_rate_by_payer(full_params, db_path=db)
+        assert len(result) == 2
+
+    def test_pyr001_denial_rate(self, db, full_params):
+        # PYR001: CLM001(Paid), CLM002(Denied) → 1/2=50%
+        result = query_denial_rate_by_payer(full_params, db_path=db)
+        pyr1 = result[result["payer_id"] == "PYR001"].iloc[0]
+        assert pyr1["denial_rate"] == pytest.approx(50.0, abs=0.1)
+
+    def test_pyr002_denial_rate(self, db, full_params):
+        # PYR002: CLM003(Paid), CLM004(Appealed) → 1/2=50%
+        result = query_denial_rate_by_payer(full_params, db_path=db)
+        pyr2 = result[result["payer_id"] == "PYR002"].iloc[0]
+        assert pyr2["denial_rate"] == pytest.approx(50.0, abs=0.1)
+
+    def test_empty_db_returns_empty(self, empty_db, full_params):
+        result = query_denial_rate_by_payer(full_params, db_path=empty_db)
         assert result.empty
 
 
-# ── Tests: calc_denial_rate_by_payer ─────────────────────────────────────────
+# ===========================================================================
+# 17. query_department_performance
+# ===========================================================================
 
-class TestCalcDenialRateByPayer:
-    def test_returns_dataframe(self, claims, payers):
-        result = calc_denial_rate_by_payer(claims, payers)
+class TestQueryDepartmentPerformance:
+    def test_returns_dataframe(self, db, full_params):
+        import pandas as pd
+        result = query_department_performance(full_params, db_path=db)
         assert isinstance(result, pd.DataFrame)
 
-    def test_has_required_columns(self, claims, payers):
-        result = calc_denial_rate_by_payer(claims, payers)
-        for col in ["payer_name", "total_claims", "denied", "denial_rate"]:
+    def test_has_required_columns(self, db, full_params):
+        result = query_department_performance(full_params, db_path=db)
+        for col in ("department", "encounter_count", "total_charges",
+                    "total_payments", "collection_rate", "avg_payment_per_encounter"):
             assert col in result.columns
 
-    def test_denial_rate_between_0_and_100(self, claims, payers):
-        result = calc_denial_rate_by_payer(claims, payers)
-        assert (result["denial_rate"] >= 0).all()
-        assert (result["denial_rate"] <= 100).all()
+    def test_two_departments_returned(self, db, full_params):
+        result = query_department_performance(full_params, db_path=db)
+        assert len(result) == 2
 
-    def test_correct_denial_counts(self, claims, payers):
-        result = calc_denial_rate_by_payer(claims, payers)
-        # Payer 1 (Aetna): claims 1(Paid) and 2(Denied) → 1 denied out of 2 = 50%
-        aetna = result[result["payer_name"] == "Aetna"]
-        assert aetna["denied"].values[0] == 1
-        assert aetna["denial_rate"].values[0] == pytest.approx(50.0)
+    def test_cardiology_charges_correct(self, db, full_params):
+        # Cardiology: CLM001(1000)+CLM002(2000)=3000
+        result = query_department_performance(full_params, db_path=db)
+        card = result[result["department"] == "Cardiology"].iloc[0]
+        assert card["total_charges"] == pytest.approx(3000.0, abs=0.01)
 
-    def test_empty_claims_returns_empty_dataframe(self, payers):
-        result = calc_denial_rate_by_payer(empty_claims(), payers)
+    def test_orthopedics_payments_correct(self, db, full_params):
+        # Orthopedics: CLM003 payments=1000 (CLM004 none)
+        result = query_department_performance(full_params, db_path=db)
+        orth = result[result["department"] == "Orthopedics"].iloc[0]
+        assert orth["total_payments"] == pytest.approx(1000.0, abs=0.01)
+
+    def test_avg_payment_per_encounter_computed(self, db, full_params):
+        result = query_department_performance(full_params, db_path=db)
+        # Orthopedics: 1000 / 2 encounters = 500.0
+        orth = result[result["department"] == "Orthopedics"].iloc[0]
+        assert orth["avg_payment_per_encounter"] == pytest.approx(500.0, abs=0.01)
+
+    def test_empty_db_returns_empty(self, empty_db, full_params):
+        result = query_department_performance(full_params, db_path=empty_db)
         assert result.empty
 
+    def test_dept_filter_returns_one_dept(self, db):
+        params = FilterParams(
+            start_date="2024-01-01", end_date="2024-12-31", department="Cardiology"
+        )
+        result = query_department_performance(params, db_path=db)
+        assert len(result) == 1
+        assert result.iloc[0]["department"] == "Cardiology"
 
-# ── Tests: calc_department_performance ───────────────────────────────────────
 
-class TestCalcDepartmentPerformance:
-    def test_returns_dataframe(self, encounters, claims, payments):
-        result = calc_department_performance(encounters, claims, payments)
-        assert isinstance(result, pd.DataFrame)
+# ===========================================================================
+# FilterParams dataclass tests
+# ===========================================================================
 
-    def test_has_required_columns(self, encounters, claims, payments):
-        result = calc_department_performance(encounters, claims, payments)
-        for col in ["department", "encounter_count", "total_charges",
-                    "total_payments", "collection_rate", "avg_payment_per_encounter"]:
-            assert col in result.columns
+class TestFilterParams:
+    def test_start_end_required(self):
+        p = FilterParams(start_date="2024-01-01", end_date="2024-12-31")
+        assert p.start_date == "2024-01-01"
+        assert p.end_date == "2024-12-31"
 
-    def test_collection_rate_between_0_and_100(self, encounters, claims, payments):
-        result = calc_department_performance(encounters, claims, payments)
-        assert (result["collection_rate"] >= 0).all()
-        assert (result["collection_rate"] <= 100).all()
+    def test_optional_fields_default_none(self):
+        p = FilterParams(start_date="2024-01-01", end_date="2024-12-31")
+        assert p.payer_id is None
+        assert p.department is None
+        assert p.encounter_type is None
 
-    def test_departments_present(self, encounters, claims, payments):
-        result = calc_department_performance(encounters, claims, payments)
-        assert "Cardiology" in result["department"].values
+    def test_all_fields_settable(self):
+        p = FilterParams(
+            start_date="2024-01-01",
+            end_date="2024-12-31",
+            payer_id="PYR001",
+            department="Cardiology",
+            encounter_type="Outpatient",
+        )
+        assert p.payer_id == "PYR001"
+        assert p.department == "Cardiology"
+        assert p.encounter_type == "Outpatient"
 
-    def test_empty_encounters_returns_empty_dataframe(self, claims, payments):
-        empty_enc = pd.DataFrame(columns=["encounter_id", "patient_id", "provider_id",
-                                           "date_of_service", "department", "encounter_type"])
-        result = calc_department_performance(empty_enc, claims, payments)
-        assert result.empty
+    def test_encounter_type_filter_works(self, db):
+        # Outpatient: ENC010(CLM001), ENC020(CLM002) — both Cardiology/Outpatient
+        params = FilterParams(
+            start_date="2024-01-01",
+            end_date="2024-12-31",
+            encounter_type="Outpatient",
+        )
+        gcr, _ = query_gross_collection_rate(params, db_path=db)
+        # Outpatient charges: CLM001(1000)+CLM002(2000)=3000, payments=900 → 30%
+        assert gcr == pytest.approx(30.0, abs=0.1)

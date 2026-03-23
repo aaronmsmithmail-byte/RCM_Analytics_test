@@ -813,6 +813,51 @@ def get_table_info(table_name, db_path=None):
         conn.close()
 
 
+def build_filter_cte(start_date, end_date, payer_id=None,
+                     department=None, encounter_type=None):
+    """
+    Return a (cte_sql, params) pair for the filtered_claims CTE.
+
+    The CTE joins silver_claims to silver_encounters so that all four
+    filter dimensions (date, payer, department, encounter type) can be
+    applied in a single WHERE clause.  All metric query functions use this
+    as their base SQL construct.
+
+    Args:
+        start_date:     'YYYY-MM-DD' lower bound for date_of_service (inclusive).
+        end_date:       'YYYY-MM-DD' upper bound for date_of_service (inclusive).
+        payer_id:       Optional payer_id to filter claims.
+        department:     Optional department name from silver_encounters.
+        encounter_type: Optional encounter_type from silver_encounters.
+
+    Returns:
+        tuple: (cte_sql, params)
+            cte_sql — SQL string starting with 'WITH filtered_claims AS ('.
+            params  — list of positional parameters to bind.
+    """
+    clauses = ["c.date_of_service BETWEEN ? AND ?"]
+    params = [start_date, end_date]
+    if payer_id:
+        clauses.append("c.payer_id = ?")
+        params.append(payer_id)
+    if department:
+        clauses.append("e.department = ?")
+        params.append(department)
+    if encounter_type:
+        clauses.append("e.encounter_type = ?")
+        params.append(encounter_type)
+
+    where_clause = " AND ".join(clauses)
+    cte_sql = f"""WITH filtered_claims AS (
+    SELECT c.*
+    FROM silver_claims c
+    LEFT JOIN silver_encounters e ON c.encounter_id = e.encounter_id
+    WHERE {where_clause}
+)
+"""
+    return cte_sql, params
+
+
 def has_medallion_schema(db_path=None):
     """
     Return True if the database already has the Silver layer populated.

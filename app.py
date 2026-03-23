@@ -66,24 +66,25 @@ from src.metadata_pages import (               # Four supplemental metadata page
     render_knowledge_graph,
     render_semantic_layer,
 )
-from src.metrics import (                        # 17 KPI calculation functions
-    calc_days_in_ar,
-    calc_net_collection_rate,
-    calc_gross_collection_rate,
-    calc_clean_claim_rate,
-    calc_denial_rate,
-    calc_denial_reasons,
-    calc_first_pass_rate,
-    calc_charge_lag,
-    calc_cost_to_collect,
-    calc_ar_aging,
-    calc_payment_accuracy,
-    calc_bad_debt_rate,
-    calc_appeal_success_rate,
-    calc_avg_reimbursement,
-    calc_payer_mix,
-    calc_denial_rate_by_payer,
-    calc_department_performance,
+from src.metrics import (                        # 17 SQL-based KPI query functions
+    FilterParams,
+    query_days_in_ar,
+    query_net_collection_rate,
+    query_gross_collection_rate,
+    query_clean_claim_rate,
+    query_denial_rate,
+    query_denial_reasons,
+    query_first_pass_rate,
+    query_charge_lag,
+    query_cost_to_collect,
+    query_ar_aging,
+    query_payment_accuracy,
+    query_bad_debt_rate,
+    query_appeal_success_rate,
+    query_avg_reimbursement,
+    query_payer_mix,
+    query_denial_rate_by_payer,
+    query_department_performance,
 )
 
 # ── Page Config ──────────────────────────────────────────────────────
@@ -221,7 +222,7 @@ payers = data["payers"]
 operating_costs = data["operating_costs"]
 
 # ── Data Validation ───────────────────────────────────────────────────
-_validation_issues = validate_all(data)
+_validation_issues = validate_all()   # reads directly from Silver tables
 
 # ── Sidebar Filters ─────────────────────────────────────────────────
 # Sidebar filters allow users to slice data interactively. The filter
@@ -288,13 +289,28 @@ if selected_enc_type != "All":
     f_claims = f_claims[f_claims["encounter_id"].isin(enc_ids)]
 
 # Filter related tables by cascading from filtered claims.
-# This ensures payments, denials, and adjustments only include records
-# that belong to the filtered set of claims.
+# These filtered DataFrames are used for drill-down sections and direct
+# DataFrame aggregations (waterfall, cash flow, claim status pie, etc.).
 claim_ids = f_claims["claim_id"].unique()
 f_payments = payments[payments["claim_id"].isin(claim_ids)].copy()
 f_denials = denials[denials["claim_id"].isin(claim_ids)].copy()
 f_adjustments = adjustments[adjustments["claim_id"].isin(claim_ids)].copy()
 f_charges = charges[charges["encounter_id"].isin(f_encounters["encounter_id"].unique())].copy()
+
+# ── Build FilterParams for SQL-based metric queries ──────────────────
+# All 17 metric query_* functions accept a FilterParams object that
+# encodes the same four sidebar dimensions as SQL WHERE clause parameters.
+_payer_id = (
+    payers[payers["payer_name"] == selected_payer]["payer_id"].values[0]
+    if selected_payer != "All" else None
+)
+params = FilterParams(
+    start_date=str(start_dt.date()),
+    end_date=str(end_dt.date()),
+    payer_id=_payer_id,
+    department=selected_dept if selected_dept != "All" else None,
+    encounter_type=selected_enc_type if selected_enc_type != "All" else None,
+)
 
 # ── Metadata navigation (sidebar) ────────────────────────────────────
 # These buttons must render BEFORE the page router so they appear on
@@ -361,15 +377,15 @@ tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
 with tab1:
     st.header("Executive Summary")
 
-    # Calculate all KPIs for the filtered data
-    dar_val, dar_trend = calc_days_in_ar(f_claims, f_payments)
-    ncr_val, ncr_trend = calc_net_collection_rate(f_claims, f_payments, f_adjustments)
-    gcr_val, gcr_trend = calc_gross_collection_rate(f_claims, f_payments)
-    ccr_val, ccr_trend = calc_clean_claim_rate(f_claims)
-    denial_val, denial_trend = calc_denial_rate(f_claims)
-    fpr_val, fpr_trend = calc_first_pass_rate(f_claims)
-    accuracy_val = calc_payment_accuracy(f_payments)
-    bad_debt_val, bad_debt_amt, total_charges = calc_bad_debt_rate(f_claims, f_adjustments)
+    # Calculate all KPIs via parameterized SQL queries against the Silver layer
+    dar_val, dar_trend = query_days_in_ar(params)
+    ncr_val, ncr_trend = query_net_collection_rate(params)
+    gcr_val, gcr_trend = query_gross_collection_rate(params)
+    ccr_val, ccr_trend = query_clean_claim_rate(params)
+    denial_val, denial_trend = query_denial_rate(params)
+    fpr_val, fpr_trend = query_first_pass_rate(params)
+    accuracy_val = query_payment_accuracy(params)
+    bad_debt_val, bad_debt_amt, total_charges = query_bad_debt_rate(params)
 
     # Top-level KPI cards
     col1, col2, col3, col4 = st.columns(4)
@@ -454,11 +470,11 @@ with tab1:
 with tab2:
     st.header("Collections & Revenue Analysis")
 
-    gcr_val, gcr_trend = calc_gross_collection_rate(f_claims, f_payments)
-    ncr_val, ncr_trend = calc_net_collection_rate(f_claims, f_payments, f_adjustments)
-    ctc_val, ctc_trend = calc_cost_to_collect(operating_costs, f_claims, f_payments)
-    avg_reimb, reimb_trend = calc_avg_reimbursement(f_claims, f_payments)
-    bad_debt_val, bad_debt_amt, total_charges_val = calc_bad_debt_rate(f_claims, f_adjustments)
+    gcr_val, gcr_trend = query_gross_collection_rate(params)
+    ncr_val, ncr_trend = query_net_collection_rate(params)
+    ctc_val, ctc_trend = query_cost_to_collect(params)
+    avg_reimb, reimb_trend = query_avg_reimbursement(params)
+    bad_debt_val, bad_debt_amt, total_charges_val = query_bad_debt_rate(params)
 
     # KPIs
     col1, col2, col3, col4 = st.columns(4)
@@ -562,12 +578,12 @@ with tab2:
 with tab3:
     st.header("Claims & Denials Analysis")
 
-    ccr_val, ccr_trend = calc_clean_claim_rate(f_claims)
-    denial_val, denial_trend = calc_denial_rate(f_claims)
-    fpr_val, fpr_trend = calc_first_pass_rate(f_claims)
-    denial_reasons = calc_denial_reasons(f_denials)
-    charge_lag_val, charge_lag_trend, charge_lag_dist = calc_charge_lag(f_charges)
-    appeal_rate, total_appealed, won_appeals = calc_appeal_success_rate(f_denials)
+    ccr_val, ccr_trend = query_clean_claim_rate(params)
+    denial_val, denial_trend = query_denial_rate(params)
+    fpr_val, fpr_trend = query_first_pass_rate(params)
+    denial_reasons = query_denial_reasons(params)
+    charge_lag_val, charge_lag_trend, charge_lag_dist = query_charge_lag(params)
+    appeal_rate, total_appealed, won_appeals = query_appeal_success_rate(params)
 
     # KPIs
     col1, col2, col3, col4 = st.columns(4)
@@ -668,8 +684,8 @@ with tab3:
 with tab4:
     st.header("Accounts Receivable Aging & Cash Flow")
 
-    dar_val, dar_trend = calc_days_in_ar(f_claims, f_payments)
-    aging_summary, total_ar = calc_ar_aging(f_claims, f_payments)
+    dar_val, dar_trend = query_days_in_ar(params)
+    aging_summary, total_ar = query_ar_aging(params)
 
     col1, col2, col3 = st.columns(3)
     with col1:
@@ -775,8 +791,8 @@ with tab4:
 with tab5:
     st.header("Payer Performance Analysis")
 
-    payer_mix = calc_payer_mix(f_claims, f_payments, payers)
-    denial_by_payer = calc_denial_rate_by_payer(f_claims, payers)
+    payer_mix = query_payer_mix(params)
+    denial_by_payer = query_denial_rate_by_payer(params)
 
     col_left, col_right = st.columns(2)
     with col_left:
@@ -922,7 +938,7 @@ with tab5:
 with tab6:
     st.header("Department Performance")
 
-    dept_perf = calc_department_performance(f_encounters, f_claims, f_payments)
+    dept_perf = query_department_performance(params)
 
     col_left, col_right = st.columns(2)
     with col_left:
