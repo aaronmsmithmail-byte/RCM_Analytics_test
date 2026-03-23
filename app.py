@@ -60,6 +60,12 @@ from plotly.subplots import make_subplots
 # Import our custom modules
 from src.data_loader import load_all_data       # Loads all tables from SQLite
 from src.validators import validate_all         # Data integrity checks
+from src.metadata_pages import (               # Four supplemental metadata pages
+    render_data_lineage,
+    render_data_catalog,
+    render_knowledge_graph,
+    render_semantic_layer,
+)
 from src.metrics import (                        # 17 KPI calculation functions
     calc_days_in_ar,
     calc_net_collection_rate,
@@ -90,6 +96,9 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded",
 )
+
+if "active_page" not in st.session_state:
+    st.session_state["active_page"] = "dashboard"
 
 # ── Custom CSS ───────────────────────────────────────────────────────
 # Streamlit allows injecting custom CSS via st.markdown with unsafe_allow_html.
@@ -286,6 +295,21 @@ f_payments = payments[payments["claim_id"].isin(claim_ids)].copy()
 f_denials = denials[denials["claim_id"].isin(claim_ids)].copy()
 f_adjustments = adjustments[adjustments["claim_id"].isin(claim_ids)].copy()
 f_charges = charges[charges["encounter_id"].isin(f_encounters["encounter_id"].unique())].copy()
+
+# ── Page router ──────────────────────────────────────────────────────
+_active = st.session_state["active_page"]
+if _active == "data_catalog":
+    render_data_catalog()
+    st.stop()
+elif _active == "data_lineage":
+    render_data_lineage()
+    st.stop()
+elif _active == "knowledge_graph":
+    render_knowledge_graph()
+    st.stop()
+elif _active == "semantic_layer":
+    render_semantic_layer()
+    st.stop()
 
 # ── Header ───────────────────────────────────────────────────────────
 st.title("Healthcare RCM Analytics Dashboard")
@@ -1028,6 +1052,20 @@ if _validation_issues:
         for issue in _validation_issues:
             icon = "🔴" if issue["level"] == "error" else "🟡"
             st.markdown(f"{icon} **{issue['table']}**: {issue['message']}")
+
+st.sidebar.divider()
+st.sidebar.markdown("### Metadata")
+if st.sidebar.button("Data Catalog", use_container_width=True):
+    st.session_state["active_page"] = "data_catalog"
+if st.sidebar.button("Data Lineage", use_container_width=True):
+    st.session_state["active_page"] = "data_lineage"
+if st.sidebar.button("Knowledge Graph", use_container_width=True):
+    st.session_state["active_page"] = "knowledge_graph"
+if st.sidebar.button("Semantic Layer", use_container_width=True):
+    st.session_state["active_page"] = "semantic_layer"
+if st.session_state["active_page"] != "dashboard":
+    if st.sidebar.button("Back to Dashboard", type="primary", use_container_width=True):
+        st.session_state["active_page"] = "dashboard"
 
 st.sidebar.divider()
 st.sidebar.caption("Healthcare RCM Analytics Dashboard v1.0")
