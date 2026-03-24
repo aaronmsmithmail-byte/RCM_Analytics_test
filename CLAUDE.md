@@ -125,11 +125,12 @@ Update `README.md` whenever:
 
 ```bash
 pytest tests/ -q          # must pass with 0 failures before every commit
-pytest tests/ -q | tail -1  # shows the count — currently 150 passed
+pytest tests/ -q | tail -1  # shows the count — currently 160 passed
 ```
 
 - `tests/test_metrics.py` — 110 tests covering all `query_*` functions in `src/metrics.py`
 - `tests/test_validators.py` — 40 tests covering all validators in `src/validators.py`
+- `tests/test_ai_chat_config.py` — 10 tests covering `AI_MAX_ROWS` and `AI_MAX_ITERATIONS` env var parsing in `src/ai_chat.py`
 
 Every new `query_*` function **must** have at least two unit tests (happy path + edge case with empty data).
 

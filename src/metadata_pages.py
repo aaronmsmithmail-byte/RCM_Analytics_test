@@ -292,19 +292,18 @@ _TABLE_CATALOG = [
     {"Layer": "Gold",   "Table": "gold_denial_analysis",       "Source System": "—", "Key Columns": "denial_reason_code, description, count, total_denied, total_recovered, recovery_rate", "Description": "SQL VIEW — denial volume and recovery rate by reason code", "Relationships": "Aggregates silver_denials"},
 ]
 
-# Source system for each CSV — used by the lineage diagram to color-code
-# nodes and show system provenance on hover.  Colors align with RCM_COLORS.
-_CSV_SOURCE_SYSTEMS = {
-    "payers":          ("Payer Master",         "#0EA5E9"),  # sky   — external contract data
-    "patients":        ("EHR",                  "#10B981"),  # green — clinical
-    "providers":       ("EHR",                  "#10B981"),  # green — clinical
-    "encounters":      ("EHR",                  "#10B981"),  # green — clinical
-    "charges":         ("EHR / Charge Capture", "#10B981"),  # green — clinical (CDM lives in EHR)
-    "claims":          ("Clearinghouse",         "#1E6FBF"),  # blue  — claims mgmt gateway
-    "payments":        ("Clearinghouse / ERA",   "#1E6FBF"),  # blue  — electronic remittance
-    "denials":         ("Clearinghouse / ERA",   "#1E6FBF"),  # blue  — payer response files
-    "adjustments":     ("Billing System",        "#6366F1"),  # indigo — write-off posting
-    "operating_costs": ("ERP / Finance",         "#14B8A6"),  # teal  — GL cost centre reports
+# Visual colours for CSV source system categories in the lineage diagram.
+# Keyed by system NAME (from meta_kg_nodes.source_system) — the name itself
+# is the single source of truth in the DB; only the colour is layout data.
+# Colours align with RCM_COLORS.
+_SOURCE_SYSTEM_COLORS = {
+    "Payer Master":          "#0EA5E9",  # sky   — external contract data
+    "EHR":                   "#10B981",  # green — clinical
+    "EHR / Charge Capture":  "#10B981",  # green — clinical (CDM lives in EHR)
+    "Clearinghouse":         "#1E6FBF",  # blue  — claims mgmt gateway
+    "Clearinghouse / ERA":   "#1E6FBF",  # blue  — electronic remittance / payer response
+    "Billing System":        "#6366F1",  # indigo — write-off posting
+    "ERP / Finance":         "#14B8A6",  # teal  — GL cost centre reports
 }
 
 
@@ -505,9 +504,18 @@ def render_data_lineage():
     def _e(src, tgt):
         edges.append((src, tgt))
 
+    # Source system names from DB — single source of truth per CLAUDE.md.
+    # Colours are visual/layout data only, looked up from _SOURCE_SYSTEM_COLORS.
+    _ss_df = _query_meta(
+        "SELECT entity_id, COALESCE(source_system, '') AS source_system "
+        "FROM meta_kg_nodes"
+    )
+    _csv_source = {} if _ss_df.empty else dict(zip(_ss_df["entity_id"], _ss_df["source_system"]))
+
     # CSV source nodes — color-coded by source system
     for t in TABLE_ORDER:
-        sys_name, sys_color = _CSV_SOURCE_SYSTEMS.get(t, ("Unknown", "#5b8dee"))
+        sys_name  = _csv_source.get(t, "")
+        sys_color = _SOURCE_SYSTEM_COLORS.get(sys_name, "#5b8dee")
         _n(f"csv_{t}", f"{t}.csv", X_CSV, tbl_y[t],
            sys_color, 11, "CSV Source",
            f"<b>{t}.csv</b><br>Source system: {sys_name}")
@@ -649,7 +657,8 @@ def render_data_lineage():
     st.caption("Each CSV file originates from a real-world source system. "
                "Node colours in the diagram above match the system category.")
     seen: dict = {}
-    for tbl, (sys_name, _) in _CSV_SOURCE_SYSTEMS.items():
+    for tbl in TABLE_ORDER:
+        sys_name = _csv_source.get(tbl, "Unknown")
         seen.setdefault(sys_name, []).append(f"{tbl}.csv")
     st.dataframe(
         pd.DataFrame([
