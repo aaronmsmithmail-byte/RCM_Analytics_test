@@ -56,6 +56,21 @@ When you modify any of these, the listed pages/features update on the next page 
 
 ---
 
+## Adding or Changing an Environment Variable
+
+1. Add the variable to `.env.example` with:
+   - A comment explaining what it does
+   - The default value (shown in the commented-out example)
+   - The range of valid values or format
+2. Update the **Configuration Reference** table in `README.md`
+3. Update the code that reads it (add `os.environ.get("VAR", "default")`)
+4. **Never** hard-code a value that might need to differ between environments
+
+> `.env.example` is the contract between the codebase and the operator.
+> Every env var the code reads must appear there.
+
+---
+
 ## Common Change Recipes
 
 ### Adding a New KPI

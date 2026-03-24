@@ -50,10 +50,12 @@ AVAILABLE_MODELS = [
 DEFAULT_MODEL = os.environ.get("OPENROUTER_MODEL", "openai/gpt-4o-mini")
 
 # Maximum rows returned to the LLM per query (prevents context overflow).
-_MAX_ROWS = 100
+# Override via AI_MAX_ROWS in .env — see .env.example.
+_MAX_ROWS = max(10, int(os.environ.get("AI_MAX_ROWS", "100")))
 
 # Maximum tool-call iterations per turn (prevents runaway loops).
-_MAX_ITERATIONS = 8
+# Override via AI_MAX_ITERATIONS in .env — see .env.example.
+_MAX_ITERATIONS = max(1, int(os.environ.get("AI_MAX_ITERATIONS", "8")))
 
 
 # ---------------------------------------------------------------------------

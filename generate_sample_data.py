@@ -55,7 +55,16 @@ from datetime import datetime, timedelta
 # ---------------------------------------------------------------------------
 random.seed(42)
 
-DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
+# Load .env so RCM_DATA_DIR override is respected when running this script
+# directly (the same variable used by src/database.py ETL pipeline).
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
+
+_DEFAULT_DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
+DATA_DIR = os.environ.get("RCM_DATA_DIR", _DEFAULT_DATA_DIR)
 os.makedirs(DATA_DIR, exist_ok=True)
 
 # ===========================================================================
@@ -727,6 +736,6 @@ if __name__ == "__main__":
     operating_costs = generate_operating_costs()
     print()
     print("=" * 60)
-    print("Done! All 10 CSV files created in ./data/")
+    print(f"Done! All 10 CSV files created in {DATA_DIR}/")
     print("Next step: Run 'python -m src.database' to load into SQLite.")
     print("=" * 60)

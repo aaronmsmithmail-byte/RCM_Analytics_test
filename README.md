@@ -84,21 +84,21 @@ On first launch, the app automatically loads these CSVs into a local SQLite data
 
 > **Schema migration:** If you regenerate sample data after a previous run, the app detects the schema version automatically and rebuilds all three medallion layers cleanly.
 
-### 5. (Optional) Configure the AI Assistant
+### 5. (Optional) Create a local configuration file
 
-Create a `.env` file in the project root with your OpenRouter API key:
+Copy the provided example to create your own `.env`:
+
+```bash
+cp .env.example .env
+```
+
+Then open `.env` and fill in any values you want to override.  At minimum, set `OPENROUTER_API_KEY` to enable the AI Assistant tab — all other variables have sensible defaults and can be left commented out.
 
 ```
-OPENROUTER_API_KEY=your_key_here
+OPENROUTER_API_KEY=your_key_here   # get a free key at openrouter.ai/keys
 ```
 
-Get a free key at [openrouter.ai/keys](https://openrouter.ai/keys).  The AI tab is disabled (shows a warning) when the key is absent — all other tabs work without it.
-
-You can also override the default model:
-
-```
-OPENROUTER_MODEL=anthropic/claude-3-5-sonnet
-```
+The `.env` file is listed in `.gitignore` and will never be committed.  See the [Configuration Reference](#configuration-reference) section below for all available variables.
 
 ### 6. Run the dashboard
 
@@ -180,6 +180,26 @@ RCM_Analytics_test/
     ├── test_metrics.py      # 110 unit tests for KPI metric functions
     └── test_validators.py   # 40 unit tests for data validators
 ```
+
+---
+
+## Configuration Reference
+
+All configuration is handled through environment variables loaded from a `.env` file.  Copy `.env.example` to `.env` and override only what you need — every variable has a default.
+
+| Variable | Default | Required | Description |
+|----------|---------|----------|-------------|
+| `OPENROUTER_API_KEY` | — | Yes (AI tab only) | API key for the OpenRouter LLM gateway. Get a free key at [openrouter.ai/keys](https://openrouter.ai/keys). All other tabs work without it. |
+| `OPENROUTER_MODEL` | `openai/gpt-4o-mini` | No | LLM model for the AI Assistant tab. Any model on [openrouter.ai/models](https://openrouter.ai/models) works. |
+| `AI_MAX_ROWS` | `100` | No | Maximum rows the AI tool returns per SQL query. Lower to reduce token cost; raise for wider result sets (min 10). |
+| `AI_MAX_ITERATIONS` | `8` | No | Maximum tool-call loop iterations per AI turn — one iteration = one SQL query + one LLM round-trip (min 1). |
+| `RCM_DB_PATH` | `./data/rcm_analytics.db` | No | Path to the SQLite database file. Override for Docker volume mounts or shared network paths. |
+| `RCM_DATA_DIR` | `./data/` | No | Directory containing the CSV source files. Used by `generate_sample_data.py` and the ETL pipeline. |
+| `STREAMLIT_SERVER_PORT` | `8501` | No | Port the Streamlit server listens on. Standard Streamlit env var. |
+| `STREAMLIT_SERVER_ADDRESS` | `localhost` | No | Bind address. Set to `0.0.0.0` to accept external connections (Docker). |
+| `STREAMLIT_BROWSER_GATHER_USAGE_STATS` | `true` | No | Set to `false` to disable Streamlit's anonymous usage reporting in production. |
+
+> **Adding a new variable?**  Add it to `.env.example` with a comment explaining the default, expected values, and impact.  Then update this table.
 
 ---
 

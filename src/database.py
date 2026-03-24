@@ -51,12 +51,27 @@ import sqlite3
 import os
 import pandas as pd
 
+# Load .env BEFORE computing path constants so RCM_DB_PATH / RCM_DATA_DIR
+# overrides are picked up even when database.py is the first module imported.
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
+
 # ---------------------------------------------------------------------------
 # Path Configuration
 # ---------------------------------------------------------------------------
-_BASE_DIR = os.path.dirname(os.path.dirname(__file__))
-DATA_DIR = os.path.join(_BASE_DIR, "data")
-DB_PATH = os.path.join(DATA_DIR, "rcm_analytics.db")
+# Defaults are derived from this file's location so the project is
+# self-contained and portable.  Override via environment variables when
+# the database or data files live outside the project directory (e.g.
+# Docker volume mounts).  See .env.example for full documentation.
+_BASE_DIR         = os.path.dirname(os.path.dirname(__file__))
+_DEFAULT_DATA_DIR = os.path.join(_BASE_DIR, "data")
+_DEFAULT_DB_PATH  = os.path.join(_DEFAULT_DATA_DIR, "rcm_analytics.db")
+
+DATA_DIR = os.environ.get("RCM_DATA_DIR", _DEFAULT_DATA_DIR)
+DB_PATH  = os.environ.get("RCM_DB_PATH",  _DEFAULT_DB_PATH)
 
 
 # ===========================================================================
