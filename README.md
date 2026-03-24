@@ -67,18 +67,18 @@ python generate_sample_data.py
 
 This creates 10 CSV files in the `data/` directory covering Jan 2024 – Dec 2025:
 
-| File | Rows | Description |
-|------|------|-------------|
-| `payers.csv` | 10 | Commercial, government, and self-pay payers |
-| `patients.csv` | 500 | Patient demographics and insurance info |
-| `providers.csv` | 25 | Providers across 10 departments |
-| `encounters.csv` | 3,000 | Patient encounters (outpatient, inpatient, ED, telehealth) |
-| `charges.csv` | ~5,900 | Charge records with CPT and ICD-10 codes |
-| `claims.csv` | 2,800 | Claims with status and scrubbing fail reason |
-| `payments.csv` | ~3,200 | Payments with allowed amount and accuracy flags |
-| `denials.csv` | ~400 | Denial records with appeal tracking |
-| `adjustments.csv` | 600 | Contractual, writeoff, and charity adjustments |
-| `operating_costs.csv` | 24 | Monthly RCM operational costs |
+| File | Rows | Source System | Description |
+|------|------|---------------|-------------|
+| `payers.csv` | 10 | Payer Master | Commercial, government, and self-pay payers |
+| `patients.csv` | 500 | EHR | Patient demographics and insurance info |
+| `providers.csv` | 25 | EHR | Providers across 10 departments |
+| `encounters.csv` | 3,000 | EHR | Patient encounters (outpatient, inpatient, ED, telehealth) |
+| `charges.csv` | ~5,900 | EHR / Charge Capture | Charge records with CPT and ICD-10 codes |
+| `claims.csv` | 2,800 | Clearinghouse | Claims with status and scrubbing fail reason |
+| `payments.csv` | ~3,200 | Clearinghouse / ERA | Payments with allowed amount and accuracy flags |
+| `denials.csv` | ~400 | Clearinghouse / ERA | Denial records with appeal tracking |
+| `adjustments.csv` | 600 | Billing System | Contractual, writeoff, and charity adjustments |
+| `operating_costs.csv` | 24 | ERP / Finance | Monthly RCM operational costs |
 
 On first launch, the app automatically loads these CSVs into a local SQLite database using the medallion pipeline (Bronze → Silver → Gold). No manual database setup is required.
 
