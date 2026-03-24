@@ -144,8 +144,19 @@ if "active_page" not in st.session_state:
 # modern SaaS pattern (see Linear, Vercel, Retool dashboards). Status is
 # communicated through the left-border color rather than background color,
 # which is easier to read and works well in both light and dark contexts.
+#
+# Typography: Plus Jakarta Sans replaces the Streamlit default system font.
+# It's professional and precise at small data-heavy sizes, has clear numeral
+# rendering for KPI values, and reads distinctively without being showy —
+# appropriate for a clinical analytics context.
 st.markdown("""
 <style>
+    /* ── Typography — Plus Jakarta Sans ── */
+    @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400&display=swap');
+    html, body, [class*="css"] {
+        font-family: 'Plus Jakarta Sans', sans-serif;
+    }
+
     /* ── KPI metric cards ── */
     .metric-card {
         background: #ffffff;
@@ -159,16 +170,48 @@ st.markdown("""
     .metric-card h2 {
         margin: 0 0 4px 0;
         font-size: 2rem;
-        font-weight: 700;
+        font-weight: 800;
         color: #1A2332;
-        letter-spacing: -0.02em;
+        letter-spacing: -0.03em;
+        font-family: 'Plus Jakarta Sans', sans-serif;
     }
-    .metric-card p { margin: 0; font-size: 0.875rem; color: #64748b; }
+    .metric-card p { margin: 0; font-size: 0.875rem; color: #64748b; font-weight: 500; }
     /* Status variants — only the left border changes */
     .metric-good { border-left-color: #10B981; }
     .metric-warn { border-left-color: #F59E0B; }
     .metric-bad  { border-left-color: #EF4444; }
     .benchmark-text { font-size: 0.75rem; color: #94a3b8; margin-top: 6px; }
+
+    /* ── Sidebar brand header ── */
+    .sidebar-brand {
+        background: linear-gradient(135deg, #1A2332 0%, #1E6FBF 100%);
+        border-radius: 10px;
+        padding: 14px 16px;
+        margin-bottom: 4px;
+    }
+    .sidebar-brand-title {
+        font-size: 1rem;
+        font-weight: 700;
+        color: #ffffff;
+        letter-spacing: -0.01em;
+        margin: 0;
+    }
+    .sidebar-brand-sub {
+        font-size: 0.7rem;
+        color: rgba(255,255,255,0.6);
+        margin: 2px 0 0 0;
+        font-weight: 500;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+    }
+    .sidebar-section-label {
+        font-size: 0.7rem;
+        font-weight: 700;
+        color: #94a3b8;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        margin: 14px 0 6px 0;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -317,7 +360,13 @@ _validation_issues = validate_all()   # reads directly from Silver tables
 #
 # All filters are applied BEFORE any metrics are calculated, so the
 # KPIs always reflect the filtered subset of data.
-st.sidebar.title("Filters")
+st.sidebar.markdown("""
+<div class="sidebar-brand">
+    <p class="sidebar-brand-title">🏥 RCM Analytics</p>
+    <p class="sidebar-brand-sub">Healthcare Revenue Cycle</p>
+</div>
+<p class="sidebar-section-label">Filters</p>
+""", unsafe_allow_html=True)
 
 # Date range filter — lets users focus on a specific time period
 min_date = claims["date_of_service"].min().date()
