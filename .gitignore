@@ -4,8 +4,9 @@ __pycache__/
 .streamlit/secrets.toml
 # SQLite database is generated from CSVs — no need to track in git
 *.db
-# Claude Code internal state
-.claude/
+# Claude Code internal state (ignore everything except committed skills)
+.claude/*
+!.claude/skills/
 # Environment variables — contains API keys, never commit
 .env
 .env.local
