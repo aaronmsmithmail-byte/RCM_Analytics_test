@@ -18,6 +18,27 @@ import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
 
+
+# ---------------------------------------------------------------------------
+# Shared DB helper
+# ---------------------------------------------------------------------------
+
+def _query_meta(sql: str) -> pd.DataFrame:
+    """
+    Run a SELECT against the SQLite DB and return a DataFrame.
+
+    Returns an empty DataFrame on any error so the page degrades gracefully
+    if the database hasn't been initialised yet.
+    """
+    from src.database import get_connection
+    conn = get_connection()
+    try:
+        return pd.read_sql_query(sql, conn)
+    except Exception:
+        return pd.DataFrame()
+    finally:
+        conn.close()
+
 # ── Shared graph helper ───────────────────────────────────────────────
 
 
@@ -97,8 +118,11 @@ def _draw_network_graph(nodes, edges, title, height=600):
 
 
 # ── KPI catalog data ──────────────────────────────────────────────────
+# NOTE: This dict is the FALLBACK only.  render_data_catalog() queries
+# meta_kpi_catalog from SQLite at render time; this list is used only
+# if the database isn't available yet (e.g. first-run before ETL).
 
-_KPI_CATALOG = [
+_KPI_CATALOG_FALLBACK = [
     {
         "Metric": "Days in A/R (DAR)",
         "Category": "Financial Performance",
@@ -324,9 +348,11 @@ _KG_RELATIONSHIPS = [
 ]
 
 
-# ── Semantic Layer data (module-level for AI app consumption) ─────────
+# ── Semantic Layer data ───────────────────────────────────────────────
+# NOTE: render_semantic_layer() queries meta_semantic_layer from SQLite.
+# This fallback list is used only when the DB is unavailable.
 
-_SEMANTIC_LAYER = [
+_SEMANTIC_LAYER_FALLBACK = [
     {"business_concept": "Revenue",       "kpi_name": "Gross Collection Rate",       "silver_columns": "silver_claims.total_charge_amount, silver_payments.payment_amount",                                                              "formula": "SUM(payments)/SUM(charges)×100",              "business_rule": "Measures total collections vs. gross billed"},
     {"business_concept": "Revenue",       "kpi_name": "Bad Debt Rate",               "silver_columns": "silver_adjustments.adjustment_type_code, silver_adjustments.adjustment_amount, silver_claims.total_charge_amount",               "formula": "SUM(bad_debt_adj)/SUM(charges)×100",           "business_rule": "Write-offs where type_code indicates bad debt"},
     {"business_concept": "Revenue",       "kpi_name": "Avg Reimbursement/Encounter", "silver_columns": "silver_payments.payment_amount, silver_encounters.encounter_id",                                                                 "formula": "SUM(payments)/COUNT(encounters)",              "business_rule": "Revenue efficiency per patient visit"},
@@ -349,38 +375,58 @@ _SEMANTIC_LAYER = [
 # ── Page 1: Data Catalog ──────────────────────────────────────────────
 
 def render_data_catalog():
-    """Searchable table of all 17 KPIs and 10 data tables."""
+    """Searchable KPI catalog and data tables reference — data pulled live from meta_kpi_catalog."""
     st.title("Data Catalog")
-    st.caption("Reference guide for all metrics and data tables used in this dashboard.")
+    st.caption("Reference guide for all KPI metrics and data tables. Sourced live from the meta_kpi_catalog table.")
 
-    # ── KPI section ──
+    # ── KPI section — query meta_kpi_catalog from DB ──────────────────
     st.subheader("KPI Metrics Catalog")
+
+    raw = _query_meta("""
+        SELECT metric_name  AS "Metric",
+               category     AS "Category",
+               definition   AS "Definition",
+               formula      AS "Formula",
+               COALESCE(benchmark, '—') AS "Benchmark"
+        FROM   meta_kpi_catalog
+        ORDER  BY category, metric_name
+    """)
+    if raw.empty:
+        # Fallback to static list when DB isn't ready
+        raw = pd.DataFrame(_KPI_CATALOG_FALLBACK).rename(columns={
+            "Metric": "Metric", "Category": "Category",
+            "Definition": "Definition", "Formula": "Formula",
+        })
+        raw["Benchmark"] = "—"
+        st.info("Live DB unavailable — showing static fallback catalog.")
+
+    total = len(raw)
     col1, col2 = st.columns([2, 1])
     with col1:
         search = st.text_input("Search metrics", placeholder="e.g. denial, collection, days...")
     with col2:
-        categories = ["All"] + sorted({r["Category"] for r in _KPI_CATALOG})
+        categories = ["All"] + sorted(raw["Category"].dropna().unique().tolist())
         cat_filter = st.selectbox("Category", categories)
 
-    df = pd.DataFrame(_KPI_CATALOG)
+    df = raw.copy()
     if search:
         mask = (
-            df["Metric"].str.contains(search, case=False, na=False) |
-            df["Definition"].str.contains(search, case=False, na=False) |
-            df["Formula"].str.contains(search, case=False, na=False)
+            df["Metric"].str.contains(search, case=False, na=False)
+            | df["Definition"].str.contains(search, case=False, na=False)
+            | df["Formula"].str.contains(search, case=False, na=False)
         )
         df = df[mask]
     if cat_filter != "All":
         df = df[df["Category"] == cat_filter]
 
-    st.dataframe(df, width="stretch", hide_index=True)
-    st.caption(f"{len(df)} of {len(_KPI_CATALOG)} metrics shown")
+    st.dataframe(df, use_container_width=True, hide_index=True)
+    st.caption(f"{len(df)} of {total} metrics shown")
 
     st.divider()
 
     # ── Data tables section ──
     st.subheader("Data Tables Catalog")
-    st.dataframe(pd.DataFrame(_TABLE_CATALOG), width="stretch", hide_index=True)
+    st.dataframe(pd.DataFrame(_TABLE_CATALOG), use_container_width=True, hide_index=True)
 
 
 # ── Page 2: Data Lineage ──────────────────────────────────────────────
@@ -653,11 +699,41 @@ def render_data_lineage():
 # ── Page 3: Knowledge Graph ───────────────────────────────────────────
 
 def render_knowledge_graph():
-    """Interactive entity-relationship diagram of the 10 data entities."""
+    """Interactive entity-relationship diagram — edges and descriptions sourced live from meta_kg_nodes/edges."""
     st.title("Knowledge Graph")
     st.caption("Entity relationships across the 10 data tables. Hover nodes for column details.")
 
-    _draw_network_graph(_KG_NODES, _KG_EDGES, "Entity Relationship Diagram", height=620)
+    # ── Enrich node hover text from meta_kg_nodes ──────────────────────
+    nodes_meta = _query_meta(
+        "SELECT entity_id, silver_table, description FROM meta_kg_nodes"
+    )
+    hover_map = (
+        {row.entity_id: f"{row.silver_table}: {row.description}"
+         for _, row in nodes_meta.iterrows()}
+        if not nodes_meta.empty else {}
+    )
+    enriched_nodes = [
+        {**n, "hover": hover_map.get(n["id"], n["hover"])}
+        for n in _KG_NODES
+    ]
+
+    # ── Build graph edges from meta_kg_edges ──────────────────────────
+    edges_meta = _query_meta(
+        "SELECT parent_entity, child_entity, join_column, cardinality FROM meta_kg_edges"
+    )
+    if not edges_meta.empty:
+        live_edges = [
+            {
+                "source": row.parent_entity,
+                "target": row.child_entity,
+                "label":  f"{row.cardinality} ({row.join_column})",
+            }
+            for _, row in edges_meta.iterrows()
+        ]
+    else:
+        live_edges = _KG_EDGES  # static fallback
+
+    _draw_network_graph(enriched_nodes, live_edges, "Entity Relationship Diagram", height=620)
 
     # Legend
     st.markdown("""
@@ -668,18 +744,26 @@ def render_knowledge_graph():
 | 🟠 Orange | Operational | operating_costs |
 """)
 
+    # ── Relationships table — query meta_kg_edges live ─────────────────
     st.subheader("Relationships")
-    rel_display = [
-        {
-            "Parent Table": r["parent_table"],
-            "Child Table":  r["child_table"],
-            "Join Column":  r["join_column"],
-            "Cardinality":  r["cardinality"],
-            "Business Meaning": r["business_meaning"],
-        }
-        for r in _KG_RELATIONSHIPS
-    ]
-    st.dataframe(pd.DataFrame(rel_display), width="stretch", hide_index=True)
+    rel_df = _query_meta("""
+        SELECT parent_entity   AS "Parent Table",
+               child_entity    AS "Child Table",
+               join_column     AS "Join Column",
+               cardinality     AS "Cardinality",
+               business_meaning AS "Business Meaning"
+        FROM   meta_kg_edges
+        ORDER  BY parent_entity, child_entity
+    """)
+    if rel_df.empty:
+        # Fallback
+        rel_df = pd.DataFrame([
+            {"Parent Table": r["parent_table"], "Child Table": r["child_table"],
+             "Join Column": r["join_column"], "Cardinality": r["cardinality"],
+             "Business Meaning": r["business_meaning"]}
+            for r in _KG_RELATIONSHIPS
+        ])
+    st.dataframe(rel_df, use_container_width=True, hide_index=True)
 
 
 # ── Page 4: Semantic Layer ────────────────────────────────────────────
@@ -735,19 +819,26 @@ def render_semantic_layer():
 
     st.divider()
 
-    # ── Semantic mapping table ──
+    # ── Semantic mapping table — query meta_semantic_layer live ────────
     st.subheader("Semantic Mapping")
-    semantic_display = [
-        {
-            "Business Concept": r["business_concept"],
-            "KPI":              r["kpi_name"],
-            "Silver Columns":   r["silver_columns"],
-            "Transformation":   r["formula"],
-            "Business Rule":    r["business_rule"],
-        }
-        for r in _SEMANTIC_LAYER
-    ]
-    st.dataframe(pd.DataFrame(semantic_display), width="stretch", hide_index=True)
+    sem_df = _query_meta("""
+        SELECT business_concept AS "Business Concept",
+               kpi_name         AS "KPI",
+               silver_columns   AS "Silver Columns",
+               formula          AS "Transformation",
+               business_rule    AS "Business Rule"
+        FROM   meta_semantic_layer
+        ORDER  BY business_concept, kpi_name
+    """)
+    if sem_df.empty:
+        # Fallback to static list
+        sem_df = pd.DataFrame([
+            {"Business Concept": r["business_concept"], "KPI": r["kpi_name"],
+             "Silver Columns": r["silver_columns"], "Transformation": r["formula"],
+             "Business Rule": r["business_rule"]}
+            for r in _SEMANTIC_LAYER_FALLBACK
+        ])
+    st.dataframe(sem_df, use_container_width=True, hide_index=True)
 
     st.divider()
 
