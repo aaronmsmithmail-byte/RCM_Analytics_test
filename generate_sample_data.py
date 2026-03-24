@@ -476,12 +476,23 @@ def generate_claims(encounters, patients):
             weights=[68, 8, 8, 12, 4]
         )[0]
         is_clean = random.choices([True, False], weights=[92, 8])[0] if status != "Denied" else random.choices([True, False], weights=[40, 60])[0]
+        # Assign a specific scrubbing fail reason to every dirty claim.
+        # Reason distribution reflects typical clearinghouse edit failure patterns.
+        if is_clean:
+            fail_reason = ""
+        else:
+            fail_reason = random.choices(
+                ["MISSING_AUTH", "ELIGIBILITY_FAIL", "CODING_ERROR",
+                 "DUPLICATE_SUBMISSION", "TIMELY_FILING", "MISSING_INFO"],
+                weights=[25, 20, 25, 10, 10, 10],
+            )[0]
         rows.append([claim_id, enc[0], enc[1], payer_id, dos, submission_date,
-                      total_charge, status, is_clean, "Electronic"])
+                      total_charge, status, is_clean, "Electronic", fail_reason])
     rows.sort(key=lambda r: r[5])
     write_csv("claims.csv",
               ["claim_id", "encounter_id", "patient_id", "payer_id", "date_of_service",
-               "submission_date", "total_charge_amount", "claim_status", "is_clean_claim", "submission_method"],
+               "submission_date", "total_charge_amount", "claim_status", "is_clean_claim",
+               "submission_method", "fail_reason"],
               rows)
     return rows
 

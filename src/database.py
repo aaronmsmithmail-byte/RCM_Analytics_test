@@ -132,6 +132,7 @@ CREATE TABLE IF NOT EXISTS bronze_claims (
     claim_status        TEXT,
     is_clean_claim      TEXT,
     submission_method   TEXT,
+    fail_reason         TEXT,
     _loaded_at          TEXT DEFAULT (datetime('now'))
 );
 
@@ -262,9 +263,19 @@ CREATE TABLE IF NOT EXISTS silver_claims (
     claim_status          TEXT NOT NULL,
     is_clean_claim        INTEGER,
     submission_method     TEXT,
+    fail_reason           TEXT,
     FOREIGN KEY (encounter_id) REFERENCES silver_encounters(encounter_id),
     FOREIGN KEY (patient_id)   REFERENCES silver_patients(patient_id),
     FOREIGN KEY (payer_id)     REFERENCES silver_payers(payer_id)
+);
+
+-- Pipeline metadata table — tracks last load time and row counts per domain.
+-- Used by the data freshness sidebar panel in the dashboard.
+CREATE TABLE IF NOT EXISTS pipeline_runs (
+    domain         TEXT PRIMARY KEY,
+    last_loaded_at TEXT NOT NULL,
+    row_count      INTEGER,
+    source_file    TEXT
 );
 
 CREATE TABLE IF NOT EXISTS silver_payments (
@@ -370,7 +381,8 @@ SELECT claim_id, encounter_id, patient_id, payer_id,
            WHEN 'YES'   THEN 1
            ELSE 0
        END,
-       submission_method
+       submission_method,
+       NULLIF(TRIM(COALESCE(fail_reason, '')), '') AS fail_reason
 FROM bronze_claims
 WHERE claim_id IS NOT NULL AND claim_id != '';
 
@@ -633,6 +645,14 @@ def load_csv_to_bronze(conn, bronze_table, csv_filename):
 
     conn.execute(f"DELETE FROM {bronze_table};")
     df.to_sql(bronze_table, conn, if_exists="append", index=False)
+
+    # Record load event in pipeline_runs for data freshness tracking.
+    domain = bronze_table.replace("bronze_", "")
+    conn.execute(
+        "INSERT OR REPLACE INTO pipeline_runs (domain, last_loaded_at, row_count, source_file) "
+        "VALUES (?, datetime('now'), ?, ?)",
+        (domain, len(df), csv_filename),
+    )
     conn.commit()
 
     print(f"  [OK] Bronze: loaded {len(df):,} rows into '{bronze_table}' from {csv_filename}")
@@ -691,6 +711,45 @@ def initialize_database(db_path=None):
     conn.execute("PRAGMA foreign_keys=ON;")
     conn.commit()
     print("  [OK] Legacy tables cleared.\n")
+
+    # ------------------------------------------------------------------
+    # Step 1b: Schema version migration
+    # Drop Silver tables and Gold views if the schema is outdated (e.g.
+    # fail_reason column added in a later version).  Bronze tables are
+    # always safe to keep — they are truncated and reloaded from CSV.
+    # ------------------------------------------------------------------
+    _silver_tables = [
+        "silver_claims", "silver_payments", "silver_denials", "silver_adjustments",
+        "silver_encounters", "silver_charges", "silver_payers", "silver_patients",
+        "silver_providers", "silver_operating_costs",
+    ]
+    _gold_views = [
+        "gold_monthly_kpis", "gold_payer_performance", "gold_department_performance",
+        "gold_ar_aging", "gold_denial_analysis",
+    ]
+    try:
+        # Check bronze_claims (not silver) because a previous partial run may
+        # have already rebuilt silver_claims with the new schema while leaving
+        # bronze_claims on the old schema (missing fail_reason).
+        cur = conn.execute("PRAGMA table_info(bronze_claims)")
+        existing_cols = {row[1] for row in cur.fetchall()}
+        if existing_cols and "fail_reason" not in existing_cols:
+            print("Step 1b: Schema migration — removing outdated Bronze/Silver/Gold objects...")
+            conn.execute("PRAGMA foreign_keys=OFF;")
+            for tbl in _silver_tables:
+                conn.execute(f"DROP TABLE IF EXISTS {tbl};")
+            for vw in _gold_views:
+                conn.execute(f"DROP VIEW IF EXISTS {vw};")
+            # Bronze tables are always reloaded from CSV — safe to drop for clean rebuild
+            _bronze_tables = ["bronze_" + t.replace("silver_", "") for t in _silver_tables]
+            for tbl in _bronze_tables:
+                conn.execute(f"DROP TABLE IF EXISTS {tbl};")
+            conn.execute("DROP TABLE IF EXISTS pipeline_runs;")
+            conn.execute("PRAGMA foreign_keys=ON;")
+            conn.commit()
+            print("  [OK] Migration complete — all layers will be rebuilt.\n")
+    except Exception:
+        pass  # table doesn't exist yet; normal first-run
 
     # ------------------------------------------------------------------
     # Step 2: Create schema (Bronze + Silver + Gold)
@@ -869,7 +928,9 @@ def has_medallion_schema(db_path=None):
         return False
     try:
         conn = sqlite3.connect(path)
-        conn.execute("SELECT 1 FROM silver_claims LIMIT 1")
+        # Check both that the table exists and that the schema is current
+        # (fail_reason column was added in schema v2).
+        conn.execute("SELECT fail_reason FROM silver_claims LIMIT 1")
         conn.close()
         return True
     except sqlite3.OperationalError:

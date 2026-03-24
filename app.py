@@ -111,6 +111,11 @@ from src.metrics import (                        # 17 SQL-based KPI query functi
     query_cpt_analysis,
     query_underpayment_analysis,
     query_underpayment_trend,
+    query_clean_claim_breakdown,
+    query_patient_responsibility_by_payer,
+    query_patient_responsibility_by_dept,
+    query_patient_responsibility_trend,
+    query_data_freshness,
 )
 
 # ── Page Config ──────────────────────────────────────────────────────
@@ -441,6 +446,25 @@ if _active_alerts:
 else:
     st.sidebar.success("✅ All KPIs within thresholds")
 
+# ── Data Freshness Sidebar Panel ─────────────────────────────────────
+st.sidebar.divider()
+_freshness_df = query_data_freshness()
+if not _freshness_df.empty:
+    _fresh_count    = int((_freshness_df["status"] == "fresh").sum())
+    _stale_count    = int((_freshness_df["status"] == "stale").sum())
+    _critical_count = int((_freshness_df["status"] == "critical").sum())
+    _panel_icon = "🟢" if _critical_count == 0 and _stale_count == 0 else ("🔴" if _critical_count > 0 else "🟡")
+    with st.sidebar.expander(f"{_panel_icon} Data Pipeline ({_fresh_count} fresh)", expanded=False):
+        st.caption("Last ETL run per domain vs. expected cadence.")
+        _status_icons = {"fresh": "🟢", "stale": "🟡", "critical": "🔴"}
+        for _, _row in _freshness_df.iterrows():
+            _icon = _status_icons.get(_row["status"], "⚪")
+            _age_str = f"{_row['age_hours']:.1f}h ago" if _row["age_hours"] < 48 else f"{_row['age_hours']/24:.1f}d ago"
+            st.markdown(
+                f"{_icon} **{_row['label']}**  \n"
+                f"&nbsp;&nbsp;{int(_row['row_count']):,} rows · {_age_str} · cadence {int(_row['cadence_hours'])}h"
+            )
+
 # ── Metadata navigation (sidebar) ────────────────────────────────────
 # These buttons must render BEFORE the page router so they appear on
 # every page, including metadata pages that call st.stop() early.
@@ -485,7 +509,7 @@ if f_claims.empty:
 style_metric_cards(background_color="#ffffff", border_left_color="#1E6FBF", border_color="#e2e8f0", box_shadow=True)
 
 # ── Tabs ─────────────────────────────────────────────────────────────
-tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10, tab11 = st.tabs([
     "Executive Summary",
     "Collections & Revenue",
     "Claims & Denials",
@@ -496,6 +520,7 @@ tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10 = st.tabs([
     "CPT Code Analysis",
     "Underpayment Analysis",
     "📈 Forecasting",
+    "Patient Responsibility",
 ])
 
 # =====================================================================
@@ -713,9 +738,7 @@ with tab2:
 with tab3:
     st.header("Claims & Denials Analysis")
 
-    ccr_val, ccr_trend = query_clean_claim_rate(params)
-    denial_val, denial_trend = query_denial_rate(params)
-    fpr_val, fpr_trend = query_first_pass_rate(params)
+    # ccr_val/trend, denial_val/trend, fpr_val/trend are pre-computed above the tabs.
     denial_reasons = query_denial_reasons(params)
     charge_lag_val, charge_lag_trend, charge_lag_dist = query_charge_lag(params)
     appeal_rate, total_appealed, won_appeals = query_appeal_success_rate(params)
@@ -804,6 +827,59 @@ with tab3:
         "Filtered Denials": f_denials,
     })
 
+    # ── Claim Scrubbing Rules Breakdown ───────────────────────────────
+    st.divider()
+    st.subheader("Claim Scrubbing Rules — Root Cause Breakdown")
+    st.caption(
+        "Why are dirty claims failing? Each failed claim is tagged with the specific "
+        "clearinghouse edit that triggered rejection."
+    )
+
+    scrub_df = query_clean_claim_breakdown(params)
+
+    if scrub_df.empty:
+        st.info("No dirty claim data available — all claims in this period are clean.")
+    else:
+        total_dirty_claims = int(scrub_df["count"].sum())
+        total_dirty_charges = scrub_df["total_charges"].sum()
+
+        ks1, ks2, ks3 = st.columns(3)
+        with ks1:
+            st.metric("Dirty Claims", f"{total_dirty_claims:,}")
+        with ks2:
+            st.metric("Charges at Risk", f"${total_dirty_charges:,.0f}")
+        with ks3:
+            top_reason = scrub_df.iloc[0]["label"] if not scrub_df.empty else "—"
+            st.metric("Top Fail Reason", top_reason)
+
+        col_sc1, col_sc2 = st.columns(2)
+        with col_sc1:
+            fig = px.bar(
+                scrub_df.sort_values("count"),
+                x="count", y="label", orientation="h",
+                color="pct_of_dirty",
+                color_continuous_scale="Reds",
+                labels={"count": "Dirty Claim Count", "label": "", "pct_of_dirty": "% of Dirty"},
+                title="Dirty Claims by Fail Reason",
+            )
+            fig.update_layout(height=360, margin=dict(t=40, b=10))
+            st.plotly_chart(fig, theme="streamlit", width="stretch")
+
+        with col_sc2:
+            fig = px.pie(
+                scrub_df, values="total_charges", names="label",
+                title="Charges at Risk by Fail Reason",
+                color_discrete_sequence=RCM_COLORS,
+            )
+            fig.update_layout(height=360, margin=dict(t=40, b=10))
+            st.plotly_chart(fig, theme="streamlit", width="stretch")
+
+        with st.expander("Scrubbing Detail & Resolution Guidance"):
+            guidance_df = scrub_df[["label", "count", "total_charges", "pct_of_dirty", "guidance"]].copy().round(2)
+            guidance_df.columns = ["Fail Reason", "Dirty Claims", "Charges at Risk ($)", "% of Dirty", "Resolution Guidance"]
+            st.dataframe(guidance_df, hide_index=True, width="stretch")
+            export_buttons("claim_scrubbing_breakdown", {"Scrubbing Breakdown": guidance_df})
+
 
 # =====================================================================
 # TAB 4: A/R AGING & CASH FLOW
@@ -819,7 +895,7 @@ with tab3:
 with tab4:
     st.header("Accounts Receivable Aging & Cash Flow")
 
-    dar_val, dar_trend = query_days_in_ar(params)
+    # dar_val, dar_trend are pre-computed above the tabs.
     aging_summary, total_ar = query_ar_aging(params)
 
     col1, col2, col3 = st.columns(3)
@@ -1894,6 +1970,162 @@ with tab10:
             description="Annual recurring + one-time impact",
             key="combined_impact",
         )
+
+
+# =====================================================================
+# TAB 11: PATIENT FINANCIAL RESPONSIBILITY
+# =====================================================================
+# Analyses the patient-owed portion of allowed amounts — co-pays,
+# deductibles, and coinsurance — which are increasingly significant as
+# high-deductible health plans grow.  Patient collections is often the
+# last mile of the revenue cycle and a major source of bad debt.
+#
+# Formula: patient_responsibility = max(allowed_amount - payment_amount, 0)
+# (the ERA carries both the contracted-rate allowed amount and the
+# insurance payment; the gap is what the patient owes)
+# =====================================================================
+with tab11:
+    st.header("Patient Financial Responsibility")
+    st.caption(
+        "Patient responsibility = ERA allowed amount − insurance payment. "
+        "Represents co-pay, deductible, and coinsurance owed by the patient."
+    )
+
+    pr_payer = query_patient_responsibility_by_payer(params)
+    pr_dept  = query_patient_responsibility_by_dept(params)
+    pr_trend = query_patient_responsibility_trend(params)
+
+    if pr_payer.empty:
+        st.info("No patient responsibility data available. Ensure payments have allowed_amount populated.")
+    else:
+        total_pr         = pr_payer["total_patient_resp"].sum()
+        total_allowed_pr = pr_payer["total_allowed"].sum()
+        overall_pr_rate  = (total_pr / total_allowed_pr * 100) if total_allowed_pr > 0 else 0
+        avg_pr_per_claim = pr_payer["avg_patient_resp"].mean()
+        # Self-pay proxy: payers with payer_type == 'Self-Pay'
+        self_pay_total = pr_payer.loc[
+            pr_payer["payer_type"].str.lower().str.contains("self", na=False), "total_patient_resp"
+        ].sum()
+
+        kpr1, kpr2, kpr3, kpr4 = st.columns(4)
+        with kpr1:
+            ui.metric_card(title="Total Patient Responsibility", content=f"${total_pr:,.0f}",
+                           description="Patient-owed across all payers", key="pr_total")
+        with kpr2:
+            pr_status = "✅" if overall_pr_rate < 20 else ("⚠️" if overall_pr_rate < 35 else "🔴")
+            ui.metric_card(title="Patient Responsibility Rate", content=f"{overall_pr_rate:.1f}%",
+                           description=f"{pr_status} % of allowed amount", key="pr_rate")
+        with kpr3:
+            ui.metric_card(title="Avg Patient Balance / Claim", content=f"${avg_pr_per_claim:,.2f}",
+                           description="Average patient-owed per claim", key="pr_avg")
+        with kpr4:
+            ui.metric_card(title="Self-Pay Exposure", content=f"${self_pay_total:,.0f}",
+                           description="Patient responsibility from self-pay patients", key="pr_selfpay")
+
+        st.divider()
+
+        # ── Charts ────────────────────────────────────────────────────
+        col_pr1, col_pr2 = st.columns(2)
+        with col_pr1:
+            st.subheader("Patient Responsibility by Payer")
+            fig = px.bar(
+                pr_payer.sort_values("total_patient_resp"),
+                x="total_patient_resp", y="payer_name", orientation="h",
+                color="pct_of_allowed",
+                color_continuous_scale="RdYlGn_r",
+                labels={"total_patient_resp": "Patient Responsibility ($)", "payer_name": "",
+                        "pct_of_allowed": "% of Allowed"},
+                title="Total Patient Responsibility by Payer (color = % of allowed)",
+            )
+            fig.update_layout(height=400, margin=dict(t=40, b=10))
+            st.plotly_chart(fig, theme="streamlit", width="stretch")
+
+        with col_pr2:
+            st.subheader("Patient Responsibility Rate by Payer Type")
+            ptype = pr_payer.groupby("payer_type").agg(
+                total_patient_resp=("total_patient_resp", "sum"),
+                total_allowed=("total_allowed", "sum"),
+            ).reset_index()
+            ptype["pr_rate"] = (ptype["total_patient_resp"] / ptype["total_allowed"] * 100).round(1)
+            fig = px.bar(
+                ptype.sort_values("total_patient_resp", ascending=False),
+                x="payer_type", y="total_patient_resp",
+                color="pr_rate",
+                color_continuous_scale="Oranges",
+                labels={"total_patient_resp": "Total Patient Responsibility ($)",
+                        "payer_type": "Payer Type", "pr_rate": "PR Rate (%)"},
+                title="Patient Responsibility by Payer Type",
+                text="pr_rate",
+            )
+            fig.update_traces(texttemplate="%{text:.1f}%", textposition="outside")
+            fig.update_layout(height=400, margin=dict(t=40, b=10))
+            st.plotly_chart(fig, theme="streamlit", width="stretch")
+
+        # ── Monthly Trend ─────────────────────────────────────────────
+        if not pr_trend.empty:
+            st.subheader("Monthly Patient Responsibility Trend")
+            col_pr3, col_pr4 = st.columns(2)
+            with col_pr3:
+                fig = go.Figure()
+                fig.add_trace(go.Bar(
+                    x=pr_trend.index, y=pr_trend["total_patient_resp"],
+                    name="Patient Responsibility", marker_color=RCM_COLORS[2],
+                ))
+                fig.update_layout(height=320, margin=dict(t=40, b=10),
+                                  yaxis_title="Amount ($)", xaxis_title="Month",
+                                  title="Monthly Patient Responsibility ($)")
+                st.plotly_chart(fig, theme="streamlit", width="stretch")
+            with col_pr4:
+                fig = go.Figure()
+                fig.add_trace(go.Scatter(
+                    x=pr_trend.index, y=pr_trend["patient_resp_rate"],
+                    mode="lines+markers", name="PR Rate (%)",
+                    line=dict(color=RCM_COLORS[2], width=2),
+                    fill="tozeroy", fillcolor="rgba(245,158,11,0.1)",
+                ))
+                fig.update_layout(height=320, margin=dict(t=40, b=10),
+                                  yaxis_title="Rate (%)", xaxis_title="Month",
+                                  title="Patient Responsibility Rate (% of Allowed)")
+                st.plotly_chart(fig, theme="streamlit", width="stretch")
+
+        # ── Department / Encounter Type Breakdown ─────────────────────
+        st.subheader("Patient Responsibility by Department & Encounter Type")
+        col_pr5, col_pr6 = st.columns(2)
+        with col_pr5:
+            dept_total = pr_dept.groupby("department")["total_patient_resp"].sum().reset_index()
+            fig = px.bar(
+                dept_total.sort_values("total_patient_resp"),
+                x="total_patient_resp", y="department", orientation="h",
+                color="total_patient_resp",
+                color_continuous_scale="Oranges",
+                labels={"total_patient_resp": "Patient Responsibility ($)", "department": ""},
+                title="Total Patient Responsibility by Department",
+            )
+            fig.update_layout(height=400, margin=dict(t=40, b=10))
+            st.plotly_chart(fig, theme="streamlit", width="stretch")
+
+        with col_pr6:
+            enc_total = pr_dept.groupby("encounter_type")["total_patient_resp"].sum().reset_index()
+            fig = px.pie(
+                enc_total, values="total_patient_resp", names="encounter_type",
+                title="Patient Responsibility by Encounter Type",
+                color_discrete_sequence=RCM_COLORS,
+            )
+            fig.update_layout(height=400, margin=dict(t=40, b=10))
+            st.plotly_chart(fig, theme="streamlit", width="stretch")
+
+        # ── Summary Table ─────────────────────────────────────────────
+        st.subheader("Patient Responsibility by Payer — Detail")
+        pr_table = pr_payer[[
+            "payer_name", "payer_type", "payment_count",
+            "total_patient_resp", "avg_patient_resp", "pct_of_allowed",
+        ]].copy().round(2)
+        pr_table.columns = [
+            "Payer", "Payer Type", "Payments",
+            "Total Patient Responsibility ($)", "Avg per Claim ($)", "% of Allowed",
+        ]
+        st.dataframe(pr_table, hide_index=True, width="stretch")
+        export_buttons("patient_responsibility", {"Patient Responsibility": pr_table})
 
 
 # ── Sidebar Footer ───────────────────────────────────────────────────

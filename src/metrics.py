@@ -1034,3 +1034,222 @@ ORDER BY period
     df = df.set_index("period")
     df.index.name = "year_month"
     return df
+
+
+# ===========================================================================
+# 21. CLEAN CLAIM SCRUBBING BREAKDOWN
+# ===========================================================================
+
+# Human-readable labels and resolution guidance for each fail reason code.
+_FAIL_REASON_LABELS = {
+    "MISSING_AUTH":        "Missing Prior Authorization",
+    "ELIGIBILITY_FAIL":    "Patient Eligibility Not Verified",
+    "CODING_ERROR":        "Invalid CPT/ICD-10 Combination",
+    "DUPLICATE_SUBMISSION":"Duplicate Claim Submission",
+    "TIMELY_FILING":       "Outside Timely Filing Window",
+    "MISSING_INFO":        "Missing Required Information",
+}
+_FAIL_REASON_GUIDANCE = {
+    "MISSING_AUTH":        "Automate auth check at scheduling; obtain PA before service date.",
+    "ELIGIBILITY_FAIL":    "Verify eligibility 24-48h before appointment via real-time check.",
+    "CODING_ERROR":        "Add CPT/ICD-10 edit rules to charge capture; schedule coder training.",
+    "DUPLICATE_SUBMISSION":"Enable duplicate detection in clearinghouse scrubber settings.",
+    "TIMELY_FILING":       "Set automated alerts when claims approach payer filing deadlines.",
+    "MISSING_INFO":        "Implement front-desk registration checklists with required-field validation.",
+}
+
+
+def query_clean_claim_breakdown(p: FilterParams, db_path=None):
+    """Break down dirty (failed scrubbing) claims by specific fail reason.
+
+    Returns:
+        DataFrame with columns [fail_reason, label, count, total_charges,
+        pct_of_dirty, guidance], sorted by count descending.
+    """
+    cte, params = _cte(p)
+    sql = cte + """
+SELECT fail_reason,
+       COUNT(*)                    AS count,
+       SUM(total_charge_amount)    AS total_charges
+FROM filtered_claims
+WHERE is_clean_claim = 0
+  AND fail_reason IS NOT NULL
+GROUP BY fail_reason
+ORDER BY count DESC
+"""
+    df = query_to_dataframe(sql, params=params, db_path=db_path)
+    if df.empty:
+        return pd.DataFrame(columns=[
+            "fail_reason", "label", "count", "total_charges", "pct_of_dirty", "guidance",
+        ])
+    total_dirty = df["count"].sum()
+    df["pct_of_dirty"] = np.where(total_dirty > 0, df["count"] / total_dirty * 100, 0)
+    df["label"]    = df["fail_reason"].map(_FAIL_REASON_LABELS).fillna(df["fail_reason"])
+    df["guidance"] = df["fail_reason"].map(_FAIL_REASON_GUIDANCE).fillna("")
+    return df
+
+
+# ===========================================================================
+# 22. PATIENT FINANCIAL RESPONSIBILITY
+# ===========================================================================
+
+def query_patient_responsibility_by_payer(p: FilterParams, db_path=None):
+    """Patient financial responsibility (patient portion) grouped by payer.
+
+    Patient responsibility = max(allowed_amount - payment_amount, 0).
+    This represents the co-pay, deductible, and coinsurance owed by the
+    patient after insurance adjudicates the claim.
+
+    Returns:
+        DataFrame with columns [payer_name, payer_type, payment_count,
+        total_patient_resp, avg_patient_resp, pct_of_allowed],
+        sorted by total_patient_resp descending.
+    """
+    cte, params = _cte(p)
+    sql = cte + """
+SELECT py.payer_name,
+       py.payer_type,
+       COUNT(p.payment_id)                                                    AS payment_count,
+       SUM(CASE WHEN p.allowed_amount > p.payment_amount
+                THEN p.allowed_amount - p.payment_amount ELSE 0 END)          AS total_patient_resp,
+       AVG(CASE WHEN p.allowed_amount > p.payment_amount
+                THEN p.allowed_amount - p.payment_amount ELSE 0 END)          AS avg_patient_resp,
+       SUM(p.allowed_amount)                                                   AS total_allowed
+FROM filtered_claims fc
+JOIN silver_payers   py ON fc.payer_id = py.payer_id
+JOIN silver_payments p  ON fc.claim_id = p.claim_id
+WHERE p.allowed_amount IS NOT NULL AND p.allowed_amount > 0
+GROUP BY py.payer_name, py.payer_type
+ORDER BY total_patient_resp DESC
+"""
+    df = query_to_dataframe(sql, params=params, db_path=db_path)
+    if df.empty:
+        return pd.DataFrame(columns=[
+            "payer_name", "payer_type", "payment_count",
+            "total_patient_resp", "avg_patient_resp", "pct_of_allowed",
+        ])
+    df["pct_of_allowed"] = np.where(
+        df["total_allowed"] > 0, df["total_patient_resp"] / df["total_allowed"] * 100, 0
+    )
+    return df
+
+
+def query_patient_responsibility_by_dept(p: FilterParams, db_path=None):
+    """Patient financial responsibility grouped by department and encounter type.
+
+    Returns:
+        DataFrame with columns [department, encounter_type, claim_count,
+        total_patient_resp, avg_patient_resp], sorted by total_patient_resp desc.
+    """
+    cte, params = _cte(p)
+    sql = cte + """
+SELECT e.department,
+       e.encounter_type,
+       COUNT(DISTINCT fc.claim_id)                                            AS claim_count,
+       SUM(CASE WHEN p.allowed_amount > p.payment_amount
+                THEN p.allowed_amount - p.payment_amount ELSE 0 END)          AS total_patient_resp,
+       AVG(CASE WHEN p.allowed_amount > p.payment_amount
+                THEN p.allowed_amount - p.payment_amount ELSE 0 END)          AS avg_patient_resp
+FROM filtered_claims fc
+JOIN silver_encounters e ON fc.encounter_id = e.encounter_id
+JOIN silver_payments   p ON fc.claim_id     = p.claim_id
+WHERE p.allowed_amount IS NOT NULL AND p.allowed_amount > 0
+GROUP BY e.department, e.encounter_type
+ORDER BY total_patient_resp DESC
+"""
+    df = query_to_dataframe(sql, params=params, db_path=db_path)
+    if df.empty:
+        return pd.DataFrame(columns=[
+            "department", "encounter_type", "claim_count", "total_patient_resp", "avg_patient_resp",
+        ])
+    return df
+
+
+def query_patient_responsibility_trend(p: FilterParams, db_path=None):
+    """Monthly trend of patient financial responsibility.
+
+    Returns:
+        DataFrame indexed by year_month with columns
+        [total_patient_resp, total_allowed, patient_resp_rate].
+    """
+    cte, params = _cte(p)
+    sql = cte + """
+SELECT strftime('%Y-%m', fc.date_of_service)                                  AS period,
+       SUM(CASE WHEN p.allowed_amount > p.payment_amount
+                THEN p.allowed_amount - p.payment_amount ELSE 0 END)          AS total_patient_resp,
+       SUM(p.allowed_amount)                                                   AS total_allowed,
+       COUNT(DISTINCT fc.claim_id)                                             AS claim_count
+FROM filtered_claims fc
+JOIN silver_payments p ON fc.claim_id = p.claim_id
+WHERE p.allowed_amount IS NOT NULL AND p.allowed_amount > 0
+GROUP BY strftime('%Y-%m', fc.date_of_service)
+ORDER BY period
+"""
+    df = query_to_dataframe(sql, params=params, db_path=db_path)
+    if df.empty:
+        return pd.DataFrame(columns=["total_patient_resp", "total_allowed", "patient_resp_rate"])
+    df["patient_resp_rate"] = np.where(
+        df["total_allowed"] > 0, df["total_patient_resp"] / df["total_allowed"] * 100, 0
+    )
+    df = df.set_index("period")
+    df.index.name = "year_month"
+    return df
+
+
+# ===========================================================================
+# 23. DATA FRESHNESS
+# ===========================================================================
+
+# Expected refresh cadence per domain (hours) — used to compute staleness.
+_DOMAIN_CADENCE_HOURS = {
+    "claims":          4,
+    "payments":        6,
+    "encounters":      2,
+    "charges":         4,
+    "denials":        12,
+    "adjustments":     8,
+    "payers":         24,
+    "patients":       24,
+    "providers":      24,
+    "operating_costs": 720,  # monthly
+}
+
+_DOMAIN_LABELS = {
+    "claims":          "Claims",
+    "payments":        "Payments / ERA",
+    "encounters":      "Encounters / ADT",
+    "charges":         "Charges / CDM",
+    "denials":         "Denials",
+    "adjustments":     "Adjustments",
+    "payers":          "Payer Master",
+    "patients":        "Patient Demographics",
+    "providers":       "Provider Roster",
+    "operating_costs": "Operating Costs",
+}
+
+
+def query_data_freshness(db_path=None):
+    """Return pipeline run metadata for the data freshness sidebar panel.
+
+    Returns:
+        DataFrame with columns [domain, label, last_loaded_at, row_count,
+        source_file, cadence_hours, age_hours, status],
+        where status is 'fresh', 'stale', or 'critical'.
+    """
+    sql = "SELECT domain, last_loaded_at, row_count, source_file FROM pipeline_runs ORDER BY domain"
+    df = query_to_dataframe(sql, db_path=db_path)
+    if df.empty:
+        return pd.DataFrame(columns=[
+            "domain", "label", "last_loaded_at", "row_count",
+            "source_file", "cadence_hours", "age_hours", "status",
+        ])
+    now = pd.Timestamp.utcnow().replace(tzinfo=None)
+    df["label"]         = df["domain"].map(_DOMAIN_LABELS).fillna(df["domain"])
+    df["cadence_hours"] = df["domain"].map(_DOMAIN_CADENCE_HOURS).fillna(24)
+    df["last_loaded_at_dt"] = pd.to_datetime(df["last_loaded_at"], errors="coerce")
+    df["age_hours"] = (now - df["last_loaded_at_dt"]).dt.total_seconds() / 3600
+    df["status"] = "fresh"
+    df.loc[df["age_hours"] > df["cadence_hours"],       "status"] = "stale"
+    df.loc[df["age_hours"] > df["cadence_hours"] * 3,   "status"] = "critical"
+    return df[["domain", "label", "last_loaded_at", "row_count", "source_file",
+               "cadence_hours", "age_hours", "status"]]

@@ -100,10 +100,10 @@ def db(tmp_path):
             ('CHG003','ENC030','27447','Total Knee Replacement',1,15000.0,'2024-02-10','2024-02-12','M17.11');
 
         INSERT INTO silver_claims VALUES
-            ('CLM001','ENC010','PAT001','PYR001','2024-01-15','2024-01-17',1000.0,'Paid',1,'Electronic'),
-            ('CLM002','ENC020','PAT002','PYR001','2024-01-20','2024-01-22',2000.0,'Denied',0,'Electronic'),
-            ('CLM003','ENC030','PAT003','PYR002','2024-02-10','2024-02-12',1500.0,'Paid',1,'Electronic'),
-            ('CLM004','ENC040','PAT004','PYR002','2024-02-25','2024-02-27',500.0,'Appealed',0,'Paper');
+            ('CLM001','ENC010','PAT001','PYR001','2024-01-15','2024-01-17',1000.0,'Paid',1,'Electronic',NULL),
+            ('CLM002','ENC020','PAT002','PYR001','2024-01-20','2024-01-22',2000.0,'Denied',0,'Electronic','CODING_ERROR'),
+            ('CLM003','ENC030','PAT003','PYR002','2024-02-10','2024-02-12',1500.0,'Paid',1,'Electronic',NULL),
+            ('CLM004','ENC040','PAT004','PYR002','2024-02-25','2024-02-27',500.0,'Appealed',0,'Paper','MISSING_AUTH');
 
         INSERT INTO silver_payments VALUES
             ('PAY001','CLM001','PYR001',900.0,950.0,'2024-02-01','EFT',1),

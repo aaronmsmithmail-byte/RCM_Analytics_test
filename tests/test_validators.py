@@ -52,10 +52,10 @@ def _insert_clean_data(conn):
 
         INSERT INTO silver_claims VALUES
             ('CLM001','ENC001','PAT001','PYR001',
-             '2024-06-01','2024-06-03',500.0,'Paid',1,'Electronic');
+             '2024-06-01','2024-06-03',500.0,'Paid',1,'Electronic',NULL);
         INSERT INTO silver_claims VALUES
             ('CLM002','ENC002','PAT002','PYR002',
-             '2024-06-15','2024-06-17',1200.0,'Partially Paid',1,'Electronic');
+             '2024-06-15','2024-06-17',1200.0,'Partially Paid',1,'Electronic',NULL);
 
         INSERT INTO silver_payments VALUES
             ('PAY001','CLM001','PYR001',450.0,480.0,'2024-07-01','EFT',1);
@@ -280,9 +280,10 @@ class TestCheckNulls:
         conn.execute("""CREATE TABLE silver_claims (
             claim_id TEXT, encounter_id TEXT, patient_id TEXT, payer_id TEXT,
             date_of_service TEXT, submission_date TEXT, total_charge_amount REAL,
-            claim_status TEXT, is_clean_claim INTEGER, submission_method TEXT
+            claim_status TEXT, is_clean_claim INTEGER, submission_method TEXT,
+            fail_reason TEXT
         )""")
-        conn.execute("INSERT INTO silver_claims VALUES ('CLM001','ENC001','PAT001','PYR001','2024-06-01','2024-06-03',500.0,NULL,1,'Electronic')")
+        conn.execute("INSERT INTO silver_claims VALUES ('CLM001','ENC001','PAT001','PYR001','2024-06-01','2024-06-03',500.0,NULL,1,'Electronic',NULL)")
         conn.commit(); conn.close()
         issues = _check_nulls(db_path)
         claim_issues = [i for i in issues if i["table"] == "silver_claims"]
@@ -330,10 +331,11 @@ class TestCheckDateRanges:
         conn.execute("""CREATE TABLE silver_claims (
             claim_id TEXT, encounter_id TEXT, patient_id TEXT, payer_id TEXT,
             date_of_service TEXT, submission_date TEXT, total_charge_amount REAL,
-            claim_status TEXT, is_clean_claim INTEGER, submission_method TEXT
+            claim_status TEXT, is_clean_claim INTEGER, submission_method TEXT,
+            fail_reason TEXT
         )""")
         # NULL submission_date — should NOT be flagged as out-of-range
-        conn.execute("INSERT INTO silver_claims VALUES ('CLM001','ENC001','PAT001','PYR001','2024-06-01',NULL,500.0,'Paid',1,'Electronic')")
+        conn.execute("INSERT INTO silver_claims VALUES ('CLM001','ENC001','PAT001','PYR001','2024-06-01',NULL,500.0,'Paid',1,'Electronic',NULL)")
         conn.commit(); conn.close()
         issues = _check_date_ranges(db_path)
         assert not any(
