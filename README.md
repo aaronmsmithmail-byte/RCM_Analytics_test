@@ -4,25 +4,34 @@ A comprehensive Streamlit web application for monitoring and analyzing Healthcar
 
 ## Overview
 
-This dashboard provides healthcare organizations with interactive visualizations across six key domains plus four metadata pages:
+This dashboard provides healthcare organizations with interactive visualizations across eleven analytical tabs plus four metadata pages:
 
-- **Executive Summary** — High-level KPI scorecard with benchmarks
-- **Collections & Revenue** — Revenue waterfall, collection rate trends, cost to collect
-- **Claims & Denials** — Denial reasons, clean claim rate, first-pass resolution, charge lag
-- **A/R Aging & Cash Flow** — Aging buckets, days in A/R trend, monthly cash flow
-- **Payer Analysis** — Revenue/volume/denial rate breakdown by payer with claim-level drill-down
-- **Department Performance** — Revenue, collection rate, and encounter volume by department with encounter-level drill-down
-- **Data Catalog** — Searchable reference of all 17 KPIs and 10 data tables
-- **Data Lineage** — Pipeline DAG from CSV ingestion through Bronze → Silver → Gold to dashboard
-- **Knowledge Graph** — Entity-relationship diagram of the data model
-- **Semantic Layer** — Business concept → KPI → source table/column mapping
+| Tab | Description |
+|-----|-------------|
+| **Executive Summary** | High-level KPI scorecard with configurable alert thresholds |
+| **Collections & Revenue** | Revenue waterfall, collection rate trends, cost to collect |
+| **Claims & Denials** | Denial reasons, clean claim rate, first-pass resolution, charge lag, scrubbing rule breakdown |
+| **A/R Aging & Cash Flow** | Aging buckets, days in A/R trend, monthly cash flow |
+| **Payer Analysis** | Revenue/volume/denial rate breakdown by payer with claim-level drill-down |
+| **Department Performance** | Revenue, collection rate, and encounter volume by department with encounter-level drill-down |
+| **Provider Performance** | Provider scorecard with collection rate, denial rate, and clean claim rate outlier detection |
+| **CPT Code Analysis** | Revenue, denial rate, and charge concentration by procedure code |
+| **Underpayment Analysis** | ERA allowed vs. paid variance — contractual recovery opportunity by payer |
+| **📈 Forecasting** | Linear trend projections for cash flow, DAR, and denial rate + interactive what-if scenario modelling |
+| **Patient Responsibility** | Patient-owed portion (co-pay/deductible/coinsurance) by payer, department, and encounter type |
 
-Every data tab includes **CSV and Excel export buttons** so you can pull the filtered data into your own tools. A **data quality panel** in the sidebar automatically flags any integrity issues (nulls, orphaned keys, unexpected values) on load.
+**Metadata pages** (sidebar navigation): Data Catalog · Data Lineage · Knowledge Graph · Semantic Layer
+
+Every data tab includes **CSV and Excel export buttons**. A **KPI alert system** in the sidebar flags threshold breaches in real time, and a **data pipeline freshness panel** shows the last ETL run time and status for each of the 10 data domains.
+
+---
 
 ## Requirements
 
 - Python 3.9+
 - pip
+
+---
 
 ## Setup
 
@@ -62,13 +71,15 @@ This creates 10 CSV files in the `data/` directory covering Jan 2024 – Dec 202
 | `providers.csv` | 25 | Providers across 10 departments |
 | `encounters.csv` | 3,000 | Patient encounters (outpatient, inpatient, ED, telehealth) |
 | `charges.csv` | ~5,900 | Charge records with CPT and ICD-10 codes |
-| `claims.csv` | 2,800 | Claims with status tracking |
-| `payments.csv` | ~3,200 | Payments with accuracy flags |
+| `claims.csv` | 2,800 | Claims with status and scrubbing fail reason |
+| `payments.csv` | ~3,200 | Payments with allowed amount and accuracy flags |
 | `denials.csv` | ~400 | Denial records with appeal tracking |
 | `adjustments.csv` | 600 | Contractual, writeoff, and charity adjustments |
 | `operating_costs.csv` | 24 | Monthly RCM operational costs |
 
 On first launch, the app automatically loads these CSVs into a local SQLite database using the medallion pipeline (Bronze → Silver → Gold). No manual database setup is required.
+
+> **Schema migration:** If you regenerate sample data after a previous run, the app detects the schema version automatically and rebuilds all three medallion layers cleanly.
 
 ### 5. Run the dashboard
 
@@ -76,7 +87,9 @@ On first launch, the app automatically loads these CSVs into a local SQLite data
 streamlit run app.py
 ```
 
-The app will open at `http://localhost:8501`. The first launch initializes the database (a few seconds); subsequent launches use the cached database.
+The app opens at `http://localhost:8501`. The first launch initializes the database (a few seconds); subsequent launches use the cached database.
+
+---
 
 ## Data Architecture — Medallion Layers
 
@@ -87,6 +100,8 @@ All data flows through a three-layer medallion architecture stored in a local SQ
 | **Bronze** | 10 tables (`bronze_*`) | Raw TEXT ingestion from CSV — no type casting, full audit trail via `_loaded_at` timestamp |
 | **Silver** | 10 tables (`silver_*`) | Cleaned, typed (REAL/INTEGER/TEXT), FK-constrained — source of truth for all KPI computation |
 | **Gold** | 5 views (`gold_*`) | Pre-aggregated business views computed at query time from Silver |
+
+A `pipeline_runs` metadata table records the last load time, row count, and source file for each domain. The dashboard reads this table to power the data freshness sidebar panel.
 
 ### Gold Views
 
@@ -100,7 +115,7 @@ All data flows through a three-layer medallion architecture stored in a local SQ
 
 ### Filtering with FilterParams
 
-All 17 KPI metric functions accept a `FilterParams` dataclass that applies four filter dimensions at the Silver layer via parameterized SQL:
+All metric functions accept a `FilterParams` dataclass that applies four filter dimensions at the Silver layer via parameterized SQL:
 
 ```python
 FilterParams(
@@ -114,12 +129,14 @@ FilterParams(
 
 A shared `WITH filtered_claims AS (...)` CTE joins `silver_claims` to `silver_encounters` and applies all active filter conditions, ensuring consistent filtering across every metric.
 
+---
+
 ## Project Structure
 
 ```
 RCM_Analytics_test/
-├── app.py                   # Main Streamlit dashboard
-├── generate_sample_data.py  # Sample data generation script
+├── app.py                   # Main Streamlit dashboard (11 tabs + sidebar)
+├── generate_sample_data.py  # Synthetic data generation script
 ├── requirements.txt         # Python dependencies
 ├── Dockerfile               # Container build for deployment
 ├── .streamlit/
@@ -127,13 +144,13 @@ RCM_Analytics_test/
 ├── .github/
 │   └── workflows/
 │       └── test.yml         # CI pipeline (runs pytest on every push/PR)
-├── data/                    # CSV data files (generated by generate_sample_data.py)
+├── data/                    # CSV data files + rcm_analytics.db (generated)
 ├── src/
 │   ├── __init__.py
-│   ├── database.py          # Medallion schema, ETL pipeline, build_filter_cte()
+│   ├── database.py          # Medallion schema, ETL, build_filter_cte(), schema migration
 │   ├── data_loader.py       # Sidebar widget population helpers
 │   ├── metadata_pages.py    # Data Catalog, Data Lineage, Knowledge Graph, Semantic Layer
-│   ├── metrics.py           # SQL-based KPI engine (17 query_* functions + FilterParams)
+│   ├── metrics.py           # SQL-based KPI engine (23 query_* functions + FilterParams)
 │   └── validators.py        # SQL COUNT-based data integrity checks
 └── tests/
     ├── __init__.py
@@ -141,86 +158,152 @@ RCM_Analytics_test/
     └── test_validators.py   # 40 unit tests for data validators
 ```
 
+---
+
 ## Metrics Reference
+
+### Core KPIs (pre-computed for the alert system)
 
 | # | Metric | Formula | Benchmark |
 |---|--------|---------|-----------|
 | 1 | Days in A/R (DAR) | AR Balance / Avg Daily Charges | ≤ 35 days |
 | 2 | Net Collection Rate (NCR) | Payments / (Charges − Contractual Adj) | ≥ 95% |
-| 3 | Gross Collection Rate (GCR) | Total Payments / Total Charges | ≥ 50% |
+| 3 | Gross Collection Rate (GCR) | Total Payments / Total Charges | ≥ 70% |
 | 4 | Clean Claim Rate (CCR) | Clean Claims / Total Claims | ≥ 90% |
 | 5 | Denial Rate | Denied Claims / Total Claims | ≤ 10% |
-| 6 | Denial Reasons Breakdown | Grouped by reason code with recovery rate | — |
-| 7 | First-Pass Resolution Rate | Paid on First Submission / Total Claims | ≥ 85% |
-| 8 | Charge Lag | Avg days from service date to post date | ≤ 3 days |
-| 9 | Cost to Collect | Total RCM Costs / Total Collections | ≤ 5% |
-| 10 | A/R Aging Buckets | Outstanding AR by 0-30, 31-60, 61-90, 91-120, 120+ days | — |
-| 11 | Payment Accuracy Rate | Accurate Payments / Total Payments | ≥ 98% |
-| 12 | Bad Debt Rate | Bad Debt Write-offs / Total Charges | ≤ 2% |
-| 13 | Appeal Success Rate | Won Appeals / Total Appealed | — |
-| 14 | Avg Reimbursement per Encounter | Total Payments / Total Encounters | — |
-| 15 | Payer Mix Analysis | Revenue and volume by payer | — |
-| 16 | Denial Rate by Payer | Denials per payer / Total payer claims | — |
-| 17 | Department Performance | Revenue, collection rate, encounters by department | — |
+| 6 | First-Pass Resolution Rate | Paid on First Submission / Total Claims | ≥ 85% |
+| 7 | Payment Accuracy Rate | Accurate Payments / Total Payments | ≥ 95% |
+| 8 | Bad Debt Rate | Bad Debt Write-offs / Total Charges | ≤ 3% |
 
-All metrics are implemented as parameterized SQL queries against the Silver layer (`query_*` functions in `src/metrics.py`). Sidebar filters are applied at the database level via the shared `filtered_claims` CTE.
+### Additional Metrics
+
+| # | Metric | Description |
+|---|--------|-------------|
+| 9 | Denial Reasons Breakdown | Grouped by reason code with recovery rate |
+| 10 | Charge Lag | Avg days from service date to charge post date |
+| 11 | Cost to Collect | Total RCM Costs / Total Collections |
+| 12 | A/R Aging Buckets | Outstanding AR by 0–30, 31–60, 61–90, 91–120, 120+ days |
+| 13 | Appeal Success Rate | Won Appeals / Total Appealed |
+| 14 | Avg Reimbursement per Encounter | Total Payments / Total Encounters |
+| 15 | Payer Mix Analysis | Revenue and volume by payer |
+| 16 | Denial Rate by Payer | Denials per payer / Total payer claims |
+| 17 | Department Performance | Revenue, collection rate, encounters by department |
+| 18 | Provider Performance | Collection rate, denial rate, CCR, avg payment per provider |
+| 19 | CPT Code Analysis | Revenue, denial rate, avg charge per unit by procedure code |
+| 20 | Underpayment Analysis | ERA allowed_amount vs. payment_amount variance by payer |
+| 21 | Clean Claim Scrubbing Breakdown | Dirty claim root causes by fail reason code |
+| 22 | Patient Financial Responsibility | Patient-owed portion (co-pay/deductible) by payer, dept, trend |
+| 23 | Data Freshness | Last ETL load time, row count, and staleness per domain |
+
+All metrics are implemented as parameterized SQL queries against the Silver layer (`query_*` functions in `src/metrics.py`).
+
+---
 
 ## Dashboard Tabs
 
 ### Tab 1 — Executive Summary
-A single-screen scorecard for leadership. Eight color-coded KPI cards (green/amber/red vs. industry benchmarks) cover Days in A/R, Net Collection Rate, Clean Claim Rate, Denial Rate, Gross Collection Rate, First-Pass Rate, Payment Accuracy, and Bad Debt Rate. Below the cards, trend lines for Days in A/R and Net Collection Rate give a month-over-month view, followed by a grouped bar chart of monthly encounter and claim volume.
+A single-screen scorecard for leadership. Eight color-coded KPI cards (green/amber/red vs. benchmarks) cover DAR, NCR, CCR, Denial Rate, GCR, First-Pass Rate, Payment Accuracy, and Bad Debt Rate. Trend lines for DAR and NCR give a month-over-month view; a grouped volume bar chart shows monthly encounters and claims.
+
+**Alert banner:** If any KPI breaches its configured threshold, a banner appears at the top of this tab listing each breach with current value vs. threshold.
 
 ### Tab 2 — Collections & Revenue
-Breaks down where revenue is gained and lost. A waterfall chart traces the path from gross charges through contractual adjustments, net denials, and actual collections to arrive at net revenue. Supporting charts show gross vs. net collection rate trends over time, cost-to-collect trend vs. the 5% target, and average reimbursement per claim by month. A financial summary table at the bottom shows totals for charges, payments, adjustments, bad debt, and net revenue — with CSV/Excel export.
+Revenue waterfall from gross charges → contractual adjustments → denials → net collections. Supporting charts: gross vs. net collection rate trends, cost-to-collect trend vs. the 5% target, average reimbursement per claim. Financial summary table with CSV/Excel export.
 
 ### Tab 3 — Claims & Denials
-Focuses on claim quality and denial management. The claim status donut chart shows the split between Paid, Denied, Appealed, and Pending. A horizontal bar chart ranks the top denial reasons by volume and dollar amount denied. Trend lines track denial rate, clean claim rate, and first-pass rate month over month against their benchmarks. A charge lag histogram shows how many days elapse between service and charge posting. An expandable table lists every denial reason code with count, dollars denied, dollars recovered, and recovery rate — exportable to CSV/Excel.
+Claim status distribution, top denial reasons by volume and dollar amount, denial/CCR/first-pass trend lines, and charge lag histogram.
+
+**Claim Scrubbing Rules Breakdown:** A dedicated section below the denial analysis surfaces *why* dirty claims fail. Each dirty claim is tagged with one of six clearinghouse edit codes:
+
+| Code | Description | Resolution Guidance |
+|------|-------------|---------------------|
+| `MISSING_AUTH` | Missing Prior Authorization | Automate PA check at scheduling |
+| `ELIGIBILITY_FAIL` | Eligibility Not Verified | Real-time eligibility check 24-48h before visit |
+| `CODING_ERROR` | Invalid CPT/ICD-10 Combination | Add coding edit rules; schedule coder training |
+| `DUPLICATE_SUBMISSION` | Duplicate Claim | Enable duplicate detection in clearinghouse |
+| `TIMELY_FILING` | Outside Filing Window | Automate timely-filing deadline alerts |
+| `MISSING_INFO` | Missing Required Information | Front-desk registration checklist with required fields |
+
+Charts show dirty claim volume and charges-at-risk by fail reason. An expandable table includes resolution guidance and is exportable.
 
 ### Tab 4 — A/R Aging & Cash Flow
-Monitors outstanding receivables and cash timing. The aging bucket bar and pie charts show how much A/R sits in each age band (0–30, 31–60, 61–90, 91–120, 120+ days). A dual-axis chart overlays the raw A/R balance (bars) with Days in A/R (line) and a 35-day benchmark. The monthly cash flow chart compares charges vs. payments and plots the net cash flow line. An expandable aging detail table is exportable.
+Aging bucket bar/pie charts, dual-axis A/R balance vs. Days in A/R trend, monthly cash flow (charges vs. payments + net cash flow line).
 
 ### Tab 5 — Payer Analysis
-Compares performance across all contracted payers. Bar and pie charts show revenue and claim volume by payer; horizontal bar charts rank payers by collection rate and denial rate. A comparison table summarizes claims, charges, payments, collection rate, and denial rate side by side.
-
-**Payer Drill-Down:** Select any payer from the dropdown to see that payer's claim count, total charges, total payments, and denied claim count. A claim status pie and denial reasons bar chart load for that payer, and an expandable claim-level table lists every claim with its charge amount, payment amount, and status — with export.
+Revenue and claim volume by payer, ranked collection rate and denial rate bars, payer comparison table. **Payer drill-down:** claim count, charges, payments, denied claims for any selected payer + claim status pie, denial reasons bar, and claim-level table with export.
 
 ### Tab 6 — Department Performance
-Evaluates clinical departments on revenue and efficiency. Grouped bars compare charges vs. payments by department; a horizontal bar ranks departments by collection rate; a pie shows encounter volume share; and a horizontal bar shows average payment per encounter. A stacked bar breaks down encounter types within each department.
+Charges vs. payments by department, collection rate ranking, encounter volume pie, avg payment per encounter, encounter type breakdown. **Department drill-down:** encounter count, claim count, charges, payments for any selected department + encounter type pie, claim status bar, and encounter/claim table with export.
 
-**Department Drill-Down:** Select any department from the dropdown to see encounter count, claim count, total charges, and total payments for that department. An encounter type pie and claim status bar load for that department, and an expandable table lists every encounter with its linked claim, charge amount, payment amount, and status — with export.
+### Tab 7 — Provider Performance
+Individual provider scorecard with collection rate, denial rate, and clean claim rate. Outlier detection flags providers with denial rate > 15%. Charts: revenue by provider, denial rate ranking, CCR ranking, avg payment per encounter. **Provider drill-down:** peer comparison deltas (vs. average), claim status mix, and top denial reasons.
+
+### Tab 8 — CPT Code Analysis
+Revenue and denial patterns by procedure code. Top CPT codes by revenue (colored by denial rate), highest-denial CPT codes (min 10 charges threshold), revenue concentration pie for top 12 codes, avg charge per unit. Full CPT detail table with export.
+
+### Tab 9 — Underpayment Analysis
+Compares ERA `allowed_amount` (contracted rate) vs. `payment_amount` (actual remittance). Identifies systematic payer underpayments — a direct contractual recovery opportunity. Summary KPIs: total recovery opportunity, underpayment rate, underpaid claim count, avg shortfall per claim. Charts: recovery opportunity by payer, underpayment rate by payer, monthly trend, allowed/paid/underpaid stacked waterfall. Payer summary table with export.
+
+### Tab 10 — 📈 Forecasting
+**Trend projections:** Linear extrapolation (degree-1 polynomial) with ±1 std-dev confidence band projected 3 months forward for cash flow (monthly collections), Days in A/R, and denial rate. Each projection includes a pass/fail callout against its benchmark.
+
+**What-If Scenario Modelling** — three interactive sliders:
+
+| Scenario | Output |
+|----------|--------|
+| Reduce denial rate by X pp | Monthly/annual claim recovery ($) + claims recovered/month |
+| Reduce DAR by X days | One-time cash acceleration ($) + new projected DAR |
+| Improve clean claim rate by X pp | Monthly/annual rework savings ($) + implied denial rate drop |
+
+A **Combined Annual Impact** summary row aggregates all three scenarios.
+
+### Tab 11 — Patient Responsibility
+Analyses the patient-owed portion of the revenue cycle — co-pays, deductibles, and coinsurance — derived from `allowed_amount − payment_amount` in ERA payment data (no additional data needed).
+
+Summary KPIs: total patient responsibility, patient responsibility rate (% of allowed), avg per claim, self-pay exposure. Charts: total patient responsibility by payer (colored by % of allowed), by payer type with rate labels, monthly trend, by department and encounter type. Payer detail table with export.
 
 ### Metadata Pages (sidebar navigation)
 
-- **Data Catalog** — Searchable reference of all 17 KPIs and 10 data tables with descriptions, formulas, and source columns
-- **Data Lineage** — DAG diagram showing the full pipeline: CSV files → Bronze tables → Silver tables → Gold views → Dashboard
+- **Data Catalog** — Searchable reference of all 23 KPIs and 10 data tables with descriptions, formulas, and source columns
+- **Data Lineage** — DAG diagram showing the full pipeline: CSV files → Bronze → Silver → Gold → Dashboard
 - **Knowledge Graph** — Entity-relationship diagram of the Silver-layer data model
 - **Semantic Layer** — Business concept → KPI → source table/column mapping for every metric
 
-## Dashboard Filters
+---
 
-All visualizations respond to the sidebar filters in real time:
+## Sidebar Features
 
+### Filters
+All visualizations respond in real time to:
 - **Date Range** — Filter by date of service
 - **Payer** — Filter to a specific payer or view all
 - **Department** — Filter to a specific clinical department
 - **Encounter Type** — Outpatient, Inpatient, Emergency, Telehealth
 
-Filters are applied at the database level via parameterized SQL — the Silver layer is queried directly with each filter selection rather than filtering in-memory DataFrames.
+Filters are applied at the database level via parameterized SQL — the Silver layer is queried directly with each selection.
 
-## Data Quality Validation
+### Alert Thresholds
+An **⚙️ Alert Thresholds** expander lets users configure custom KPI targets for their organization. Defaults match industry benchmarks. Thresholds persist for the browser session.
 
-On startup, `src/validators.py` runs six SQL COUNT assertions directly against the Silver tables:
+When any KPI breaches its threshold, the sidebar shows a red alert badge with the count of breaching KPIs, and the Executive Summary tab displays an alert banner with value vs. threshold for each one.
+
+### Data Pipeline Freshness
+A **🟢/🟡/🔴 Data Pipeline** panel shows the last ETL run time, row count, and staleness status for all 10 data domains. Status is computed against the expected refresh cadence per domain (e.g. claims: 4h, encounters: 2h, operating costs: 720h).
+
+### Data Quality
+On startup, `src/validators.py` runs six SQL COUNT assertions against the Silver tables:
 
 | Check | Level |
 |-------|-------|
 | Negative monetary amounts | Warning |
-| Orphaned foreign keys (e.g. payments referencing missing claims) | Warning |
+| Orphaned foreign keys | Warning |
 | Null values in required columns | Error |
 | Dates outside the 2020–2030 range | Warning |
 | Unexpected claim status values | Warning |
 | Null values in boolean columns | Warning |
 
-Any issues appear in a collapsible **Data Quality** panel in the sidebar. Errors expand automatically; warnings are collapsed by default.
+Issues appear in a collapsible **Data Quality** panel. Errors expand automatically; warnings are collapsed by default.
+
+---
 
 ## Running with Docker
 
@@ -230,6 +313,8 @@ docker run -p 8501:8501 rcm-analytics
 ```
 
 The app will be available at `http://localhost:8501`.
+
+---
 
 ## CI / Continuous Integration
 
@@ -241,6 +326,8 @@ A GitHub Actions workflow (`.github/workflows/test.yml`) runs automatically on e
 4. Generates sample data
 5. Runs `pytest tests/ -v`
 
+---
+
 ## Running Tests
 
 ```bash
@@ -249,6 +336,8 @@ pytest tests/ -v
 
 **150 tests total** — 110 metric tests (`test_metrics.py`) and 40 validator tests (`test_validators.py`). Both test suites use SQLite `tmp_path` fixtures that spin up an isolated in-memory database per test, insert representative Silver-layer rows, and assert on SQL query results.
 
+---
+
 ## Dependencies
 
 | Package | Version | Purpose |
@@ -256,6 +345,8 @@ pytest tests/ -v
 | streamlit | ≥ 1.30.0 | Web framework and UI |
 | pandas | ≥ 2.0.0 | Data manipulation and DataFrame results |
 | plotly | ≥ 5.18.0 | Interactive visualizations |
-| numpy | ≥ 1.24.0 | Numerical calculations |
+| numpy | ≥ 1.24.0 | Numerical calculations and trend extrapolation |
 | openpyxl | ≥ 3.1.0 | Excel export support |
+| streamlit-shadcn-ui | latest | Polished KPI metric cards |
+| streamlit-extras | latest | Metric card styling |
 | pytest | ≥ 7.0.0 | Unit testing (dev) |
