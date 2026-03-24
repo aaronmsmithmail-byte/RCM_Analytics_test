@@ -51,6 +51,7 @@ Running the Dashboard:
 
 import io
 
+import numpy as np
 import streamlit as st
 import pandas as pd
 import plotly.express as px
@@ -216,6 +217,43 @@ def export_buttons(label: str, sheets: dict[str, pd.DataFrame]):
         )
 
 
+# ── Forecast Helper ──────────────────────────────────────────────────
+def _linear_forecast(series: pd.Series, periods_ahead: int = 3):
+    """Fit a linear trend on a time series and project N periods forward.
+
+    Args:
+        series:         Pandas Series of numeric values (index = period labels).
+        periods_ahead:  Number of future periods to project.
+
+    Returns:
+        tuple: (fitted, forecast, resid_std, future_labels) or
+               (None, None, None, None) if fewer than 4 non-null observations.
+            fitted:        numpy array of in-sample fitted values (same length as series).
+            forecast:      numpy array of projected values (length = periods_ahead).
+            resid_std:     Residual standard deviation (used for confidence band).
+            future_labels: List of period label strings inferred by incrementing
+                           the last label by one month at a time.
+    """
+    clean = series.dropna()
+    if len(clean) < 4:
+        return None, None, None, None
+    x = np.arange(len(series), dtype=float)
+    y = series.values.astype(float)
+    mask = ~np.isnan(y)
+    coeffs = np.polyfit(x[mask], y[mask], 1)
+    fitted = np.polyval(coeffs, x)
+    x_future = np.arange(len(series), len(series) + periods_ahead, dtype=float)
+    forecast = np.polyval(coeffs, x_future)
+    resid_std = float(np.std(y[mask] - np.polyval(coeffs, x[mask])))
+    # Build future period labels (YYYY-MM format assumed)
+    try:
+        last = pd.Period(series.index[-1], freq="M")
+        future_labels = [(last + i + 1).strftime("%Y-%m") for i in range(periods_ahead)]
+    except Exception:
+        future_labels = [f"+{i+1}m" for i in range(periods_ahead)]
+    return fitted, forecast, resid_std, future_labels
+
+
 # ── Load Data ────────────────────────────────────────────────────────
 # @st.cache_data is a Streamlit decorator that caches the return value.
 # On the first run, it calls load_all_data() (which queries SQLite).
@@ -345,6 +383,64 @@ params = FilterParams(
     encounter_type=selected_enc_type if selected_enc_type != "All" else None,
 )
 
+# ── Pre-compute Core KPIs ────────────────────────────────────────────
+# Computed here (before the tabs) so the alert system in the sidebar
+# can reference live values on every rerun, and so tab1/tab2 can reuse
+# them without issuing duplicate database queries.
+dar_val, dar_trend       = query_days_in_ar(params)
+ncr_val, ncr_trend       = query_net_collection_rate(params)
+gcr_val, gcr_trend       = query_gross_collection_rate(params)
+ccr_val, ccr_trend       = query_clean_claim_rate(params)
+denial_val, denial_trend = query_denial_rate(params)
+fpr_val, fpr_trend       = query_first_pass_rate(params)
+accuracy_val             = query_payment_accuracy(params)
+bad_debt_val, bad_debt_amt, total_charges_kpi = query_bad_debt_rate(params)
+ctc_val, ctc_trend       = query_cost_to_collect(params)
+
+# ── Alert Threshold Configuration ────────────────────────────────────
+# Defaults match industry benchmarks.  Users can adjust via the sidebar
+# expander and thresholds persist for the browser session.
+if "alert_thresholds" not in st.session_state:
+    st.session_state["alert_thresholds"] = {
+        "dar_max":      35.0,
+        "ncr_min":      95.0,
+        "ccr_min":      90.0,
+        "denial_max":   10.0,
+        "fpr_min":      85.0,
+        "accuracy_min": 95.0,
+        "bad_debt_max":  3.0,
+    }
+
+_t = st.session_state["alert_thresholds"]
+
+st.sidebar.divider()
+with st.sidebar.expander("⚙️ Alert Thresholds", expanded=False):
+    st.caption("Adjust to match your organization's targets.")
+    _t["dar_max"]      = st.number_input("Max Days in A/R",             value=float(_t["dar_max"]),      step=1.0,  min_value=0.0,   key="thr_dar")
+    _t["ncr_min"]      = st.number_input("Min Net Collection Rate (%)",  value=float(_t["ncr_min"]),      step=1.0,  min_value=0.0,   max_value=100.0, key="thr_ncr")
+    _t["ccr_min"]      = st.number_input("Min Clean Claim Rate (%)",     value=float(_t["ccr_min"]),      step=1.0,  min_value=0.0,   max_value=100.0, key="thr_ccr")
+    _t["denial_max"]   = st.number_input("Max Denial Rate (%)",          value=float(_t["denial_max"]),   step=1.0,  min_value=0.0,   max_value=100.0, key="thr_denial")
+    _t["fpr_min"]      = st.number_input("Min First-Pass Rate (%)",      value=float(_t["fpr_min"]),      step=1.0,  min_value=0.0,   max_value=100.0, key="thr_fpr")
+    _t["accuracy_min"] = st.number_input("Min Payment Accuracy (%)",     value=float(_t["accuracy_min"]), step=1.0,  min_value=0.0,   max_value=100.0, key="thr_acc")
+    _t["bad_debt_max"] = st.number_input("Max Bad Debt Rate (%)",        value=float(_t["bad_debt_max"]), step=0.5,  min_value=0.0,   key="thr_bd")
+
+# ── Compute Active Alerts ─────────────────────────────────────────────
+_active_alerts = []
+if dar_val      > _t["dar_max"]:      _active_alerts.append(("Days in A/R",          f"{dar_val} days",   f">{_t['dar_max']} days"))
+if ncr_val      < _t["ncr_min"]:      _active_alerts.append(("Net Collection Rate",   f"{ncr_val}%",       f"<{_t['ncr_min']}%"))
+if ccr_val      < _t["ccr_min"]:      _active_alerts.append(("Clean Claim Rate",      f"{ccr_val}%",       f"<{_t['ccr_min']}%"))
+if denial_val   > _t["denial_max"]:   _active_alerts.append(("Denial Rate",           f"{denial_val}%",    f">{_t['denial_max']}%"))
+if fpr_val      < _t["fpr_min"]:      _active_alerts.append(("First-Pass Rate",       f"{fpr_val}%",       f"<{_t['fpr_min']}%"))
+if accuracy_val < _t["accuracy_min"]: _active_alerts.append(("Payment Accuracy",      f"{accuracy_val}%",  f"<{_t['accuracy_min']}%"))
+if bad_debt_val > _t["bad_debt_max"]: _active_alerts.append(("Bad Debt Rate",         f"{bad_debt_val}%",  f">{_t['bad_debt_max']}%"))
+
+if _active_alerts:
+    st.sidebar.error(f"🔔 {len(_active_alerts)} KPI Alert{'s' if len(_active_alerts) > 1 else ''} — review Executive Summary")
+    for _kpi, _val, _thresh in _active_alerts:
+        st.sidebar.markdown(f"&nbsp;&nbsp;• **{_kpi}**: {_val} (threshold {_thresh})")
+else:
+    st.sidebar.success("✅ All KPIs within thresholds")
+
 # ── Metadata navigation (sidebar) ────────────────────────────────────
 # These buttons must render BEFORE the page router so they appear on
 # every page, including metadata pages that call st.stop() early.
@@ -389,7 +485,7 @@ if f_claims.empty:
 style_metric_cards(background_color="#ffffff", border_left_color="#1E6FBF", border_color="#e2e8f0", box_shadow=True)
 
 # ── Tabs ─────────────────────────────────────────────────────────────
-tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10 = st.tabs([
     "Executive Summary",
     "Collections & Revenue",
     "Claims & Denials",
@@ -399,6 +495,7 @@ tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9 = st.tabs([
     "Provider Performance",
     "CPT Code Analysis",
     "Underpayment Analysis",
+    "📈 Forecasting",
 ])
 
 # =====================================================================
@@ -416,15 +513,17 @@ tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9 = st.tabs([
 with tab1:
     st.header("Executive Summary")
 
-    # Calculate all KPIs via parameterized SQL queries against the Silver layer
-    dar_val, dar_trend = query_days_in_ar(params)
-    ncr_val, ncr_trend = query_net_collection_rate(params)
-    gcr_val, gcr_trend = query_gross_collection_rate(params)
-    ccr_val, ccr_trend = query_clean_claim_rate(params)
-    denial_val, denial_trend = query_denial_rate(params)
-    fpr_val, fpr_trend = query_first_pass_rate(params)
-    accuracy_val = query_payment_accuracy(params)
-    bad_debt_val, bad_debt_amt, total_charges = query_bad_debt_rate(params)
+    # KPIs are pre-computed above the tabs so the sidebar alert system
+    # can reference them without issuing duplicate database queries.
+
+    # ── Alert Banner ─────────────────────────────────────────────────
+    if _active_alerts:
+        with st.container(border=True):
+            st.markdown(f"### 🔔 {len(_active_alerts)} Active KPI Alert{'s' if len(_active_alerts) > 1 else ''}")
+            cols_alert = st.columns(min(len(_active_alerts), 4))
+            for i, (_kpi, _val, _thresh) in enumerate(_active_alerts):
+                with cols_alert[i % len(cols_alert)]:
+                    st.error(f"**{_kpi}**\n\n{_val}\n\nThreshold: {_thresh}")
 
     # Top-level KPI cards — shadcn ui.metric_card for polished design
     col1, col2, col3, col4 = st.columns(4)
@@ -509,11 +608,8 @@ with tab1:
 with tab2:
     st.header("Collections & Revenue Analysis")
 
-    gcr_val, gcr_trend = query_gross_collection_rate(params)
-    ncr_val, ncr_trend = query_net_collection_rate(params)
-    ctc_val, ctc_trend = query_cost_to_collect(params)
+    # gcr, ncr, ctc, bad_debt are pre-computed above the tabs.
     avg_reimb, reimb_trend = query_avg_reimbursement(params)
-    bad_debt_val, bad_debt_amt, total_charges_val = query_bad_debt_rate(params)
 
     # KPIs
     col1, col2, col3, col4 = st.columns(4)
@@ -1515,6 +1611,289 @@ with tab9:
         ]
         st.dataframe(underpay_table, hide_index=True, width="stretch")
         export_buttons("underpayment_analysis", {"Underpayment by Payer": underpay_table})
+
+
+# =====================================================================
+# TAB 10: FORECASTING & SCENARIO PLANNING
+# =====================================================================
+# Uses linear trend extrapolation on monthly actuals to project key
+# metrics 3 months forward, and provides interactive "what-if" sliders
+# so finance teams can model the dollar impact of process improvements
+# before committing resources.
+#
+# Forecasting approach:
+#   - Fit a degree-1 polynomial (linear trend) to the last N months
+#   - Project forward using the fitted slope
+#   - Show ±1 std-dev confidence band around projections
+#
+# Scenario modelling approach:
+#   - Denial reduction → claim recovery = avoided_denials × avg_payment
+#   - DAR reduction    → cash acceleration = freed_days × avg_daily_charges
+#   - CCR improvement  → rework savings = extra_clean_claims × rework_cost
+# =====================================================================
+with tab10:
+    st.header("Forecasting & Scenario Planning")
+    st.caption("Linear trend projections on monthly actuals + interactive what-if analysis.")
+
+    FORECAST_MONTHS = 3  # periods to project forward
+
+    # ── Cash Flow Forecast ────────────────────────────────────────────
+    st.subheader("Cash Flow Forecast (Monthly Collections)")
+
+    if not dar_trend.empty and "payments" in dar_trend.columns:
+        cf_series = dar_trend["payments"].dropna()
+        cf_fitted, cf_forecast, cf_std, cf_future = _linear_forecast(cf_series, FORECAST_MONTHS)
+
+        if cf_fitted is not None:
+            all_periods  = list(cf_series.index) + cf_future
+            actual_vals  = list(cf_series.values)
+            proj_vals    = [None] * len(cf_series) + list(cf_forecast)
+            fitted_vals  = list(cf_fitted)
+
+            fig = go.Figure()
+            fig.add_trace(go.Bar(
+                x=cf_series.index, y=cf_series.values,
+                name="Actual Collections", marker_color=RCM_COLORS[1], opacity=0.8,
+            ))
+            fig.add_trace(go.Scatter(
+                x=list(cf_series.index), y=fitted_vals,
+                name="Trend Line", mode="lines",
+                line=dict(color=RCM_COLORS[0], width=2, dash="dot"),
+            ))
+            fig.add_trace(go.Scatter(
+                x=cf_future, y=cf_forecast,
+                name="Projected", mode="lines+markers",
+                line=dict(color=RCM_COLORS[2], width=3),
+                marker=dict(size=10, symbol="diamond"),
+            ))
+            # Confidence band
+            fig.add_trace(go.Scatter(
+                x=cf_future + cf_future[::-1],
+                y=list(cf_forecast + cf_std) + list((cf_forecast - cf_std)[::-1]),
+                fill="toself", fillcolor="rgba(245,158,11,0.15)",
+                line=dict(color="rgba(0,0,0,0)"),
+                name="±1 Std Dev", showlegend=True,
+            ))
+            fig.update_layout(
+                height=380, margin=dict(t=40, b=30),
+                yaxis_title="Monthly Collections ($)", xaxis_title="Month",
+                legend=dict(orientation="h", yanchor="bottom", y=1.02),
+            )
+            st.plotly_chart(fig, theme="streamlit", width="stretch")
+
+            fcast_total = cf_forecast.sum()
+            trend_dir   = "↑ upward" if cf_forecast[-1] > cf_series.iloc[-1] else "↓ downward"
+            st.info(
+                f"**Projection:** Estimated **${fcast_total:,.0f}** in collections over the next "
+                f"{FORECAST_MONTHS} months. Trend is **{trend_dir}**."
+            )
+        else:
+            st.info("Insufficient monthly data for cash flow projection (need ≥ 4 periods).")
+    else:
+        st.info("No collections trend data available for the selected filters.")
+
+    st.divider()
+
+    # ── DAR & Denial Rate Forecasts ───────────────────────────────────
+    col_f1, col_f2 = st.columns(2)
+
+    with col_f1:
+        st.subheader("Days in A/R Forecast")
+        if not dar_trend.empty and "days_in_ar" in dar_trend.columns:
+            dar_series = dar_trend["days_in_ar"].dropna()
+            dar_fitted, dar_forecast_vals, dar_std, dar_future = _linear_forecast(dar_series, FORECAST_MONTHS)
+            if dar_fitted is not None:
+                fig = go.Figure()
+                fig.add_trace(go.Scatter(
+                    x=list(dar_series.index), y=list(dar_series.values),
+                    name="Actual DAR", mode="lines+markers",
+                    line=dict(color=RCM_COLORS[0], width=2),
+                ))
+                fig.add_trace(go.Scatter(
+                    x=dar_future, y=dar_forecast_vals,
+                    name="Projected DAR", mode="lines+markers",
+                    line=dict(color=RCM_COLORS[2], width=3, dash="dash"),
+                    marker=dict(size=9, symbol="diamond"),
+                ))
+                # Confidence band
+                fig.add_trace(go.Scatter(
+                    x=dar_future + dar_future[::-1],
+                    y=list(dar_forecast_vals + dar_std) + list((dar_forecast_vals - dar_std)[::-1]),
+                    fill="toself", fillcolor="rgba(239,68,68,0.1)",
+                    line=dict(color="rgba(0,0,0,0)"), name="±1 Std Dev",
+                ))
+                fig.add_hline(y=35, line_dash="dash", line_color="green",
+                              annotation_text="35-day benchmark")
+                fig.update_layout(height=340, margin=dict(t=40, b=10),
+                                  yaxis_title="Days in A/R", xaxis_title="Month")
+                st.plotly_chart(fig, theme="streamlit", width="stretch")
+                proj_dar = float(dar_forecast_vals[-1])
+                if proj_dar > 35:
+                    st.warning(f"Projected DAR in {dar_future[-1]}: **{proj_dar:.1f} days** — above the 35-day benchmark.")
+                else:
+                    st.success(f"Projected DAR in {dar_future[-1]}: **{proj_dar:.1f} days** — within benchmark.")
+            else:
+                st.info("Insufficient data for DAR projection.")
+        else:
+            st.info("No DAR trend data available.")
+
+    with col_f2:
+        st.subheader("Denial Rate Forecast")
+        if not denial_trend.empty and "denial_rate" in denial_trend.columns:
+            dr_series = denial_trend["denial_rate"].dropna()
+            dr_fitted, dr_forecast_vals, dr_std, dr_future = _linear_forecast(dr_series, FORECAST_MONTHS)
+            if dr_fitted is not None:
+                fig = go.Figure()
+                fig.add_trace(go.Scatter(
+                    x=list(dr_series.index), y=list(dr_series.values),
+                    name="Actual Denial Rate", mode="lines+markers",
+                    line=dict(color=RCM_COLORS[3], width=2),
+                ))
+                fig.add_trace(go.Scatter(
+                    x=dr_future, y=dr_forecast_vals,
+                    name="Projected Denial Rate", mode="lines+markers",
+                    line=dict(color=RCM_COLORS[2], width=3, dash="dash"),
+                    marker=dict(size=9, symbol="diamond"),
+                ))
+                fig.add_trace(go.Scatter(
+                    x=dr_future + dr_future[::-1],
+                    y=list(dr_forecast_vals + dr_std) + list((dr_forecast_vals - dr_std)[::-1]),
+                    fill="toself", fillcolor="rgba(239,68,68,0.1)",
+                    line=dict(color="rgba(0,0,0,0)"), name="±1 Std Dev",
+                ))
+                fig.add_hline(y=10, line_dash="dash", line_color="green",
+                              annotation_text="10% benchmark")
+                fig.update_layout(height=340, margin=dict(t=40, b=10),
+                                  yaxis_title="Denial Rate (%)", xaxis_title="Month")
+                st.plotly_chart(fig, theme="streamlit", width="stretch")
+                proj_dr = float(dr_forecast_vals[-1])
+                if proj_dr > 10:
+                    st.warning(f"Projected denial rate in {dr_future[-1]}: **{proj_dr:.1f}%** — above 10% benchmark.")
+                else:
+                    st.success(f"Projected denial rate in {dr_future[-1]}: **{proj_dr:.1f}%** — within benchmark.")
+            else:
+                st.info("Insufficient data for denial rate projection.")
+        else:
+            st.info("No denial rate trend data available.")
+
+    st.divider()
+
+    # ── Scenario Modelling ────────────────────────────────────────────
+    st.subheader("What-If Scenario Modelling")
+    st.markdown(
+        "Use the sliders below to model the financial impact of operational improvements. "
+        "All estimates use your current filtered data as the baseline."
+    )
+
+    # Derive baseline figures needed for scenarios
+    _total_claims    = denial_trend["total_claims"].sum()  if not denial_trend.empty and "total_claims" in denial_trend.columns else 0
+    _total_denied    = denial_trend["denied_claims"].sum() if not denial_trend.empty and "denied_claims" in denial_trend.columns else 0
+    _num_months      = max(len(denial_trend), 1)
+    _avg_monthly_cls = _total_claims / _num_months
+
+    _total_payments_sc = dar_trend["payments"].sum()  if not dar_trend.empty and "payments" in dar_trend.columns else 0
+    _total_charges_sc  = dar_trend["charges"].sum()   if not dar_trend.empty and "charges" in dar_trend.columns else 0
+    _avg_daily_charges = _total_charges_sc / max((_num_months * 30), 1)
+    _paid_claims       = max(_total_claims - _total_denied, 1)
+    _avg_payment_per_claim = _total_payments_sc / _paid_claims if _paid_claims > 0 else 0
+
+    _total_clean   = ccr_trend["clean_claims"].sum()  if not ccr_trend.empty and "clean_claims" in ccr_trend.columns else 0
+    _rework_cost   = 25.0  # industry-standard cost per reworked claim ($)
+
+    col_s1, col_s2, col_s3 = st.columns(3)
+
+    with col_s1:
+        with st.container(border=True):
+            st.markdown("#### Reduce Denial Rate")
+            st.caption(f"Baseline: **{denial_val:.1f}%** denial rate across **{int(_avg_monthly_cls):,}** claims/month")
+            denial_improve = st.slider(
+                "Reduce denial rate by (percentage points)",
+                min_value=0.0, max_value=min(float(denial_val), 10.0),
+                value=min(2.0, float(denial_val)), step=0.5,
+                key="scenario_denial",
+            )
+            monthly_recovered_claims = (_avg_monthly_cls * denial_improve / 100)
+            monthly_recovery         = monthly_recovered_claims * _avg_payment_per_claim
+            annual_recovery          = monthly_recovery * 12
+
+            st.metric("Monthly Revenue Recovery",  f"${monthly_recovery:,.0f}")
+            st.metric("Annual Revenue Recovery",   f"${annual_recovery:,.0f}")
+            st.metric("Claims Recovered / Month",  f"{monthly_recovered_claims:.0f}")
+            if denial_improve > 0 and _avg_payment_per_claim > 0:
+                st.success(
+                    f"Reducing denial rate from **{denial_val:.1f}%** to "
+                    f"**{denial_val - denial_improve:.1f}%** recovers "
+                    f"**${annual_recovery:,.0f}/year**."
+                )
+
+    with col_s2:
+        with st.container(border=True):
+            st.markdown("#### Reduce Days in A/R")
+            st.caption(f"Baseline: **{dar_val:.1f} days** A/R | Avg daily charges: **${_avg_daily_charges:,.0f}**")
+            dar_improve = st.slider(
+                "Reduce DAR by (days)",
+                min_value=0, max_value=30,
+                value=5, step=1,
+                key="scenario_dar",
+            )
+            cash_unlocked = dar_improve * _avg_daily_charges
+
+            st.metric("One-Time Cash Acceleration", f"${cash_unlocked:,.0f}")
+            st.metric("New Projected DAR",           f"{max(dar_val - dar_improve, 0):.1f} days")
+            benchmark_gap = max(dar_val - 35, 0)
+            st.metric("Remaining Gap to Benchmark",  f"{max(benchmark_gap - dar_improve, 0):.1f} days")
+            if dar_improve > 0 and _avg_daily_charges > 0:
+                st.success(
+                    f"Cutting DAR by **{dar_improve} days** releases "
+                    f"**${cash_unlocked:,.0f}** in working capital."
+                )
+
+    with col_s3:
+        with st.container(border=True):
+            st.markdown("#### Improve Clean Claim Rate")
+            st.caption(f"Baseline: **{ccr_val:.1f}%** CCR | Rework cost: **${_rework_cost:.0f}/claim**")
+            ccr_improve = st.slider(
+                "Improve clean claim rate by (percentage points)",
+                min_value=0.0, max_value=min(100.0 - float(ccr_val), 10.0),
+                value=min(3.0, max(0.0, 100.0 - float(ccr_val))), step=0.5,
+                key="scenario_ccr",
+            )
+            extra_clean_monthly  = _avg_monthly_cls * ccr_improve / 100
+            monthly_rework_saved = extra_clean_monthly * _rework_cost
+            annual_rework_saved  = monthly_rework_saved * 12
+            implied_denial_drop  = ccr_improve * 0.4  # empirical: ~40% of dirty claims become denials
+
+            st.metric("Monthly Rework Savings",    f"${monthly_rework_saved:,.0f}")
+            st.metric("Annual Rework Savings",     f"${annual_rework_saved:,.0f}")
+            st.metric("Implied Denial Rate Drop",  f"~{implied_denial_drop:.1f} pp")
+            if ccr_improve > 0:
+                st.success(
+                    f"Raising CCR from **{ccr_val:.1f}%** to **{ccr_val + ccr_improve:.1f}%** "
+                    f"saves **${annual_rework_saved:,.0f}/year** in rework costs."
+                )
+
+    # ── Combined Impact Summary ───────────────────────────────────────
+    st.divider()
+    st.subheader("Combined Annual Impact Estimate")
+    combined_annual = (
+        monthly_recovery * 12
+        + cash_unlocked   # one-time, shown separately
+        + annual_rework_saved
+    )
+    ci1, ci2, ci3, ci4 = st.columns(4)
+    with ci1:
+        st.metric("Denial Recovery (Annual)",  f"${monthly_recovery * 12:,.0f}")
+    with ci2:
+        st.metric("Cash Acceleration (1×)",    f"${cash_unlocked:,.0f}")
+    with ci3:
+        st.metric("Rework Savings (Annual)",   f"${annual_rework_saved:,.0f}")
+    with ci4:
+        ui.metric_card(
+            title="Total Opportunity",
+            content=f"${combined_annual:,.0f}",
+            description="Annual recurring + one-time impact",
+            key="combined_impact",
+        )
 
 
 # ── Sidebar Footer ───────────────────────────────────────────────────
