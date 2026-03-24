@@ -573,6 +573,59 @@ CREATE INDEX IF NOT EXISTS idx_silver_charges_encounter  ON silver_charges(encou
 CREATE INDEX IF NOT EXISTS idx_silver_charges_date       ON silver_charges(service_date);
 """
 
+# ===========================================================================
+# METADATA LAYER — AI-queryable semantic and knowledge graph tables
+# ===========================================================================
+# These four tables persist the business metadata that an AI app needs to
+# understand the data model and generate correct SQL queries:
+#
+#   meta_kpi_catalog     — 23 KPI definitions with formulas and benchmarks
+#   meta_semantic_layer  — Business concept → KPI → silver column mappings
+#   meta_kg_nodes        — Entity nodes (tables) with column descriptions
+#   meta_kg_edges        — Foreign-key relationships between entities
+#
+# All four tables are populated by persist_metadata() on every initialisation.
+# They are safe to query directly from an AI agent alongside the Silver layer.
+# ===========================================================================
+
+METADATA_SCHEMA_SQL = """
+CREATE TABLE IF NOT EXISTS meta_kpi_catalog (
+    metric_name   TEXT PRIMARY KEY,
+    category      TEXT NOT NULL,
+    definition    TEXT,
+    formula       TEXT,
+    data_sources  TEXT,
+    dashboard_tab TEXT,
+    benchmark     TEXT
+);
+
+CREATE TABLE IF NOT EXISTS meta_semantic_layer (
+    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+    business_concept TEXT NOT NULL,
+    kpi_name         TEXT NOT NULL,
+    silver_columns   TEXT,
+    formula          TEXT,
+    business_rule    TEXT
+);
+
+CREATE TABLE IF NOT EXISTS meta_kg_nodes (
+    entity_id    TEXT PRIMARY KEY,
+    entity_name  TEXT NOT NULL,
+    entity_group TEXT,
+    silver_table TEXT,
+    description  TEXT
+);
+
+CREATE TABLE IF NOT EXISTS meta_kg_edges (
+    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+    parent_entity    TEXT NOT NULL,
+    child_entity     TEXT NOT NULL,
+    join_column      TEXT,
+    cardinality      TEXT,
+    business_meaning TEXT
+);
+"""
+
 # ---------------------------------------------------------------------------
 # Legacy table names from the pre-medallion schema.
 # initialize_database() drops these before creating the new schema so that
@@ -616,8 +669,9 @@ def create_tables(conn):
     conn.executescript(SILVER_SCHEMA_SQL)
     conn.executescript(GOLD_VIEWS_SQL)
     conn.executescript(INDEX_SQL)
+    conn.executescript(METADATA_SCHEMA_SQL)
     conn.commit()
-    print("  [OK] Bronze tables, Silver tables, Gold views, and indexes created.")
+    print("  [OK] Bronze tables, Silver tables, Gold views, indexes, and metadata tables created.")
 
 
 def load_csv_to_bronze(conn, bronze_table, csv_filename):
@@ -677,6 +731,116 @@ def _etl_bronze_to_silver(conn):
     conn.execute("PRAGMA foreign_keys=ON;")
     conn.commit()
     print("  [OK] Silver: ETL from Bronze complete.")
+
+
+def persist_metadata(conn):
+    """
+    Populate the four meta_* tables from the module-level metadata constants
+    defined in src.metadata_pages.
+
+    This is called once per database initialisation so an AI app can query
+    the metadata tables directly alongside the Silver layer without needing
+    to parse Python source files.
+
+    Tables populated:
+        meta_kpi_catalog     — KPI name, category, formula, benchmark
+        meta_semantic_layer  — business concept → KPI → silver columns
+        meta_kg_nodes        — entity nodes with silver table descriptions
+        meta_kg_edges        — FK relationships between entities
+
+    Args:
+        conn: An active SQLite connection.
+    """
+    from src.metadata_pages import (
+        _KPI_CATALOG,
+        _SEMANTIC_LAYER,
+        _KG_NODES,
+        _KG_EDGES,
+        _KG_RELATIONSHIPS,
+    )
+
+    # ── meta_kpi_catalog ───────────────────────────────────────────────
+    conn.execute("DELETE FROM meta_kpi_catalog;")
+    # Build a benchmark lookup from the README benchmarks encoded per metric
+    _BENCHMARKS = {
+        "Days in A/R (DAR)":              "≤ 35 days",
+        "Net Collection Rate (NCR)":      "≥ 95%",
+        "Gross Collection Rate (GCR)":    "≥ 70%",
+        "Clean Claim Rate":               "≥ 90%",
+        "Denial Rate":                    "≤ 10%",
+        "First-Pass Resolution Rate":     "≥ 85%",
+        "Payment Accuracy Rate":          "≥ 95%",
+        "Bad Debt Rate":                  "≤ 3%",
+        "Cost to Collect":                "≤ 3%",
+    }
+    for kpi in _KPI_CATALOG:
+        conn.execute(
+            "INSERT OR REPLACE INTO meta_kpi_catalog "
+            "(metric_name, category, definition, formula, data_sources, dashboard_tab, benchmark) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (
+                kpi["Metric"],
+                kpi["Category"],
+                kpi["Definition"],
+                kpi["Formula"],
+                kpi["Data Sources"],
+                kpi["Dashboard Tab"],
+                _BENCHMARKS.get(kpi["Metric"]),
+            ),
+        )
+
+    # ── meta_semantic_layer ────────────────────────────────────────────
+    conn.execute("DELETE FROM meta_semantic_layer;")
+    for row in _SEMANTIC_LAYER:
+        conn.execute(
+            "INSERT INTO meta_semantic_layer "
+            "(business_concept, kpi_name, silver_columns, formula, business_rule) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (
+                row["business_concept"],
+                row["kpi_name"],
+                row["silver_columns"],
+                row["formula"],
+                row["business_rule"],
+            ),
+        )
+
+    # ── meta_kg_nodes ──────────────────────────────────────────────────
+    conn.execute("DELETE FROM meta_kg_nodes;")
+    for node in _KG_NODES:
+        # Derive silver_table name from the id (operating_costs → silver_operating_costs)
+        silver_table = f"silver_{node['id']}"
+        conn.execute(
+            "INSERT OR REPLACE INTO meta_kg_nodes "
+            "(entity_id, entity_name, entity_group, silver_table, description) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (
+                node["id"],
+                node["label"].replace("\n", " "),
+                node["group"],
+                silver_table,
+                node["hover"],
+            ),
+        )
+
+    # ── meta_kg_edges ──────────────────────────────────────────────────
+    conn.execute("DELETE FROM meta_kg_edges;")
+    for rel in _KG_RELATIONSHIPS:
+        conn.execute(
+            "INSERT INTO meta_kg_edges "
+            "(parent_entity, child_entity, join_column, cardinality, business_meaning) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (
+                rel["parent_table"],
+                rel["child_table"],
+                rel["join_column"],
+                rel["cardinality"],
+                rel["business_meaning"],
+            ),
+        )
+
+    conn.commit()
+    print("  [OK] Metadata tables populated (meta_kpi_catalog, meta_semantic_layer, meta_kg_nodes, meta_kg_edges).")
 
 
 def initialize_database(db_path=None):
@@ -783,6 +947,13 @@ def initialize_database(db_path=None):
     # ------------------------------------------------------------------
     print("Step 4: Running ETL — Bronze → Silver (type casting & validation)...")
     _etl_bronze_to_silver(conn)
+    print()
+
+    # ------------------------------------------------------------------
+    # Step 4b: Persist metadata (AI-queryable semantic + KG tables)
+    # ------------------------------------------------------------------
+    print("Step 4b: Persisting metadata layer...")
+    persist_metadata(conn)
     print()
 
     # ------------------------------------------------------------------

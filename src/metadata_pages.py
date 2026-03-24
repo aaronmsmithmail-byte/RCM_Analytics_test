@@ -266,6 +266,83 @@ _TABLE_CATALOG = [
 ]
 
 
+# ── Knowledge Graph data (module-level for AI app consumption) ────────
+
+_KG_NODES = [
+    # Reference entities (blue) — outer ring top
+    {"id": "payers",    "label": "payers",    "x": 5.0, "y": 9.0, "color": "#5b8dee", "size": 30,
+     "group": "Reference", "hover": "silver_payers: payer_id PK, payer_name, payer_type, avg_reimbursement_pct REAL"},
+    {"id": "patients",  "label": "patients",  "x": 1.5, "y": 7.0, "color": "#5b8dee", "size": 30,
+     "group": "Reference", "hover": "silver_patients: patient_id PK, primary_payer_id FK → silver_payers"},
+    {"id": "providers", "label": "providers", "x": 8.5, "y": 7.0, "color": "#5b8dee", "size": 30,
+     "group": "Reference", "hover": "silver_providers: provider_id PK, department, specialty"},
+    # Central hub
+    {"id": "encounters", "label": "encounters", "x": 5.0, "y": 5.5, "color": "#38c172", "size": 36,
+     "group": "Transactional", "hover": "silver_encounters: encounter_id PK, patient_id FK, provider_id FK, date_of_service, department, encounter_type"},
+    # Claims hub
+    {"id": "claims", "label": "claims", "x": 5.0, "y": 3.0, "color": "#38c172", "size": 36,
+     "group": "Transactional", "hover": "silver_claims: claim_id PK, encounter_id FK, patient_id FK, payer_id FK, date_of_service, submission_date, total_charge_amount REAL, claim_status, is_clean_claim INTEGER"},
+    # Leaf transactional nodes
+    {"id": "charges",     "label": "charges",     "x": 1.5, "y": 4.5, "color": "#38c172", "size": 26,
+     "group": "Transactional", "hover": "silver_charges: charge_id PK, encounter_id FK, charge_amount REAL, units INTEGER, service_date, post_date"},
+    {"id": "payments",    "label": "payments",    "x": 2.5, "y": 1.0, "color": "#38c172", "size": 26,
+     "group": "Transactional", "hover": "silver_payments: payment_id PK, claim_id FK, payment_amount REAL, is_accurate_payment INTEGER"},
+    {"id": "denials",     "label": "denials",     "x": 5.0, "y": 0.5, "color": "#38c172", "size": 26,
+     "group": "Transactional", "hover": "silver_denials: denial_id PK, claim_id FK, denial_reason_code, denied_amount REAL, appeal_status, recovered_amount REAL"},
+    {"id": "adjustments", "label": "adjustments", "x": 7.5, "y": 1.0, "color": "#38c172", "size": 26,
+     "group": "Transactional", "hover": "silver_adjustments: adjustment_id PK, claim_id FK, adjustment_type_code, adjustment_amount REAL"},
+    # Operational
+    {"id": "operating_costs", "label": "operating\ncosts", "x": 9.0, "y": 4.5, "color": "#e8a838", "size": 26,
+     "group": "Operational", "hover": "silver_operating_costs: period PK, total_rcm_cost REAL"},
+]
+
+_KG_EDGES = [
+    {"source": "payers",    "target": "patients",      "label": "1:N (primary_payer_id)"},
+    {"source": "patients",  "target": "encounters",    "label": "1:N (patient_id)"},
+    {"source": "providers", "target": "encounters",    "label": "1:N (provider_id)"},
+    {"source": "encounters","target": "charges",       "label": "1:N (encounter_id)"},
+    {"source": "encounters","target": "claims",        "label": "1:N (encounter_id)"},
+    {"source": "payers",    "target": "claims",        "label": "1:N (payer_id)"},
+    {"source": "claims",    "target": "payments",      "label": "1:N (claim_id)"},
+    {"source": "claims",    "target": "denials",       "label": "1:N (claim_id)"},
+    {"source": "claims",    "target": "adjustments",   "label": "1:N (claim_id)"},
+]
+
+_KG_RELATIONSHIPS = [
+    {"parent_table": "payers",    "child_table": "patients",     "join_column": "primary_payer_id", "cardinality": "1:N", "business_meaning": "Each patient has one primary payer"},
+    {"parent_table": "payers",    "child_table": "claims",       "join_column": "payer_id",         "cardinality": "1:N", "business_meaning": "Claims are billed to one payer"},
+    {"parent_table": "patients",  "child_table": "encounters",   "join_column": "patient_id",       "cardinality": "1:N", "business_meaning": "A patient can have many visits"},
+    {"parent_table": "providers", "child_table": "encounters",   "join_column": "provider_id",      "cardinality": "1:N", "business_meaning": "A provider sees many patients"},
+    {"parent_table": "encounters","child_table": "charges",      "join_column": "encounter_id",     "cardinality": "1:N", "business_meaning": "Each visit generates line-item charges"},
+    {"parent_table": "encounters","child_table": "claims",       "join_column": "encounter_id",     "cardinality": "1:N", "business_meaning": "Each visit produces one or more insurance claims"},
+    {"parent_table": "claims",    "child_table": "payments",     "join_column": "claim_id",         "cardinality": "1:N", "business_meaning": "A claim may receive partial or split payments"},
+    {"parent_table": "claims",    "child_table": "denials",      "join_column": "claim_id",         "cardinality": "1:N", "business_meaning": "A claim can be denied once or multiple times"},
+    {"parent_table": "claims",    "child_table": "adjustments",  "join_column": "claim_id",         "cardinality": "1:N", "business_meaning": "Contractual write-offs are applied per claim"},
+]
+
+
+# ── Semantic Layer data (module-level for AI app consumption) ─────────
+
+_SEMANTIC_LAYER = [
+    {"business_concept": "Revenue",       "kpi_name": "Gross Collection Rate",       "silver_columns": "silver_claims.total_charge_amount, silver_payments.payment_amount",                                                              "formula": "SUM(payments)/SUM(charges)×100",              "business_rule": "Measures total collections vs. gross billed"},
+    {"business_concept": "Revenue",       "kpi_name": "Bad Debt Rate",               "silver_columns": "silver_adjustments.adjustment_type_code, silver_adjustments.adjustment_amount, silver_claims.total_charge_amount",               "formula": "SUM(bad_debt_adj)/SUM(charges)×100",           "business_rule": "Write-offs where type_code indicates bad debt"},
+    {"business_concept": "Revenue",       "kpi_name": "Avg Reimbursement/Encounter", "silver_columns": "silver_payments.payment_amount, silver_encounters.encounter_id",                                                                 "formula": "SUM(payments)/COUNT(encounters)",              "business_rule": "Revenue efficiency per patient visit"},
+    {"business_concept": "Collections",   "kpi_name": "Net Collection Rate",         "silver_columns": "silver_payments.payment_amount, silver_claims.total_charge_amount, silver_adjustments.adjustment_amount",                        "formula": "Payments/(Charges−Adjustments)×100",           "business_rule": "Adjustments remove contractually non-collectible amounts"},
+    {"business_concept": "Collections",   "kpi_name": "Cost to Collect",             "silver_columns": "silver_operating_costs.total_rcm_cost, silver_payments.payment_amount",                                                          "formula": "RCM Cost/Collections×100",                     "business_rule": "Billing dept efficiency; target <3%"},
+    {"business_concept": "Claims Quality","kpi_name": "Clean Claim Rate",            "silver_columns": "silver_claims.is_clean_claim",                                                                                                    "formula": "SUM(is_clean_claim)/COUNT(claims)×100",        "business_rule": "Claims passing payer edits on first submission"},
+    {"business_concept": "Claims Quality","kpi_name": "Denial Rate",                 "silver_columns": "silver_claims.claim_status",                                                                                                      "formula": "COUNT(status='Denied')/COUNT(claims)×100",     "business_rule": "Industry benchmark <5%"},
+    {"business_concept": "Claims Quality","kpi_name": "First-Pass Rate",             "silver_columns": "silver_claims.claim_status, silver_claims.is_clean_claim",                                                                       "formula": "Resolved on first pass/Total×100",             "business_rule": "Resolved = Paid or legitimately Denied w/o rework"},
+    {"business_concept": "Claims Quality","kpi_name": "Charge Lag",                  "silver_columns": "silver_claims.submission_date, silver_claims.date_of_service",                                                                   "formula": "AVG(submission_date − date_of_service)",       "business_rule": "Target <3 days; delays increase A/R balance"},
+    {"business_concept": "A/R Health",    "kpi_name": "Days in A/R",                 "silver_columns": "silver_claims.total_charge_amount, silver_payments.payment_amount",                                                              "formula": "(Charges−Payments)/(Monthly Charges/30)",      "business_rule": "Target <40 days; >50 is critical"},
+    {"business_concept": "A/R Health",    "kpi_name": "A/R Aging",                   "silver_columns": "silver_claims.date_of_service, silver_claims.claim_status, silver_payments.payment_amount",                                      "formula": "Outstanding bucketed by age in days",          "business_rule": "90+ day bucket should be <15% of total A/R"},
+    {"business_concept": "A/R Health",    "kpi_name": "Payment Accuracy Rate",       "silver_columns": "silver_payments.is_accurate_payment",                                                                                             "formula": "SUM(is_accurate_payment)/COUNT×100",           "business_rule": "Inaccurate payments require follow-up with payer"},
+    {"business_concept": "Recovery",      "kpi_name": "Appeal Success Rate",         "silver_columns": "silver_denials.appeal_status",                                                                                                    "formula": "Successful/Total Appealed×100",                "business_rule": "Target >50%; tracks ability to recover denied revenue"},
+    {"business_concept": "Payer Perf.",   "kpi_name": "Payer Mix",                   "silver_columns": "silver_payments.payment_amount, silver_payers.payer_type, silver_claims.payer_id",                                              "formula": "SUM(payments) GROUP BY payer_type",            "business_rule": "High self-pay mix → higher collection risk"},
+    {"business_concept": "Payer Perf.",   "kpi_name": "Denial Rate by Payer",        "silver_columns": "silver_claims.claim_status, silver_claims.payer_id, silver_payers.payer_name",                                                  "formula": "Denied/Total GROUP BY payer",                  "business_rule": "Identifies payers with problematic contracts/edits"},
+    {"business_concept": "Dept Perf.",    "kpi_name": "Department Performance",      "silver_columns": "silver_encounters.department, silver_payments.payment_amount, silver_claims.encounter_id",                                       "formula": "SUM(payments), COUNT(encounters) GROUP BY dept","business_rule": "Revenue and volume by clinical department"},
+]
+
+
 # ── Page 1: Data Catalog ──────────────────────────────────────────────
 
 def render_data_catalog():
@@ -577,47 +654,7 @@ def render_knowledge_graph():
     st.title("Knowledge Graph")
     st.caption("Entity relationships across the 10 data tables. Hover nodes for column details.")
 
-    nodes = [
-        # Reference entities (blue) — outer ring top
-        {"id": "payers",    "label": "payers",    "x": 5.0, "y": 9.0, "color": "#5b8dee", "size": 30,
-         "group": "Reference", "hover": "silver_payers: payer_id PK, payer_name, payer_type, avg_reimbursement_pct REAL"},
-        {"id": "patients",  "label": "patients",  "x": 1.5, "y": 7.0, "color": "#5b8dee", "size": 30,
-         "group": "Reference", "hover": "silver_patients: patient_id PK, primary_payer_id FK → silver_payers"},
-        {"id": "providers", "label": "providers", "x": 8.5, "y": 7.0, "color": "#5b8dee", "size": 30,
-         "group": "Reference", "hover": "silver_providers: provider_id PK, department, specialty"},
-        # Central hub
-        {"id": "encounters", "label": "encounters", "x": 5.0, "y": 5.5, "color": "#38c172", "size": 36,
-         "group": "Transactional", "hover": "silver_encounters: encounter_id PK, patient_id FK, provider_id FK, date_of_service, department, encounter_type"},
-        # Claims hub
-        {"id": "claims", "label": "claims", "x": 5.0, "y": 3.0, "color": "#38c172", "size": 36,
-         "group": "Transactional", "hover": "silver_claims: claim_id PK, encounter_id FK, patient_id FK, payer_id FK, date_of_service, submission_date, total_charge_amount REAL, claim_status, is_clean_claim INTEGER"},
-        # Leaf transactional nodes
-        {"id": "charges",     "label": "charges",     "x": 1.5, "y": 4.5, "color": "#38c172", "size": 26,
-         "group": "Transactional", "hover": "silver_charges: charge_id PK, encounter_id FK, charge_amount REAL, units INTEGER, service_date, post_date"},
-        {"id": "payments",    "label": "payments",    "x": 2.5, "y": 1.0, "color": "#38c172", "size": 26,
-         "group": "Transactional", "hover": "silver_payments: payment_id PK, claim_id FK, payment_amount REAL, is_accurate_payment INTEGER"},
-        {"id": "denials",     "label": "denials",     "x": 5.0, "y": 0.5, "color": "#38c172", "size": 26,
-         "group": "Transactional", "hover": "silver_denials: denial_id PK, claim_id FK, denial_reason_code, denied_amount REAL, appeal_status, recovered_amount REAL"},
-        {"id": "adjustments", "label": "adjustments", "x": 7.5, "y": 1.0, "color": "#38c172", "size": 26,
-         "group": "Transactional", "hover": "silver_adjustments: adjustment_id PK, claim_id FK, adjustment_type_code, adjustment_amount REAL"},
-        # Operational
-        {"id": "operating_costs", "label": "operating\ncosts", "x": 9.0, "y": 4.5, "color": "#e8a838", "size": 26,
-         "group": "Operational", "hover": "silver_operating_costs: period PK, total_rcm_cost REAL"},
-    ]
-
-    edges = [
-        {"source": "payers",    "target": "patients",      "label": "1:N (primary_payer_id)"},
-        {"source": "patients",  "target": "encounters",    "label": "1:N (patient_id)"},
-        {"source": "providers", "target": "encounters",    "label": "1:N (provider_id)"},
-        {"source": "encounters","target": "charges",       "label": "1:N (encounter_id)"},
-        {"source": "encounters","target": "claims",        "label": "1:N (encounter_id)"},
-        {"source": "payers",    "target": "claims",        "label": "1:N (payer_id)"},
-        {"source": "claims",    "target": "payments",      "label": "1:N (claim_id)"},
-        {"source": "claims",    "target": "denials",       "label": "1:N (claim_id)"},
-        {"source": "claims",    "target": "adjustments",   "label": "1:N (claim_id)"},
-    ]
-
-    _draw_network_graph(nodes, edges, "Entity Relationship Diagram", height=620)
+    _draw_network_graph(_KG_NODES, _KG_EDGES, "Entity Relationship Diagram", height=620)
 
     # Legend
     st.markdown("""
@@ -629,18 +666,17 @@ def render_knowledge_graph():
 """)
 
     st.subheader("Relationships")
-    rel_table = [
-        {"Parent Table": "payers",    "Child Table": "patients",     "Join Column": "primary_payer_id", "Cardinality": "1:N", "Business Meaning": "Each patient has one primary payer"},
-        {"Parent Table": "payers",    "Child Table": "claims",       "Join Column": "payer_id",         "Cardinality": "1:N", "Business Meaning": "Claims are billed to one payer"},
-        {"Parent Table": "patients",  "Child Table": "encounters",   "Join Column": "patient_id",       "Cardinality": "1:N", "Business Meaning": "A patient can have many visits"},
-        {"Parent Table": "providers", "Child Table": "encounters",   "Join Column": "provider_id",      "Cardinality": "1:N", "Business Meaning": "A provider sees many patients"},
-        {"Parent Table": "encounters","Child Table": "charges",      "Join Column": "encounter_id",     "Cardinality": "1:N", "Business Meaning": "Each visit generates line-item charges"},
-        {"Parent Table": "encounters","Child Table": "claims",       "Join Column": "encounter_id",     "Cardinality": "1:N", "Business Meaning": "Each visit produces one or more insurance claims"},
-        {"Parent Table": "claims",    "Child Table": "payments",     "Join Column": "claim_id",         "Cardinality": "1:N", "Business Meaning": "A claim may receive partial or split payments"},
-        {"Parent Table": "claims",    "Child Table": "denials",      "Join Column": "claim_id",         "Cardinality": "1:N", "Business Meaning": "A claim can be denied once or multiple times"},
-        {"Parent Table": "claims",    "Child Table": "adjustments",  "Join Column": "claim_id",         "Cardinality": "1:N", "Business Meaning": "Contractual write-offs are applied per claim"},
+    rel_display = [
+        {
+            "Parent Table": r["parent_table"],
+            "Child Table":  r["child_table"],
+            "Join Column":  r["join_column"],
+            "Cardinality":  r["cardinality"],
+            "Business Meaning": r["business_meaning"],
+        }
+        for r in _KG_RELATIONSHIPS
     ]
-    st.dataframe(pd.DataFrame(rel_table), width="stretch", hide_index=True)
+    st.dataframe(pd.DataFrame(rel_display), width="stretch", hide_index=True)
 
 
 # ── Page 4: Semantic Layer ────────────────────────────────────────────
@@ -698,25 +734,17 @@ def render_semantic_layer():
 
     # ── Semantic mapping table ──
     st.subheader("Semantic Mapping")
-    semantic = [
-        {"Business Concept": "Revenue",     "KPI": "Gross Collection Rate",       "Silver Columns": "silver_claims.total_charge_amount, silver_payments.payment_amount",              "Transformation": "SUM(payments)/SUM(charges)×100",              "Business Rule": "Measures total collections vs. gross billed"},
-        {"Business Concept": "Revenue",     "KPI": "Bad Debt Rate",               "Silver Columns": "silver_adjustments.adjustment_type_code, silver_adjustments.adjustment_amount, silver_claims.total_charge_amount", "Transformation": "SUM(bad_debt_adj)/SUM(charges)×100",     "Business Rule": "Write-offs where type_code indicates bad debt"},
-        {"Business Concept": "Revenue",     "KPI": "Avg Reimbursement/Encounter", "Silver Columns": "silver_payments.payment_amount, silver_encounters.encounter_id",             "Transformation": "SUM(payments)/COUNT(encounters)",             "Business Rule": "Revenue efficiency per patient visit"},
-        {"Business Concept": "Collections", "KPI": "Net Collection Rate",         "Silver Columns": "silver_payments.payment_amount, silver_claims.total_charge_amount, silver_adjustments.adjustment_amount", "Transformation": "Payments/(Charges−Adjustments)×100", "Business Rule": "Adjustments remove contractually non-collectible amounts"},
-        {"Business Concept": "Collections", "KPI": "Cost to Collect",             "Silver Columns": "silver_operating_costs.total_rcm_cost, silver_payments.payment_amount",     "Transformation": "RCM Cost/Collections×100",                    "Business Rule": "Billing dept efficiency; target <3%"},
-        {"Business Concept": "Claims Quality","KPI": "Clean Claim Rate",          "Silver Columns": "silver_claims.is_clean_claim",                                               "Transformation": "SUM(is_clean_claim)/COUNT(claims)×100",       "Business Rule": "Claims passing payer edits on first submission"},
-        {"Business Concept": "Claims Quality","KPI": "Denial Rate",               "Silver Columns": "silver_claims.claim_status",                                                 "Transformation": "COUNT(status='Denied')/COUNT(claims)×100",    "Business Rule": "Industry benchmark <5%"},
-        {"Business Concept": "Claims Quality","KPI": "First-Pass Rate",           "Silver Columns": "silver_claims.claim_status, silver_claims.is_clean_claim",                  "Transformation": "Resolved on first pass/Total×100",            "Business Rule": "Resolved = Paid or legitimately Denied w/o rework"},
-        {"Business Concept": "Claims Quality","KPI": "Charge Lag",                "Silver Columns": "silver_claims.submission_date, silver_claims.date_of_service",              "Transformation": "AVG(submission_date − date_of_service)",      "Business Rule": "Target <3 days; delays increase A/R balance"},
-        {"Business Concept": "A/R Health",  "KPI": "Days in A/R",                "Silver Columns": "silver_claims.total_charge_amount, silver_payments.payment_amount",         "Transformation": "(Charges−Payments)/(Monthly Charges/30)",     "Business Rule": "Target <40 days; >50 is critical"},
-        {"Business Concept": "A/R Health",  "KPI": "A/R Aging",                  "Silver Columns": "silver_claims.date_of_service, silver_claims.claim_status, silver_payments.payment_amount","Transformation": "Outstanding bucketed by age in days",          "Business Rule": "90+ day bucket should be <15% of total A/R"},
-        {"Business Concept": "A/R Health",  "KPI": "Payment Accuracy Rate",      "Silver Columns": "silver_payments.is_accurate_payment",                                       "Transformation": "SUM(is_accurate_payment)/COUNT×100",          "Business Rule": "Inaccurate payments require follow-up with payer"},
-        {"Business Concept": "Recovery",    "KPI": "Appeal Success Rate",         "Silver Columns": "silver_denials.appeal_status",                                              "Transformation": "Successful/Total Appealed×100",               "Business Rule": "Target >50%; tracks ability to recover denied revenue"},
-        {"Business Concept": "Payer Perf.", "KPI": "Payer Mix",                   "Silver Columns": "silver_payments.payment_amount, silver_payers.payer_type, silver_claims.payer_id", "Transformation": "SUM(payments) GROUP BY payer_type",           "Business Rule": "High self-pay mix → higher collection risk"},
-        {"Business Concept": "Payer Perf.", "KPI": "Denial Rate by Payer",        "Silver Columns": "silver_claims.claim_status, silver_claims.payer_id, silver_payers.payer_name", "Transformation": "Denied/Total GROUP BY payer",                 "Business Rule": "Identifies payers with problematic contracts/edits"},
-        {"Business Concept": "Dept Perf.", "KPI": "Department Performance",       "Silver Columns": "silver_encounters.department, silver_payments.payment_amount, silver_claims.encounter_id", "Transformation": "SUM(payments), COUNT(encounters) GROUP BY dept", "Business Rule": "Revenue and volume by clinical department"},
+    semantic_display = [
+        {
+            "Business Concept": r["business_concept"],
+            "KPI":              r["kpi_name"],
+            "Silver Columns":   r["silver_columns"],
+            "Transformation":   r["formula"],
+            "Business Rule":    r["business_rule"],
+        }
+        for r in _SEMANTIC_LAYER
     ]
-    st.dataframe(pd.DataFrame(semantic), width="stretch", hide_index=True)
+    st.dataframe(pd.DataFrame(semantic_display), width="stretch", hide_index=True)
 
     st.divider()
 
