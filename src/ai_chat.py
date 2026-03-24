@@ -206,7 +206,8 @@ def _get_meta_context(db_path=None) -> str:
     ).fetchall()
 
     nodes = conn.execute(
-        "SELECT entity_id, entity_group, silver_table, description "
+        "SELECT entity_id, entity_group, silver_table, description, "
+        "COALESCE(source_system, '') AS source_system "
         "FROM meta_kg_nodes ORDER BY entity_group, entity_id"
     ).fetchall()
 
@@ -220,8 +221,9 @@ def _get_meta_context(db_path=None) -> str:
     lines: list[str] = []
 
     lines.append("## Silver-Layer Tables  (queryable via run_sql)")
-    for _, group, silver_table, desc in nodes:
-        lines.append(f"- **{silver_table}** ({group}): {desc}")
+    for _, group, silver_table, desc, source_sys in nodes:
+        src = f" | Source: {source_sys}" if source_sys else ""
+        lines.append(f"- **{silver_table}** ({group}{src}): {desc}")
 
     lines.append("\n## Table Relationships  (foreign-key joins)")
     for parent, child, join_col, cardinality, meaning in edges:

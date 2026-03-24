@@ -624,11 +624,12 @@ CREATE TABLE IF NOT EXISTS meta_semantic_layer (
 );
 
 CREATE TABLE IF NOT EXISTS meta_kg_nodes (
-    entity_id    TEXT PRIMARY KEY,
-    entity_name  TEXT NOT NULL,
-    entity_group TEXT,
-    silver_table TEXT,
-    description  TEXT
+    entity_id     TEXT PRIMARY KEY,
+    entity_name   TEXT NOT NULL,
+    entity_group  TEXT,
+    silver_table  TEXT,
+    description   TEXT,
+    source_system TEXT
 );
 
 CREATE TABLE IF NOT EXISTS meta_kg_edges (
@@ -827,14 +828,15 @@ def persist_metadata(conn):
         silver_table = f"silver_{node['id']}"
         conn.execute(
             "INSERT OR REPLACE INTO meta_kg_nodes "
-            "(entity_id, entity_name, entity_group, silver_table, description) "
-            "VALUES (?, ?, ?, ?, ?)",
+            "(entity_id, entity_name, entity_group, silver_table, description, source_system) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
             (
                 node["id"],
                 node["label"].replace("\n", " "),
                 node["group"],
                 silver_table,
                 node["hover"],
+                node.get("source_system", ""),
             ),
         )
 
@@ -888,6 +890,12 @@ def initialize_database(db_path=None):
     for tbl in _LEGACY_TABLES:
         conn.execute(f"DROP TABLE IF EXISTS {tbl};")
     conn.execute("PRAGMA foreign_keys=ON;")
+    # Add source_system column to meta_kg_nodes if it was created before this
+    # column existed (existing databases won't have it from CREATE TABLE alone).
+    try:
+        conn.execute("ALTER TABLE meta_kg_nodes ADD COLUMN source_system TEXT;")
+    except sqlite3.OperationalError:
+        pass  # Column already exists — safe to ignore
     conn.commit()
     print("  [OK] Legacy tables cleared.\n")
 

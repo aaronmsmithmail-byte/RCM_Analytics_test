@@ -263,34 +263,49 @@ _KPI_CATALOG_FALLBACK = [
 
 _TABLE_CATALOG = [
     # ── Bronze layer ──────────────────────────────────────────────────────
-    {"Layer": "Bronze", "Table": "bronze_payers",          "Key Columns": "payer_id (TEXT), _loaded_at",                                       "Description": "Raw CSV ingestion — insurance payer master list",                    "Relationships": "Source for silver_payers"},
-    {"Layer": "Bronze", "Table": "bronze_patients",        "Key Columns": "patient_id (TEXT), primary_payer_id (TEXT), _loaded_at",              "Description": "Raw CSV ingestion — patient demographics",                          "Relationships": "Source for silver_patients"},
-    {"Layer": "Bronze", "Table": "bronze_providers",       "Key Columns": "provider_id (TEXT), department (TEXT), _loaded_at",                   "Description": "Raw CSV ingestion — clinician roster",                              "Relationships": "Source for silver_providers"},
-    {"Layer": "Bronze", "Table": "bronze_encounters",      "Key Columns": "encounter_id (TEXT), patient_id (TEXT), provider_id (TEXT), _loaded_at","Description": "Raw CSV ingestion — individual patient visits",                     "Relationships": "Source for silver_encounters"},
-    {"Layer": "Bronze", "Table": "bronze_charges",         "Key Columns": "charge_id (TEXT), encounter_id (TEXT), charge_amount (TEXT), _loaded_at","Description": "Raw CSV ingestion — line-item charges per encounter",               "Relationships": "Source for silver_charges"},
-    {"Layer": "Bronze", "Table": "bronze_claims",          "Key Columns": "claim_id (TEXT), encounter_id (TEXT), payer_id (TEXT), _loaded_at",   "Description": "Raw CSV ingestion — insurance claims submitted for payment",        "Relationships": "Source for silver_claims"},
-    {"Layer": "Bronze", "Table": "bronze_payments",        "Key Columns": "payment_id (TEXT), claim_id (TEXT), payment_amount (TEXT), _loaded_at","Description": "Raw CSV ingestion — payments received against claims",               "Relationships": "Source for silver_payments"},
-    {"Layer": "Bronze", "Table": "bronze_denials",         "Key Columns": "denial_id (TEXT), claim_id (TEXT), denied_amount (TEXT), _loaded_at", "Description": "Raw CSV ingestion — claim denials with reason codes",               "Relationships": "Source for silver_denials"},
-    {"Layer": "Bronze", "Table": "bronze_adjustments",     "Key Columns": "adjustment_id (TEXT), claim_id (TEXT), adjustment_amount (TEXT), _loaded_at","Description": "Raw CSV ingestion — contractual write-offs and adjustments",    "Relationships": "Source for silver_adjustments"},
-    {"Layer": "Bronze", "Table": "bronze_operating_costs", "Key Columns": "period (TEXT), total_rcm_cost (TEXT), _loaded_at",                    "Description": "Raw CSV ingestion — monthly RCM department operating costs",       "Relationships": "Source for silver_operating_costs"},
-    # ── Silver layer ──────────────────────────────────────────────────────
-    {"Layer": "Silver", "Table": "silver_payers",          "Key Columns": "payer_id PK, payer_name, payer_type, avg_reimbursement_pct REAL",     "Description": "Typed & FK-constrained — insurance payer master list",             "Relationships": "1-to-many → silver_patients, silver_claims"},
-    {"Layer": "Silver", "Table": "silver_patients",        "Key Columns": "patient_id PK, primary_payer_id FK",                                  "Description": "Typed & FK-constrained — patient demographics and primary payer",  "Relationships": "Many-to-1 → silver_payers; 1-to-many → silver_encounters"},
-    {"Layer": "Silver", "Table": "silver_providers",       "Key Columns": "provider_id PK, department, specialty",                               "Description": "Typed & FK-constrained — clinician roster with department",        "Relationships": "1-to-many → silver_encounters"},
-    {"Layer": "Silver", "Table": "silver_encounters",      "Key Columns": "encounter_id PK, patient_id FK, provider_id FK, date_of_service, department, encounter_type", "Description": "Typed & FK-constrained — individual patient visits", "Relationships": "Many-to-1 → silver_patients, silver_providers; 1-to-many → silver_charges, silver_claims"},
-    {"Layer": "Silver", "Table": "silver_charges",         "Key Columns": "charge_id PK, encounter_id FK, charge_amount REAL, units INTEGER",    "Description": "Typed & FK-constrained — line-item charges per encounter",         "Relationships": "Many-to-1 → silver_encounters"},
-    {"Layer": "Silver", "Table": "silver_claims",          "Key Columns": "claim_id PK, encounter_id FK, patient_id FK, payer_id FK, total_charge_amount REAL, claim_status, is_clean_claim INTEGER", "Description": "Typed & FK-constrained — insurance claims; source of truth for KPIs", "Relationships": "Many-to-1 → silver_encounters, silver_payers; 1-to-many → silver_payments, silver_denials, silver_adjustments"},
-    {"Layer": "Silver", "Table": "silver_payments",        "Key Columns": "payment_id PK, claim_id FK, payment_amount REAL, is_accurate_payment INTEGER", "Description": "Typed & FK-constrained — payments received against claims",  "Relationships": "Many-to-1 → silver_claims"},
-    {"Layer": "Silver", "Table": "silver_denials",         "Key Columns": "denial_id PK, claim_id FK, denial_reason_code, denied_amount REAL, appeal_status, recovered_amount REAL", "Description": "Typed & FK-constrained — claim denials with reason codes and appeal tracking", "Relationships": "Many-to-1 → silver_claims"},
-    {"Layer": "Silver", "Table": "silver_adjustments",     "Key Columns": "adjustment_id PK, claim_id FK, adjustment_type_code, adjustment_amount REAL", "Description": "Typed & FK-constrained — contractual write-offs and balance adjustments", "Relationships": "Many-to-1 → silver_claims"},
-    {"Layer": "Silver", "Table": "silver_operating_costs", "Key Columns": "period PK, total_rcm_cost REAL",                                      "Description": "Typed & FK-constrained — monthly RCM department operating costs", "Relationships": "Standalone (joined by period/month to silver_claims)"},
-    # ── Gold layer ────────────────────────────────────────────────────────
-    {"Layer": "Gold",   "Table": "gold_monthly_kpis",          "Key Columns": "period, claim_count, total_charges, total_payments, clean_claim_rate, denial_rate, gcr", "Description": "SQL VIEW — monthly KPI aggregations across all claims",           "Relationships": "Aggregates silver_claims, silver_payments"},
-    {"Layer": "Gold",   "Table": "gold_payer_performance",     "Key Columns": "payer_id, payer_name, total_claims, total_charges, total_payments, collection_rate, denial_rate", "Description": "SQL VIEW — per-payer revenue and denial metrics",       "Relationships": "Aggregates silver_claims, silver_payments, silver_payers"},
-    {"Layer": "Gold",   "Table": "gold_department_performance","Key Columns": "department, encounter_count, total_charges, total_payments, collection_rate, avg_payment_per_encounter", "Description": "SQL VIEW — revenue and volume by clinical department", "Relationships": "Aggregates silver_encounters, silver_claims, silver_payments"},
-    {"Layer": "Gold",   "Table": "gold_ar_aging",              "Key Columns": "aging_bucket, claim_count, total_ar, pct_of_total",               "Description": "SQL VIEW — outstanding A/R bucketed into 0-30, 31-60, 61-90, 91-120, 120+ day bands", "Relationships": "Aggregates silver_claims, silver_payments"},
-    {"Layer": "Gold",   "Table": "gold_denial_analysis",       "Key Columns": "denial_reason_code, description, count, total_denied, total_recovered, recovery_rate", "Description": "SQL VIEW — denial volume and recovery rate by reason code", "Relationships": "Aggregates silver_denials"},
+    {"Layer": "Bronze", "Table": "bronze_payers",          "Source System": "Payer Master",         "Key Columns": "payer_id (TEXT), _loaded_at",                                       "Description": "Raw CSV ingestion — insurance payer master list",                    "Relationships": "Source for silver_payers"},
+    {"Layer": "Bronze", "Table": "bronze_patients",        "Source System": "EHR",                  "Key Columns": "patient_id (TEXT), primary_payer_id (TEXT), _loaded_at",              "Description": "Raw CSV ingestion — patient demographics",                          "Relationships": "Source for silver_patients"},
+    {"Layer": "Bronze", "Table": "bronze_providers",       "Source System": "EHR",                  "Key Columns": "provider_id (TEXT), department (TEXT), _loaded_at",                   "Description": "Raw CSV ingestion — clinician roster",                              "Relationships": "Source for silver_providers"},
+    {"Layer": "Bronze", "Table": "bronze_encounters",      "Source System": "EHR",                  "Key Columns": "encounter_id (TEXT), patient_id (TEXT), provider_id (TEXT), _loaded_at","Description": "Raw CSV ingestion — individual patient visits",                     "Relationships": "Source for silver_encounters"},
+    {"Layer": "Bronze", "Table": "bronze_charges",         "Source System": "EHR / Charge Capture", "Key Columns": "charge_id (TEXT), encounter_id (TEXT), charge_amount (TEXT), _loaded_at","Description": "Raw CSV ingestion — line-item charges per encounter",               "Relationships": "Source for silver_charges"},
+    {"Layer": "Bronze", "Table": "bronze_claims",          "Source System": "Clearinghouse",        "Key Columns": "claim_id (TEXT), encounter_id (TEXT), payer_id (TEXT), _loaded_at",   "Description": "Raw CSV ingestion — insurance claims submitted for payment",        "Relationships": "Source for silver_claims"},
+    {"Layer": "Bronze", "Table": "bronze_payments",        "Source System": "Clearinghouse / ERA",  "Key Columns": "payment_id (TEXT), claim_id (TEXT), payment_amount (TEXT), _loaded_at","Description": "Raw CSV ingestion — payments received against claims",               "Relationships": "Source for silver_payments"},
+    {"Layer": "Bronze", "Table": "bronze_denials",         "Source System": "Clearinghouse / ERA",  "Key Columns": "denial_id (TEXT), claim_id (TEXT), denied_amount (TEXT), _loaded_at", "Description": "Raw CSV ingestion — claim denials with reason codes",               "Relationships": "Source for silver_denials"},
+    {"Layer": "Bronze", "Table": "bronze_adjustments",     "Source System": "Billing System",       "Key Columns": "adjustment_id (TEXT), claim_id (TEXT), adjustment_amount (TEXT), _loaded_at","Description": "Raw CSV ingestion — contractual write-offs and adjustments",    "Relationships": "Source for silver_adjustments"},
+    {"Layer": "Bronze", "Table": "bronze_operating_costs", "Source System": "ERP / Finance",        "Key Columns": "period (TEXT), total_rcm_cost (TEXT), _loaded_at",                    "Description": "Raw CSV ingestion — monthly RCM department operating costs",       "Relationships": "Source for silver_operating_costs"},
+    # ── Silver layer — derived from Bronze ETL; no external source ────────
+    {"Layer": "Silver", "Table": "silver_payers",          "Source System": "—",                    "Key Columns": "payer_id PK, payer_name, payer_type, avg_reimbursement_pct REAL",     "Description": "Typed & FK-constrained — insurance payer master list",             "Relationships": "1-to-many → silver_patients, silver_claims"},
+    {"Layer": "Silver", "Table": "silver_patients",        "Source System": "—",                    "Key Columns": "patient_id PK, primary_payer_id FK",                                  "Description": "Typed & FK-constrained — patient demographics and primary payer",  "Relationships": "Many-to-1 → silver_payers; 1-to-many → silver_encounters"},
+    {"Layer": "Silver", "Table": "silver_providers",       "Source System": "—",                    "Key Columns": "provider_id PK, department, specialty",                               "Description": "Typed & FK-constrained — clinician roster with department",        "Relationships": "1-to-many → silver_encounters"},
+    {"Layer": "Silver", "Table": "silver_encounters",      "Source System": "—",                    "Key Columns": "encounter_id PK, patient_id FK, provider_id FK, date_of_service, department, encounter_type", "Description": "Typed & FK-constrained — individual patient visits", "Relationships": "Many-to-1 → silver_patients, silver_providers; 1-to-many → silver_charges, silver_claims"},
+    {"Layer": "Silver", "Table": "silver_charges",         "Source System": "—",                    "Key Columns": "charge_id PK, encounter_id FK, charge_amount REAL, units INTEGER",    "Description": "Typed & FK-constrained — line-item charges per encounter",         "Relationships": "Many-to-1 → silver_encounters"},
+    {"Layer": "Silver", "Table": "silver_claims",          "Source System": "—",                    "Key Columns": "claim_id PK, encounter_id FK, patient_id FK, payer_id FK, total_charge_amount REAL, claim_status, is_clean_claim INTEGER", "Description": "Typed & FK-constrained — insurance claims; source of truth for KPIs", "Relationships": "Many-to-1 → silver_encounters, silver_payers; 1-to-many → silver_payments, silver_denials, silver_adjustments"},
+    {"Layer": "Silver", "Table": "silver_payments",        "Source System": "—",                    "Key Columns": "payment_id PK, claim_id FK, payment_amount REAL, is_accurate_payment INTEGER", "Description": "Typed & FK-constrained — payments received against claims",  "Relationships": "Many-to-1 → silver_claims"},
+    {"Layer": "Silver", "Table": "silver_denials",         "Source System": "—",                    "Key Columns": "denial_id PK, claim_id FK, denial_reason_code, denied_amount REAL, appeal_status, recovered_amount REAL", "Description": "Typed & FK-constrained — claim denials with reason codes and appeal tracking", "Relationships": "Many-to-1 → silver_claims"},
+    {"Layer": "Silver", "Table": "silver_adjustments",     "Source System": "—",                    "Key Columns": "adjustment_id PK, claim_id FK, adjustment_type_code, adjustment_amount REAL", "Description": "Typed & FK-constrained — contractual write-offs and balance adjustments", "Relationships": "Many-to-1 → silver_claims"},
+    {"Layer": "Silver", "Table": "silver_operating_costs", "Source System": "—",                    "Key Columns": "period PK, total_rcm_cost REAL",                                      "Description": "Typed & FK-constrained — monthly RCM department operating costs", "Relationships": "Standalone (joined by period/month to silver_claims)"},
+    # ── Gold layer — SQL views over Silver; no external source ────────────
+    {"Layer": "Gold",   "Table": "gold_monthly_kpis",          "Source System": "—", "Key Columns": "period, claim_count, total_charges, total_payments, clean_claim_rate, denial_rate, gcr", "Description": "SQL VIEW — monthly KPI aggregations across all claims",           "Relationships": "Aggregates silver_claims, silver_payments"},
+    {"Layer": "Gold",   "Table": "gold_payer_performance",     "Source System": "—", "Key Columns": "payer_id, payer_name, total_claims, total_charges, total_payments, collection_rate, denial_rate", "Description": "SQL VIEW — per-payer revenue and denial metrics",       "Relationships": "Aggregates silver_claims, silver_payments, silver_payers"},
+    {"Layer": "Gold",   "Table": "gold_department_performance","Source System": "—", "Key Columns": "department, encounter_count, total_charges, total_payments, collection_rate, avg_payment_per_encounter", "Description": "SQL VIEW — revenue and volume by clinical department", "Relationships": "Aggregates silver_encounters, silver_claims, silver_payments"},
+    {"Layer": "Gold",   "Table": "gold_ar_aging",              "Source System": "—", "Key Columns": "aging_bucket, claim_count, total_ar, pct_of_total",               "Description": "SQL VIEW — outstanding A/R bucketed into 0-30, 31-60, 61-90, 91-120, 120+ day bands", "Relationships": "Aggregates silver_claims, silver_payments"},
+    {"Layer": "Gold",   "Table": "gold_denial_analysis",       "Source System": "—", "Key Columns": "denial_reason_code, description, count, total_denied, total_recovered, recovery_rate", "Description": "SQL VIEW — denial volume and recovery rate by reason code", "Relationships": "Aggregates silver_denials"},
 ]
+
+# Source system for each CSV — used by the lineage diagram to color-code
+# nodes and show system provenance on hover.  Colors align with RCM_COLORS.
+_CSV_SOURCE_SYSTEMS = {
+    "payers":          ("Payer Master",         "#0EA5E9"),  # sky   — external contract data
+    "patients":        ("EHR",                  "#10B981"),  # green — clinical
+    "providers":       ("EHR",                  "#10B981"),  # green — clinical
+    "encounters":      ("EHR",                  "#10B981"),  # green — clinical
+    "charges":         ("EHR / Charge Capture", "#10B981"),  # green — clinical (CDM lives in EHR)
+    "claims":          ("Clearinghouse",         "#1E6FBF"),  # blue  — claims mgmt gateway
+    "payments":        ("Clearinghouse / ERA",   "#1E6FBF"),  # blue  — electronic remittance
+    "denials":         ("Clearinghouse / ERA",   "#1E6FBF"),  # blue  — payer response files
+    "adjustments":     ("Billing System",        "#6366F1"),  # indigo — write-off posting
+    "operating_costs": ("ERP / Finance",         "#14B8A6"),  # teal  — GL cost centre reports
+}
 
 
 # ── Knowledge Graph data (module-level for AI app consumption) ────────
@@ -298,29 +313,39 @@ _TABLE_CATALOG = [
 _KG_NODES = [
     # Reference entities (blue) — outer ring top
     {"id": "payers",    "label": "payers",    "x": 5.0, "y": 9.0, "color": "#5b8dee", "size": 30,
-     "group": "Reference", "hover": "silver_payers: payer_id PK, payer_name, payer_type, avg_reimbursement_pct REAL"},
+     "group": "Reference", "source_system": "Payer Master",
+     "hover": "silver_payers: payer_id PK, payer_name, payer_type, avg_reimbursement_pct REAL"},
     {"id": "patients",  "label": "patients",  "x": 1.5, "y": 7.0, "color": "#5b8dee", "size": 30,
-     "group": "Reference", "hover": "silver_patients: patient_id PK, primary_payer_id FK → silver_payers"},
+     "group": "Reference", "source_system": "EHR",
+     "hover": "silver_patients: patient_id PK, primary_payer_id FK → silver_payers"},
     {"id": "providers", "label": "providers", "x": 8.5, "y": 7.0, "color": "#5b8dee", "size": 30,
-     "group": "Reference", "hover": "silver_providers: provider_id PK, department, specialty"},
+     "group": "Reference", "source_system": "EHR",
+     "hover": "silver_providers: provider_id PK, department, specialty"},
     # Central hub
     {"id": "encounters", "label": "encounters", "x": 5.0, "y": 5.5, "color": "#38c172", "size": 36,
-     "group": "Transactional", "hover": "silver_encounters: encounter_id PK, patient_id FK, provider_id FK, date_of_service, department, encounter_type"},
+     "group": "Transactional", "source_system": "EHR",
+     "hover": "silver_encounters: encounter_id PK, patient_id FK, provider_id FK, date_of_service, department, encounter_type"},
     # Claims hub
     {"id": "claims", "label": "claims", "x": 5.0, "y": 3.0, "color": "#38c172", "size": 36,
-     "group": "Transactional", "hover": "silver_claims: claim_id PK, encounter_id FK, patient_id FK, payer_id FK, date_of_service, submission_date, total_charge_amount REAL, claim_status, is_clean_claim INTEGER"},
+     "group": "Transactional", "source_system": "Clearinghouse",
+     "hover": "silver_claims: claim_id PK, encounter_id FK, patient_id FK, payer_id FK, date_of_service, submission_date, total_charge_amount REAL, claim_status, is_clean_claim INTEGER"},
     # Leaf transactional nodes
     {"id": "charges",     "label": "charges",     "x": 1.5, "y": 4.5, "color": "#38c172", "size": 26,
-     "group": "Transactional", "hover": "silver_charges: charge_id PK, encounter_id FK, charge_amount REAL, units INTEGER, service_date, post_date"},
+     "group": "Transactional", "source_system": "EHR / Charge Capture",
+     "hover": "silver_charges: charge_id PK, encounter_id FK, charge_amount REAL, units INTEGER, service_date, post_date"},
     {"id": "payments",    "label": "payments",    "x": 2.5, "y": 1.0, "color": "#38c172", "size": 26,
-     "group": "Transactional", "hover": "silver_payments: payment_id PK, claim_id FK, payment_amount REAL, is_accurate_payment INTEGER"},
+     "group": "Transactional", "source_system": "Clearinghouse / ERA",
+     "hover": "silver_payments: payment_id PK, claim_id FK, payment_amount REAL, is_accurate_payment INTEGER"},
     {"id": "denials",     "label": "denials",     "x": 5.0, "y": 0.5, "color": "#38c172", "size": 26,
-     "group": "Transactional", "hover": "silver_denials: denial_id PK, claim_id FK, denial_reason_code, denied_amount REAL, appeal_status, recovered_amount REAL"},
+     "group": "Transactional", "source_system": "Clearinghouse / ERA",
+     "hover": "silver_denials: denial_id PK, claim_id FK, denial_reason_code, denied_amount REAL, appeal_status, recovered_amount REAL"},
     {"id": "adjustments", "label": "adjustments", "x": 7.5, "y": 1.0, "color": "#38c172", "size": 26,
-     "group": "Transactional", "hover": "silver_adjustments: adjustment_id PK, claim_id FK, adjustment_type_code, adjustment_amount REAL"},
+     "group": "Transactional", "source_system": "Billing System",
+     "hover": "silver_adjustments: adjustment_id PK, claim_id FK, adjustment_type_code, adjustment_amount REAL"},
     # Operational
     {"id": "operating_costs", "label": "operating\ncosts", "x": 9.0, "y": 4.5, "color": "#e8a838", "size": 26,
-     "group": "Operational", "hover": "silver_operating_costs: period PK, total_rcm_cost REAL"},
+     "group": "Operational", "source_system": "ERP / Finance",
+     "hover": "silver_operating_costs: period PK, total_rcm_cost REAL"},
 ]
 
 _KG_EDGES = [
@@ -480,10 +505,12 @@ def render_data_lineage():
     def _e(src, tgt):
         edges.append((src, tgt))
 
-    # CSV source nodes
+    # CSV source nodes — color-coded by source system
     for t in TABLE_ORDER:
+        sys_name, sys_color = _CSV_SOURCE_SYSTEMS.get(t, ("Unknown", "#5b8dee"))
         _n(f"csv_{t}", f"{t}.csv", X_CSV, tbl_y[t],
-           "#5b8dee", 11, "CSV Source", f"Source file: data/{t}.csv")
+           sys_color, 11, "CSV Source",
+           f"<b>{t}.csv</b><br>Source system: {sys_name}")
 
     # Bronze table nodes
     for t in TABLE_ORDER:
@@ -616,6 +643,24 @@ def render_data_lineage():
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
     )
     st.plotly_chart(fig, theme="streamlit", width="stretch")
+
+    # ── Source system key ──────────────────────────────────────────────
+    st.subheader("Source System Key")
+    st.caption("Each CSV file originates from a real-world source system. "
+               "Node colours in the diagram above match the system category.")
+    seen: dict = {}
+    for tbl, (sys_name, _) in _CSV_SOURCE_SYSTEMS.items():
+        seen.setdefault(sys_name, []).append(f"{tbl}.csv")
+    st.dataframe(
+        pd.DataFrame([
+            {"Source System": sys, "CSV Files": ", ".join(files)}
+            for sys, files in sorted(seen.items())
+        ]),
+        use_container_width=True,
+        hide_index=True,
+    )
+
+    st.divider()
 
     # ── Medallion pipeline stages table ───────────────────────────────
     st.subheader("Medallion Pipeline Stages")
