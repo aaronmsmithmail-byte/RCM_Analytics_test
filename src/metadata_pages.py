@@ -395,6 +395,10 @@ _SEMANTIC_LAYER_FALLBACK = [
     {"business_concept": "Dept Perf.",    "kpi_name": "Department Performance",      "silver_columns": "silver_encounters.department, silver_payments.payment_amount, silver_claims.encounter_id",                                       "formula": "SUM(payments), COUNT(encounters) GROUP BY dept","business_rule": "Revenue and volume by clinical department"},
 ]
 
+# Aliases for database.py imports (which expect these names without _FALLBACK suffix)
+_KPI_CATALOG = _KPI_CATALOG_FALLBACK
+_SEMANTIC_LAYER = _SEMANTIC_LAYER_FALLBACK
+
 
 # ── Page 1: Data Catalog ──────────────────────────────────────────────
 
