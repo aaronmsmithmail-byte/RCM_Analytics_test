@@ -45,7 +45,7 @@ AVAILABLE_MODELS = [
     ("Kimi K2.5  (Moonshot)",                 "moonshotai/kimi-k2.5"),
 ]
 
-DEFAULT_MODEL = os.environ.get("OPENROUTER_MODEL", "moonshotai/kimi-k2.5")
+DEFAULT_MODEL = os.environ.get("OPENROUTER_MODEL", "anthropic/claude-sonnet-4.6")
 
 # Maximum rows returned to the LLM per query (prevents context overflow).
 # Override via AI_MAX_ROWS in .env — see .env.example.
@@ -387,6 +387,7 @@ def run_agentic_turn(
             tool_choice="auto",
             max_tokens=1500,
             temperature=0.3,
+            timeout=60,
         )
 
         msg = response.choices[0].message
