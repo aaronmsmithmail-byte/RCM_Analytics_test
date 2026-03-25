@@ -45,7 +45,7 @@ AVAILABLE_MODELS = [
     ("Kimi K2.5  (Moonshot)",                 "moonshotai/kimi-k2.5"),
 ]
 
-DEFAULT_MODEL = os.environ.get("OPENROUTER_MODEL", "moonshotai/kimi-k2.5")
+DEFAULT_MODEL = os.environ.get("OPENROUTER_MODEL", "anthropic/claude-sonnet-4.6")
 
 # Maximum rows returned to the LLM per query (prevents context overflow).
 # Override via AI_MAX_ROWS in .env — see .env.example.
@@ -218,10 +218,28 @@ def _get_meta_context(db_path=None) -> str:
 
     lines: list[str] = []
 
+    # Fetch column schemas for all silver tables
+    table_columns: dict[str, list[str]] = {}
+    for _, _, silver_table, _, _ in nodes:
+        if silver_table:
+            try:
+                cols = conn.execute(
+                    f"PRAGMA table_info({silver_table})"
+                ).fetchall()
+                table_columns[silver_table] = [
+                    f"{c[1]} ({c[2]})" for c in cols
+                ]
+            except Exception:
+                pass
+
     lines.append("## Silver-Layer Tables  (queryable via run_sql)")
     for _, group, silver_table, desc, source_sys in nodes:
         src = f" | Source: {source_sys}" if source_sys else ""
         lines.append(f"- **{silver_table}** ({group}{src}): {desc}")
+        if silver_table in table_columns:
+            lines.append(
+                f"  Columns: {', '.join(table_columns[silver_table])}"
+            )
 
     lines.append("\n## Table Relationships  (foreign-key joins)")
     for parent, child, join_col, cardinality, meaning in edges:
@@ -387,6 +405,7 @@ def run_agentic_turn(
             tool_choice="auto",
             max_tokens=1500,
             temperature=0.3,
+            timeout=60,
         )
 
         msg = response.choices[0].message
