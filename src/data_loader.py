@@ -153,6 +153,14 @@ def load_all_data():
     if not has_medallion_schema():
         print("Silver layer not found. Running medallion architecture init...")
         initialize_database()
+    else:
+        # Always refresh meta tables so source_system, KG nodes/edges, KPI
+        # definitions, and semantic mappings stay in sync with the codebase.
+        from src.database import get_connection, persist_metadata
+        _conn = get_connection()
+        persist_metadata(_conn)
+        _conn.commit()
+        _conn.close()
 
     # ------------------------------------------------------------------
     # Table configuration: logical name → SQL query + parse hints.
