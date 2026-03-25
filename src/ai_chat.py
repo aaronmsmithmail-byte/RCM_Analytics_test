@@ -202,25 +202,46 @@ def _get_meta_context(db_path=None) -> str:
     from src.database import get_connection
     conn = get_connection(db_path)
 
-    nodes = conn.execute(
-        "SELECT entity_id, entity_group, silver_table, description "
-        "FROM meta_kg_nodes ORDER BY entity_group, entity_id"
-    ).fetchall()
+    try:
+        nodes = conn.execute(
+            "SELECT entity_id, entity_group, silver_table, description "
+            "FROM meta_kg_nodes ORDER BY entity_group, entity_id"
+        ).fetchall()
+    except Exception:
+        nodes = []
 
-    edges = conn.execute(
-        "SELECT parent_entity, child_entity, join_column, cardinality, business_meaning "
-        "FROM meta_kg_edges"
-    ).fetchall()
+    # If meta_kg_nodes is empty, fall back to reading silver tables directly from DB
+    if not nodes:
+        live_tables = [
+            r[0] for r in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'silver_%' ORDER BY name"
+            ).fetchall()
+        ]
+        nodes = [(t.replace("silver_", ""), "Unknown", t, "") for t in live_tables]
 
-    semantic = conn.execute(
-        "SELECT business_concept, kpi_name, silver_columns, formula, business_rule "
-        "FROM meta_semantic_layer ORDER BY business_concept"
-    ).fetchall()
+    try:
+        edges = conn.execute(
+            "SELECT parent_entity, child_entity, join_column, cardinality, business_meaning "
+            "FROM meta_kg_edges"
+        ).fetchall()
+    except Exception:
+        edges = []
 
-    kpis = conn.execute(
-        "SELECT metric_name, category, definition, formula, benchmark "
-        "FROM meta_kpi_catalog ORDER BY category, metric_name"
-    ).fetchall()
+    try:
+        semantic = conn.execute(
+            "SELECT business_concept, kpi_name, silver_columns, formula, business_rule "
+            "FROM meta_semantic_layer ORDER BY business_concept"
+        ).fetchall()
+    except Exception:
+        semantic = []
+
+    try:
+        kpis = conn.execute(
+            "SELECT metric_name, category, definition, formula, benchmark "
+            "FROM meta_kpi_catalog ORDER BY category, metric_name"
+        ).fetchall()
+    except Exception:
+        kpis = []
 
     # Fetch column schemas while connection is still open
     table_columns: dict[str, list[str]] = {}
