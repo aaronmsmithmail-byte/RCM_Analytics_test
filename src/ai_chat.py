@@ -40,16 +40,12 @@ except ImportError:
 # Available models for the UI selectbox
 # ---------------------------------------------------------------------------
 AVAILABLE_MODELS = [
-    ("Kimi K2  (free · Moonshot)",            "moonshotai/kimi-k2:free"),
-    ("GPT-4o mini  (fast · cheap · OpenAI)",  "openai/gpt-4o-mini"),
-    ("GPT-5.4  (latest · OpenAI)",            "openai/gpt-5.4"),
-    ("Claude Haiku 4.5  (fast · Anthropic)",  "anthropic/claude-haiku-4.5"),
-    ("Claude Sonnet 4.6  (smart · Anthropic)","anthropic/claude-sonnet-4.6"),
-    ("Gemini Flash 3.1 Lite  (fast · Google)","google/gemini-3.1-flash-lite-preview"),
-    ("Gemini Pro 3.1  (capable · Google)",    "google/gemini-3.1-pro-preview"),
+    ("Claude Sonnet 4.6  (Anthropic)",        "anthropic/claude-sonnet-4.6"),
+    ("GPT-5.4  (OpenAI)",                     "openai/gpt-5.4"),
+    ("Kimi K2.5  (Moonshot)",                 "moonshotai/kimi-k2.5"),
 ]
 
-DEFAULT_MODEL = os.environ.get("OPENROUTER_MODEL", "anthropic/claude-haiku-4.5")
+DEFAULT_MODEL = os.environ.get("OPENROUTER_MODEL", "moonshotai/kimi-k2.5")
 
 # Maximum rows returned to the LLM per query (prevents context overflow).
 # Override via AI_MAX_ROWS in .env — see .env.example.
