@@ -9,7 +9,7 @@ services:
       - "15432:15432"   # Cube SQL API (Postgres-compatible)
     volumes:
       - ./cube:/cube/conf
-      - ./data:/cube/data:ro
+      - ./data:/cube/data
     environment:
       CUBEJS_DEV_MODE: "true"
       CUBEJS_API_SECRET: "rcm_analytics_dev_secret"
