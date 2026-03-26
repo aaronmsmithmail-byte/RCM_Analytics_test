@@ -16,7 +16,7 @@ Each render_*() function is called from app.py based on st.session_state["active
 
 import streamlit as st
 import pandas as pd
-import plotly.graph_objects as go
+import graphviz
 
 
 # ---------------------------------------------------------------------------
@@ -38,82 +38,6 @@ def _query_meta(sql: str) -> pd.DataFrame:
         return pd.DataFrame()
     finally:
         conn.close()
-
-# ── Shared graph helper ───────────────────────────────────────────────
-
-
-def _draw_network_graph(nodes, edges, title, height=600):
-    """
-    Render a network/DAG diagram using Plotly scatter traces.
-
-    Args:
-        nodes: list of dicts with keys: id, label, x, y, color, size, hover
-        edges: list of dicts with keys: source, target, label (optional)
-        title: chart title string
-        height: pixel height of the figure
-    """
-    node_map = {n["id"]: n for n in nodes}
-
-    fig = go.Figure()
-
-    # Draw edges first (so they appear behind nodes)
-    for edge in edges:
-        src = node_map[edge["source"]]
-        tgt = node_map[edge["target"]]
-        fig.add_trace(go.Scatter(
-            x=[src["x"], tgt["x"], None],
-            y=[src["y"], tgt["y"], None],
-            mode="lines",
-            line=dict(width=1.5, color="#aaaaaa"),
-            hoverinfo="none",
-            showlegend=False,
-        ))
-        # Edge label midpoint
-        if edge.get("label"):
-            mx = (src["x"] + tgt["x"]) / 2
-            my = (src["y"] + tgt["y"]) / 2
-            fig.add_annotation(
-                x=mx, y=my,
-                text=edge["label"],
-                showarrow=False,
-                font=dict(size=9, color="#666666"),
-                bgcolor="rgba(255,255,255,0.7)",
-            )
-
-    # Draw nodes grouped by color for legend
-    color_groups = {}
-    for n in nodes:
-        color_groups.setdefault(n.get("group", ""), []).append(n)
-
-    for group, group_nodes in color_groups.items():
-        fig.add_trace(go.Scatter(
-            x=[n["x"] for n in group_nodes],
-            y=[n["y"] for n in group_nodes],
-            mode="markers+text",
-            marker=dict(
-                size=[n.get("size", 30) for n in group_nodes],
-                color=[n["color"] for n in group_nodes],
-                line=dict(width=1, color="white"),
-            ),
-            text=[n["label"] for n in group_nodes],
-            textposition="bottom center",
-            textfont=dict(size=10),
-            hovertext=[n.get("hover", n["label"]) for n in group_nodes],
-            hoverinfo="text",
-            name=group if group else "Nodes",
-            showlegend=bool(group),
-        ))
-
-    fig.update_layout(
-        height=height,
-        xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
-        yaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
-        plot_bgcolor="white",
-        paper_bgcolor="white",
-        margin=dict(l=20, r=20, t=20, b=60),
-        legend=dict(orientation="h", yanchor="top", y=-0.02, xanchor="left", x=0),
-    )
-    st.plotly_chart(fig, theme="streamlit", width="stretch")
 
 
 # ── KPI catalog data ──────────────────────────────────────────────────
@@ -467,193 +391,109 @@ def render_data_lineage():
         "**Gold** (pre-aggregated KPI views) → Dashboard."
     )
 
-    # ── Layout constants ───────────────────────────────────────────────
     TABLE_ORDER = [
         "payers", "patients", "providers", "encounters", "charges",
         "claims", "payments", "denials", "adjustments", "operating_costs",
     ]
-    Y_STEP = 1.25
-    tbl_y = {t: i * Y_STEP for i, t in enumerate(TABLE_ORDER)}
 
-    X_CSV, X_BRONZE, X_SILVER, X_GOLD, X_DASH = 0.7, 2.8, 5.2, 7.5, 9.5
-    Y_TOP = tbl_y["operating_costs"] + Y_STEP * 0.8
+    GOLD_VIEWS = {
+        "gold_monthly_kpis":       ("Monthly KPIs",          ["claims", "payments"]),
+        "gold_payer_performance":  ("Payer Performance",     ["payers", "claims"]),
+        "gold_dept_performance":   ("Dept Performance",      ["encounters", "charges"]),
+        "gold_ar_aging":           ("A/R Aging",             ["claims"]),
+        "gold_denial_analysis":    ("Denial Analysis",       ["denials"]),
+    }
+    DASH_TABS = {
+        "Executive Summary":      ["gold_monthly_kpis"],
+        "Collections & Revenue":  ["gold_monthly_kpis"],
+        "Claims & Denials":       ["gold_denial_analysis"],
+        "A/R Aging & Cash Flow":  ["gold_ar_aging"],
+        "Payer Analysis":         ["gold_payer_performance"],
+        "Dept Performance":       ["gold_dept_performance"],
+    }
 
-    GOLD_VIEWS = [
-        ("gold_monthly_kpis",    "gold_monthly_kpis",       tbl_y["patients"],           "Monthly KPIs: GCR, denial rate, clean claim rate by month"),
-        ("gold_payer_perf",      "gold_payer_performance",  tbl_y["encounters"],          "Per-payer: denial rate, collection rate, total revenue"),
-        ("gold_dept_perf",       "gold_dept_performance",   tbl_y["claims"],              "Per-dept: encounter count, charges, payments, rev/encounter"),
-        ("gold_ar_aging",        "gold_ar_aging",           tbl_y["denials"],             "Open claims bucketed: 0-30, 31-60, 61-90, 91-120, 120+ days"),
-        ("gold_denial_analysis", "gold_denial_analysis",    tbl_y["operating_costs"],    "Denial codes: count, denied $, recovered $, appeal win rate"),
-    ]
-    DASH_TABS = [
-        ("tab_exec",   "Executive\nSummary",      tbl_y["payers"]),
-        ("tab_rev",    "Collections &\nRevenue",  tbl_y["providers"]),
-        ("tab_claims", "Claims &\nDenials",       tbl_y["charges"]),
-        ("tab_ar",     "A/R Aging &\nCash Flow",  tbl_y["payments"]),
-        ("tab_payer",  "Payer\nAnalysis",          tbl_y["adjustments"]),
-        ("tab_dept",   "Department\nPerf.",        tbl_y["operating_costs"]),
-    ]
-
-    # ── Accumulate nodes and edges ─────────────────────────────────────
-    nodes = []
-    edges = []
-    npos  = {}  # node_id → (x, y) for edge drawing
-
-    def _n(nid, label, x, y, color, size, group, hover):
-        nodes.append(dict(id=nid, label=label, x=x, y=y,
-                          color=color, size=size, group=group, hover=hover))
-        npos[nid] = (x, y)
-
-    def _e(src, tgt):
-        edges.append((src, tgt))
-
-    # Source system names from DB — single source of truth per CLAUDE.md.
-    # Colours are visual/layout data only, looked up from _SOURCE_SYSTEM_COLORS.
+    # Source system names from DB
     _ss_df = _query_meta(
         "SELECT entity_id, COALESCE(source_system, '') AS source_system "
         "FROM meta_kg_nodes"
     )
     _csv_source = {} if _ss_df.empty else dict(zip(_ss_df["entity_id"], _ss_df["source_system"]))
 
-    # CSV source nodes — color-coded by source system
+    dot = graphviz.Digraph("lineage", format="svg")
+    dot.attr(rankdir="LR", bgcolor="white", fontname="Helvetica",
+             nodesep="0.25", ranksep="1.2", splines="polyline")
+    dot.attr("node", fontname="Helvetica", fontsize="10", style="filled",
+             penwidth="1.5")
+    dot.attr("edge", arrowsize="0.7", color="#888888")
+
+    # ── CSV Source cluster ───────────────────────────────────────────
+    with dot.subgraph(name="cluster_csv") as c:
+        c.attr(label="CSV SOURCE FILES", style="rounded,dashed",
+               color="#5b8dee", fontcolor="#1a3a8a", fontsize="11",
+               bgcolor="#f0f5ff", penwidth="1.5")
+        for t in TABLE_ORDER:
+            sys_name = _csv_source.get(t, "")
+            c.node(f"csv_{t}", label=f"{t}.csv",
+                   shape="note", fillcolor="#e8f0fe", color="#5b8dee",
+                   tooltip=f"Source: {sys_name}")
+
+    # ── Bronze cluster ───────────────────────────────────────────────
+    with dot.subgraph(name="cluster_bronze") as c:
+        c.attr(label="BRONZE LAYER  (raw TEXT)", style="rounded",
+               color="#CD7F32", fontcolor="#8B4513", fontsize="11",
+               bgcolor="#fdf5ed", penwidth="1.5")
+        for t in TABLE_ORDER:
+            c.node(f"bronze_{t}", label=f"bronze_{t}",
+                   shape="box3d", fillcolor="#f5e6d0", color="#CD7F32")
+
+    # ── Silver cluster ───────────────────────────────────────────────
+    with dot.subgraph(name="cluster_silver") as c:
+        c.attr(label="SILVER LAYER  (typed + FK)", style="rounded",
+               color="#606060", fontcolor="#404040", fontsize="11",
+               bgcolor="#f5f5f5", penwidth="1.5")
+        for t in TABLE_ORDER:
+            c.node(f"silver_{t}", label=f"silver_{t}",
+                   shape="box", fillcolor="#e8e8e8", color="#606060",
+                   style="filled,rounded")
+
+    # ── Gold cluster ─────────────────────────────────────────────────
+    with dot.subgraph(name="cluster_gold") as c:
+        c.attr(label="GOLD LAYER  (SQL views)", style="rounded",
+               color="#DAA520", fontcolor="#7B5900", fontsize="11",
+               bgcolor="#fffbe6", penwidth="1.5")
+        for gid, (glabel, _) in GOLD_VIEWS.items():
+            c.node(gid, label=glabel,
+                   shape="diamond", fillcolor="#fff3c4", color="#DAA520",
+                   style="filled")
+
+    # ── Dashboard cluster ────────────────────────────────────────────
+    with dot.subgraph(name="cluster_dash") as c:
+        c.attr(label="DASHBOARD TABS", style="rounded",
+               color="#f66d9b", fontcolor="#9b1b50", fontsize="11",
+               bgcolor="#fff0f5", penwidth="1.5")
+        for tab_label in DASH_TABS:
+            safe_id = "tab_" + tab_label.replace(" ", "_").replace("&", "and")
+            c.node(safe_id, label=tab_label,
+                   shape="tab", fillcolor="#fce4ec", color="#f66d9b")
+
+    # ── Edges: CSV → Bronze → Silver ────────────────────────────────
     for t in TABLE_ORDER:
-        sys_name  = _csv_source.get(t, "")
-        sys_color = _SOURCE_SYSTEM_COLORS.get(sys_name, "#5b8dee")
-        _n(f"csv_{t}", f"{t}.csv", X_CSV, tbl_y[t],
-           sys_color, 11, "CSV Source",
-           f"<b>{t}.csv</b><br>Source system: {sys_name}")
+        dot.edge(f"csv_{t}", f"bronze_{t}", color="#5b8dee88", style="dashed")
+        dot.edge(f"bronze_{t}", f"silver_{t}", label="  ETL",
+                 fontsize="8", fontcolor="#888888", color="#CD7F3288")
 
-    # Bronze table nodes
-    for t in TABLE_ORDER:
-        _n(f"bronze_{t}", f"bronze_{t}", X_BRONZE, tbl_y[t],
-           "#CD7F32", 14, "Bronze Table",
-           f"bronze_{t}: all TEXT columns + _loaded_at timestamp")
+    # ── Edges: Silver → Gold ─────────────────────────────────────────
+    for gid, (_, silver_sources) in GOLD_VIEWS.items():
+        for src in silver_sources:
+            dot.edge(f"silver_{src}", gid, color="#DAA52088")
 
-    # Silver table nodes
-    for t in TABLE_ORDER:
-        _n(f"silver_{t}", f"silver_{t}", X_SILVER, tbl_y[t],
-           "#7a7a7a", 14, "Silver Table",
-           f"silver_{t}: typed columns (REAL/INTEGER), FK constraints enforced")
+    # ── Edges: Gold → Dashboard ──────────────────────────────────────
+    for tab_label, gold_sources in DASH_TABS.items():
+        safe_id = "tab_" + tab_label.replace(" ", "_").replace("&", "and")
+        for gid in gold_sources:
+            dot.edge(gid, safe_id, color="#f66d9b88")
 
-    # Gold view nodes
-    for gid, glabel, gy, ghover in GOLD_VIEWS:
-        _n(gid, glabel, X_GOLD, gy, "#DAA520", 20, "Gold View", ghover)
-
-    # Dashboard tab nodes
-    for tid, tlabel, ty in DASH_TABS:
-        _n(tid, tlabel, X_DASH, ty, "#f66d9b", 17, "Dashboard Tab",
-           f"Dashboard tab: {tlabel.replace(chr(10), ' ')}")
-
-    # CSV → Bronze edges (raw ingestion)
-    for t in TABLE_ORDER:
-        _e(f"csv_{t}", f"bronze_{t}")
-
-    # Bronze → Silver edges (ETL: type casting & validation)
-    for t in TABLE_ORDER:
-        _e(f"bronze_{t}", f"silver_{t}")
-
-    # Silver → Gold edges (SQL aggregation, representative joins)
-    for src, tgt in [
-        ("silver_claims",     "gold_monthly_kpis"),
-        ("silver_payments",   "gold_monthly_kpis"),
-        ("silver_payers",     "gold_payer_perf"),
-        ("silver_claims",     "gold_payer_perf"),
-        ("silver_encounters", "gold_dept_perf"),
-        ("silver_charges",    "gold_dept_perf"),
-        ("silver_claims",     "gold_ar_aging"),
-        ("silver_denials",    "gold_denial_analysis"),
-    ]:
-        _e(src, tgt)
-
-    # Gold → Dashboard edges
-    for src, tgt in [
-        ("gold_monthly_kpis",    "tab_exec"),
-        ("gold_monthly_kpis",    "tab_rev"),
-        ("gold_payer_perf",      "tab_payer"),
-        ("gold_dept_perf",       "tab_dept"),
-        ("gold_ar_aging",        "tab_ar"),
-        ("gold_denial_analysis", "tab_claims"),
-    ]:
-        _e(src, tgt)
-
-    # ── Build Plotly figure ────────────────────────────────────────────
-    fig = go.Figure()
-
-    # Zone background rectangles
-    ZONE_Y0, ZONE_Y1 = -0.8, Y_TOP + 0.2
-    zone_defs = [
-        # x0,  x1,  fill,                          border,                        label,          tx,   color
-        (-0.3,  4.0, "rgba(205,127,50,0.07)",  "rgba(205,127,50,0.30)",  "BRONZE LAYER",  1.85, "#8B4513"),
-        ( 4.0,  6.8, "rgba(150,150,150,0.07)", "rgba(150,150,150,0.30)", "SILVER LAYER",  5.40, "#505050"),
-        ( 6.8, 10.8, "rgba(255,215,  0,0.07)", "rgba(218,165, 32,0.30)", "GOLD LAYER",    8.80, "#7B5900"),
-    ]
-    for x0, x1, fill, border, zlabel, tx, tc in zone_defs:
-        fig.add_shape(
-            type="rect", x0=x0, y0=ZONE_Y0, x1=x1, y1=ZONE_Y1,
-            fillcolor=fill, line=dict(color=border, width=1.5), layer="below",
-        )
-        fig.add_annotation(
-            x=tx, y=Y_TOP + 0.1, text=f"<b>{zlabel}</b>",
-            showarrow=False, font=dict(size=12, color=tc), xanchor="center",
-        )
-
-    # ETL step label
-    fig.add_annotation(
-        x=(X_BRONZE + X_SILVER) / 2, y=Y_TOP - 0.1,
-        text="<i>ETL →</i>",
-        showarrow=False, font=dict(size=9, color="#888"),
-        bgcolor="rgba(255,255,255,0.8)",
-    )
-
-    # Draw edges
-    for src_id, tgt_id in edges:
-        sx, sy = npos[src_id]
-        tx, ty = npos[tgt_id]
-        fig.add_trace(go.Scatter(
-            x=[sx, tx, None], y=[sy, ty, None],
-            mode="lines",
-            line=dict(width=0.8, color="#c8c8c8"),
-            hoverinfo="none",
-            showlegend=False,
-        ))
-
-    # Draw nodes, grouped by layer for the legend
-    color_groups: dict = {}
-    for n in nodes:
-        color_groups.setdefault(n["group"], []).append(n)
-
-    for group, gnodes in color_groups.items():
-        fig.add_trace(go.Scatter(
-            x=[n["x"] for n in gnodes],
-            y=[n["y"] for n in gnodes],
-            mode="markers+text",
-            marker=dict(
-                size=[n["size"] for n in gnodes],
-                color=[n["color"] for n in gnodes],
-                line=dict(width=1, color="white"),
-            ),
-            text=[n["label"] for n in gnodes],
-            textposition="bottom center",
-            textfont=dict(size=7),
-            hovertext=[n.get("hover", n["label"]) for n in gnodes],
-            hoverinfo="text",
-            name=group,
-            showlegend=True,
-        ))
-
-    fig.update_layout(
-        title="Data Pipeline — Medallion Architecture (Bronze → Silver → Gold)",
-        height=800,
-        xaxis=dict(showgrid=False, zeroline=False, showticklabels=False,
-                   range=[-0.6, 11.2]),
-        yaxis=dict(showgrid=False, zeroline=False, showticklabels=False,
-                   range=[-1.3, Y_TOP + 0.8]),
-        plot_bgcolor="white",
-        paper_bgcolor="white",
-        margin=dict(l=20, r=20, t=55, b=60),
-        legend=dict(orientation="h", yanchor="top", y=-0.02, xanchor="left", x=0),
-    )
-    st.plotly_chart(fig, theme="streamlit", width="stretch")
+    st.graphviz_chart(dot, use_container_width=True)
 
     # ── Source system key ──────────────────────────────────────────────
     st.subheader("Source System Key")
@@ -758,21 +598,16 @@ def render_data_lineage():
 def render_knowledge_graph():
     """Interactive entity-relationship diagram — edges and descriptions sourced live from meta_kg_nodes/edges."""
     st.title("Knowledge Graph")
-    st.caption("Entity relationships across the 10 data tables. Hover nodes for column details.")
+    st.caption("Entity relationships across the 10 data tables.")
 
-    # ── Enrich node hover text from meta_kg_nodes ──────────────────────
+    # ── Enrich node descriptions from meta_kg_nodes ──────────────────
     nodes_meta = _query_meta(
         "SELECT entity_id, silver_table, description FROM meta_kg_nodes"
     )
-    hover_map = (
-        {row.entity_id: f"{row.silver_table}: {row.description}"
-         for _, row in nodes_meta.iterrows()}
+    desc_map = (
+        {row.entity_id: row.description for _, row in nodes_meta.iterrows()}
         if not nodes_meta.empty else {}
     )
-    enriched_nodes = [
-        {**n, "hover": hover_map.get(n["id"], n["hover"])}
-        for n in _KG_NODES
-    ]
 
     # ── Build graph edges from meta_kg_edges ──────────────────────────
     edges_meta = _query_meta(
@@ -780,26 +615,67 @@ def render_knowledge_graph():
     )
     if not edges_meta.empty:
         live_edges = [
-            {
-                "source": row.parent_entity,
-                "target": row.child_entity,
-                "label":  f"{row.cardinality} ({row.join_column})",
-            }
+            {"source": row.parent_entity, "target": row.child_entity,
+             "label": f"{row.cardinality}\\n({row.join_column})"}
             for _, row in edges_meta.iterrows()
         ]
     else:
-        live_edges = _KG_EDGES  # static fallback
+        live_edges = [
+            {**e, "label": e.get("label", "").replace(" (", "\\n(")}
+            for e in _KG_EDGES
+        ]
 
     st.subheader("Entity Relationship Diagram")
-    _draw_network_graph(enriched_nodes, live_edges, "", height=620)
+
+    # ── Category → node grouping ─────────────────────────────────────
+    _GROUPS = {
+        "Reference":     {"nodes": ["payers", "patients", "providers"],
+                          "color": "#dbeafe", "border": "#5b8dee", "fontcolor": "#1a3a8a"},
+        "Transactional": {"nodes": ["encounters", "charges", "claims",
+                                     "payments", "denials", "adjustments"],
+                          "color": "#dcfce7", "border": "#38c172", "fontcolor": "#166534"},
+        "Operational":   {"nodes": ["operating_costs"],
+                          "color": "#fef3c7", "border": "#e8a838", "fontcolor": "#92400e"},
+    }
+
+    dot = graphviz.Digraph("kg", format="svg")
+    dot.attr(rankdir="TB", bgcolor="white", fontname="Helvetica",
+             nodesep="0.6", ranksep="0.9", splines="ortho")
+    dot.attr("node", fontname="Helvetica", fontsize="10", style="filled,rounded",
+             shape="box", penwidth="1.5")
+    dot.attr("edge", fontname="Helvetica", fontsize="8", color="#555555",
+             arrowsize="0.8", penwidth="1.2")
+
+    # Create subgraph clusters per category
+    for group_name, cfg in _GROUPS.items():
+        with dot.subgraph(name=f"cluster_{group_name}") as c:
+            c.attr(label=f"  {group_name}  ", style="rounded,filled",
+                   color=cfg["border"], fontcolor=cfg["fontcolor"],
+                   fontsize="11", bgcolor=cfg["color"], penwidth="2")
+            for nid in cfg["nodes"]:
+                node_data = next((n for n in _KG_NODES if n["id"] == nid), None)
+                if not node_data:
+                    continue
+                label = f"silver_{nid}"
+                tooltip = desc_map.get(nid, node_data.get("hover", ""))
+                c.node(nid, label=label, fillcolor="white",
+                       color=cfg["border"], tooltip=tooltip)
+
+    # Draw edges with cardinality labels
+    for edge in live_edges:
+        dot.edge(edge["source"], edge["target"],
+                 label=f"  {edge['label']}  ",
+                 fontcolor="#555555")
+
+    st.graphviz_chart(dot, use_container_width=True)
 
     # Legend
     st.markdown("""
 | Color | Category | Tables |
 |-------|----------|--------|
-| 🔵 Blue | Reference / Master data | payers, patients, providers |
-| 🟢 Green | Transactional | encounters, charges, claims, payments, denials, adjustments |
-| 🟠 Orange | Operational | operating_costs |
+| Blue | Reference / Master data | payers, patients, providers |
+| Green | Transactional | encounters, charges, claims, payments, denials, adjustments |
+| Orange | Operational | operating_costs |
 """)
 
     # ── Relationships table — query meta_kg_edges live ─────────────────
@@ -834,47 +710,50 @@ def render_semantic_layer():
     # ── Business Concept → KPI graph ──
     st.subheader("Business Concept Map")
 
-    concepts = [
-        ("Revenue",              4.5, 8.0, "#e3342f"),
-        ("Collections",          1.5, 6.0, "#e8a838"),
-        ("Claims Quality",       4.5, 6.0, "#38c172"),
-        ("A/R Health",           7.5, 6.0, "#5b8dee"),
-        ("Payer Performance",    2.0, 3.5, "#9561e2"),
-        ("Dept Performance",     7.0, 3.5, "#f66d9b"),
-        ("Recovery & Appeals",   4.5, 3.5, "#20c997"),
-    ]
-    kpis = [
-        ("NCR",           1.0, 4.5, "#e8a838", "Collections"),
-        ("GCR",           2.0, 4.5, "#e8a838", "Collections"),
-        ("Cost-to-Collect",3.0, 4.5, "#e8a838", "Collections"),
-        ("DAR",           6.5, 4.5, "#5b8dee", "A/R Health"),
-        ("A/R Aging",     7.5, 4.5, "#5b8dee", "A/R Health"),
-        ("Pmt Accuracy",  8.5, 4.5, "#5b8dee", "A/R Health"),
-        ("Clean Claim",   3.5, 4.5, "#38c172", "Claims Quality"),
-        ("Denial Rate",   4.5, 4.5, "#38c172", "Claims Quality"),
-        ("First-Pass",    5.5, 4.5, "#38c172", "Claims Quality"),
-        ("Charge Lag",    4.5, 2.5, "#38c172", "Claims Quality"),
-        ("Bad Debt",      4.5, 7.0, "#e3342f", "Revenue"),
-        ("Avg Reimb",     5.5, 7.0, "#e3342f", "Revenue"),
-        ("Appeal Success",3.5, 2.5, "#20c997", "Recovery & Appeals"),
-        ("Denial Reasons",5.5, 2.5, "#20c997", "Recovery & Appeals"),
-        ("Payer Mix",     1.5, 2.0, "#9561e2", "Payer Performance"),
-        ("Denial/Payer",  2.5, 2.0, "#9561e2", "Payer Performance"),
-        ("Dept Perf.",    7.0, 2.0, "#f66d9b", "Dept Performance"),
-    ]
+    _CONCEPT_KPIS = {
+        "Revenue":           {"color": "#e3342f", "bg": "#fef2f2",
+                              "kpis": ["Bad Debt Rate", "Avg Reimbursement"]},
+        "Collections":       {"color": "#e8a838", "bg": "#fffbeb",
+                              "kpis": ["NCR", "GCR", "Cost to Collect"]},
+        "Claims Quality":    {"color": "#38c172", "bg": "#f0fdf4",
+                              "kpis": ["Clean Claim Rate", "Denial Rate",
+                                       "First-Pass Rate", "Charge Lag"]},
+        "A/R Health":        {"color": "#5b8dee", "bg": "#eff6ff",
+                              "kpis": ["Days in A/R", "A/R Aging",
+                                       "Payment Accuracy"]},
+        "Recovery":          {"color": "#20c997", "bg": "#ecfdf5",
+                              "kpis": ["Appeal Success Rate", "Denial Reasons"]},
+        "Payer Perf.":       {"color": "#9561e2", "bg": "#f5f3ff",
+                              "kpis": ["Payer Mix", "Denial Rate by Payer"]},
+        "Dept Perf.":        {"color": "#f66d9b", "bg": "#fdf2f8",
+                              "kpis": ["Dept Performance"]},
+    }
 
-    nodes = []
-    for name, x, y, color in concepts:
-        nodes.append({"id": name, "label": name, "x": x, "y": y, "color": color,
-                      "size": 34, "group": "Business Concept", "hover": f"Business Concept: {name}"})
-    for name, x, y, color, parent in kpis:
-        nodes.append({"id": name, "label": name, "x": x, "y": y, "color": color,
-                      "size": 20, "group": "KPI", "hover": f"KPI: {name} → {parent}"})
+    dot = graphviz.Digraph("semantic", format="svg")
+    dot.attr(rankdir="TB", bgcolor="white", fontname="Helvetica",
+             nodesep="0.4", ranksep="0.6", splines="polyline")
+    dot.attr("node", fontname="Helvetica", fontsize="10", style="filled,rounded",
+             penwidth="1.5")
+    dot.attr("edge", arrowsize="0.7", penwidth="1.2")
 
-    edges = [{"source": parent, "target": name} for name, x, y, color, parent in kpis]
+    for concept, cfg in _CONCEPT_KPIS.items():
+        # Concept node — large, colored
+        cid = f"concept_{concept}"
+        dot.node(cid, label=concept, shape="box",
+                 fillcolor=cfg["bg"], color=cfg["color"],
+                 fontcolor=cfg["color"], fontsize="12",
+                 penwidth="2.5", width="1.8", height="0.5")
+
+        # KPI nodes — smaller, white with colored border
+        for kpi in cfg["kpis"]:
+            kid = f"kpi_{kpi}"
+            dot.node(kid, label=kpi, shape="ellipse",
+                     fillcolor="white", color=cfg["color"],
+                     fontsize="9")
+            dot.edge(cid, kid, color=cfg["color"] + "99")
 
     st.subheader("Business Concepts → KPIs")
-    _draw_network_graph(nodes, edges, "", height=580)
+    st.graphviz_chart(dot, use_container_width=True)
 
     st.divider()
 
@@ -961,197 +840,82 @@ Every AI response follows a **three-stage pipeline**:
     # ── Process flow diagram ──────────────────────────────────────────
     st.subheader("Process Flow Diagram")
 
-    fig = go.Figure()
+    dot = graphviz.Digraph("ai_arch", format="svg")
+    dot.attr(rankdir="TB", bgcolor="white", fontname="Helvetica",
+             nodesep="0.5", ranksep="0.7", splines="ortho", compound="true")
+    dot.attr("node", fontname="Helvetica", fontsize="10", style="filled,rounded",
+             penwidth="1.5")
+    dot.attr("edge", fontname="Helvetica", fontsize="8", penwidth="1.2",
+             arrowsize="0.8")
 
-    # Zone backgrounds
-    # (x0, y0, x1, y1, fill, border, label, tx, ty, label_color)
-    zone_defs = [
-        (0.0,  0.0,  3.8, 11.2, "rgba( 91,141,238,0.06)", "rgba( 91,141,238,0.28)", "CONTEXT ASSEMBLY",  1.9, 10.9, "#1a3a8a"),
-        (3.8,  0.0,  7.2, 11.2, "rgba( 56,193,114,0.06)", "rgba( 56,193,114,0.28)", "LLM ENGINE",        5.5, 10.9, "#1a6e3c"),
-        (7.2,  0.0, 11.0, 11.2, "rgba(245,107,  0,0.06)", "rgba(245,107,  0,0.28)", "SQL TOOL LOOP",     9.1, 10.9, "#7a3000"),
-    ]
-    for x0, y0, x1, y1, fill, border, zlabel, tx, ty, tc in zone_defs:
-        fig.add_shape(
-            type="rect", x0=x0, y0=y0, x1=x1, y1=y1,
-            fillcolor=fill, line=dict(color=border, width=1.5), layer="below",
-        )
-        fig.add_annotation(
-            x=tx, y=ty, text=f"<b>{zlabel}</b>",
-            showarrow=False, font=dict(size=11, color=tc),
-            xanchor="center", yanchor="bottom",
-        )
+    # ── Context Assembly cluster ─────────────────────────────────────
+    with dot.subgraph(name="cluster_context") as c:
+        c.attr(label="CONTEXT ASSEMBLY", style="rounded,filled",
+               color="#5b8dee", fontcolor="#1a3a8a", fontsize="12",
+               bgcolor="#eff6ff", penwidth="2")
+        c.node("meta_kpi", "meta_kpi_catalog\n(23 KPI definitions)",
+               shape="cylinder", fillcolor="#ede9fe", color="#9561e2")
+        c.node("meta_sem", "meta_semantic_layer\n(concept → KPI maps)",
+               shape="cylinder", fillcolor="#ede9fe", color="#9561e2")
+        c.node("meta_kg", "meta_kg_nodes + edges\n(10 entities, 9 FKs)",
+               shape="cylinder", fillcolor="#ede9fe", color="#9561e2")
+        c.node("live_kpis", "Live KPI Snapshot\n(current filter values)",
+               shape="box", fillcolor="#fef3c7", color="#e8a838")
+        c.node("sys_prompt", "System Prompt",
+               shape="box", fillcolor="#dbeafe", color="#5b6af0",
+               fontsize="12", penwidth="2.5")
 
-    # Node definitions: (id, label, x, y, color, size, group, hover_text)
-    node_defs = [
-        # ── Context assembly zone ──────────────────────────────────
-        ("meta_kpi",
-         "meta_kpi_catalog",       1.9, 9.5,
-         "#9561e2", 26, "Meta Tables",
-         "23 KPI definitions: metric name, formula, category, benchmark"),
+    # ── LLM Engine cluster ───────────────────────────────────────────
+    with dot.subgraph(name="cluster_llm") as c:
+        c.attr(label="LLM ENGINE", style="rounded,filled",
+               color="#38c172", fontcolor="#166534", fontsize="12",
+               bgcolor="#f0fdf4", penwidth="2")
+        c.node("user_q", "User Question",
+               shape="parallelogram", fillcolor="#dbeafe", color="#5b8dee")
+        c.node("llm", "OpenRouter LLM\n(model selection)",
+               shape="hexagon", fillcolor="#bbf7d0", color="#38c172",
+               fontsize="12", penwidth="2.5", width="2")
+        c.node("final_ans", "Final Answer",
+               shape="parallelogram", fillcolor="#dbeafe", color="#5b8dee")
 
-        ("meta_sem",
-         "meta_semantic_layer",    1.9, 8.3,
-         "#9561e2", 26, "Meta Tables",
-         "Business concept → KPI → silver_* column mappings + business rules"),
+    # ── SQL Tool Loop cluster ────────────────────────────────────────
+    with dot.subgraph(name="cluster_tool") as c:
+        c.attr(label="SQL TOOL LOOP  (up to 8 iterations)", style="rounded,filled",
+               color="#f56b00", fontcolor="#7a3000", fontsize="12",
+               bgcolor="#fff7ed", penwidth="2")
+        c.node("run_sql", "run_sql() Tool\n(read-only SELECT/WITH)",
+               shape="box", fillcolor="#fed7aa", color="#f56b00",
+               penwidth="2.5")
+        c.node("silver_db", "silver_* Tables\n(10 typed tables)",
+               shape="cylinder", fillcolor="#e8e8e8", color="#7a7a7a")
+        c.node("gold_db", "gold_* Views\n(5 aggregated views)",
+               shape="cylinder", fillcolor="#fff3c4", color="#B8860B")
+        c.node("meta_db", "meta_* Tables\n(4 AI-queryable tables)",
+               shape="cylinder", fillcolor="#ede9fe", color="#9561e2")
 
-        ("meta_kg",
-         "meta_kg_nodes\n+ edges", 1.9, 7.1,
-         "#9561e2", 26, "Meta Tables",
-         "10 Silver-layer entities + 9 foreign-key relationships"),
+    # ── Edges: Context assembly ──────────────────────────────────────
+    dot.edge("meta_kpi", "sys_prompt", label="KPI defs", color="#9561e2")
+    dot.edge("meta_sem", "sys_prompt", label="mappings", color="#9561e2")
+    dot.edge("meta_kg", "sys_prompt", label="schema", color="#9561e2")
+    dot.edge("live_kpis", "sys_prompt", label="snapshot", color="#e8a838")
 
-        ("live_kpis",
-         "Live KPI\nSnapshot",     1.9, 5.6,
-         "#e8a838", 28, "Live Context",
-         "Current KPI values + active date / payer / dept / enc-type filters"),
+    # ── Edges: LLM flow ──────────────────────────────────────────────
+    dot.edge("sys_prompt", "llm", label="context", color="#5b6af0")
+    dot.edge("user_q", "llm", label="question", color="#5b8dee")
+    dot.edge("llm", "final_ans", label="response", color="#38c172")
 
-        ("sys_prompt",
-         "System\nPrompt",         1.9, 3.8,
-         "#5b6af0", 34, "Assembled Prompt",
-         "Full markdown context string prepended to every LLM request as the system message"),
+    # ── Edges: Tool calling loop ─────────────────────────────────────
+    dot.edge("llm", "run_sql", label="tool call →", color="#38c172")
+    dot.edge("run_sql", "llm", label="← results", color="#f56b00",
+             style="dashed")
 
-        # ── LLM engine zone ────────────────────────────────────────
-        ("user_q",
-         "User\nQuestion",         5.5, 9.5,
-         "#5b8dee", 32, "Input / Output",
-         "Natural-language question entered in the chat input box"),
+    # ── Edges: Database access ───────────────────────────────────────
+    dot.edge("run_sql", "silver_db", label="SELECT", color="#7a7a7a")
+    dot.edge("run_sql", "gold_db", label="SELECT", color="#B8860B")
+    dot.edge("meta_db", "sys_prompt", label="build_system_prompt()",
+             color="#9561e2", style="dashed")
 
-        ("llm",
-         "OpenRouter\nLLM",        5.5, 6.5,
-         "#38c172", 44, "LLM",
-         "Selected model (GPT-4o, Claude, Gemini) called via the OpenRouter gateway.\n"
-         "Receives system prompt + conversation history + tool schema.\n"
-         "Decides whether to answer directly or call run_sql."),
-
-        ("final_ans",
-         "Final\nAnswer",          5.5, 1.5,
-         "#5b8dee", 32, "Input / Output",
-         "Model's response displayed in the Streamlit chat UI"),
-
-        # ── SQL tool loop zone ─────────────────────────────────────
-        ("run_sql",
-         "run_sql()\nTool",        9.1, 9.0,
-         "#f56b00", 34, "Tool",
-         "Executes a read-only SELECT/WITH query against SQLite.\n"
-         "Safety: non-SELECT statements are rejected.\n"
-         "Results capped at 100 rows; shown in collapsible expanders."),
-
-        ("silver",
-         "silver_*\nTables",       9.1, 6.5,
-         "#7a7a7a", 28, "Database",
-         "10 cleaned Silver-layer tables:\n"
-         "claims, encounters, payers, patients, providers,\n"
-         "charges, payments, denials, adjustments, operating_costs"),
-
-        ("gold",
-         "gold_*\nViews",          9.1, 4.5,
-         "#B8860B", 28, "Database",
-         "5 pre-aggregated Gold views:\n"
-         "gold_monthly_kpis, gold_payer_performance,\n"
-         "gold_department_performance, gold_ar_aging, gold_denial_analysis"),
-
-        ("meta_tables_db",
-         "meta_*\nTables",         9.1, 2.5,
-         "#9561e2", 26, "Database",
-         "4 meta tables queried at system-prompt build time:\n"
-         "meta_kpi_catalog, meta_semantic_layer, meta_kg_nodes, meta_kg_edges"),
-    ]
-
-    # Build lookup
-    nmap = {n[0]: n for n in node_defs}
-
-    # Edge definitions: (source_id, target_id, label, color, offset)
-    # offset shifts the midpoint label slightly so overlapping edges are legible
-    edge_defs = [
-        # Meta tables → system prompt
-        ("meta_kpi",       "sys_prompt",    "KPI defs",     "#9561e2", 0),
-        ("meta_sem",       "sys_prompt",    "mappings",     "#9561e2", 0),
-        ("meta_kg",        "sys_prompt",    "schema",       "#9561e2", 0),
-        ("live_kpis",      "sys_prompt",    "snapshot",     "#e8a838", 0),
-        # System prompt + user question → LLM
-        ("sys_prompt",     "llm",           "context",      "#5b6af0", 0),
-        ("user_q",         "llm",           "question",     "#5b8dee", 0),
-        # LLM ↔ run_sql (slightly offset so both arrows are visible)
-        ("llm",            "run_sql",       "tool call",    "#38c172", +0.15),
-        ("run_sql",        "llm",           "results",      "#f56b00", -0.15),
-        # run_sql ↔ database tables
-        ("run_sql",        "silver",        "SELECT",       "#7a7a7a", +0.15),
-        ("silver",         "run_sql",       "rows",         "#7a7a7a", -0.15),
-        ("run_sql",        "gold",          "SELECT",       "#B8860B", +0.15),
-        ("gold",           "run_sql",       "rows",         "#B8860B", -0.15),
-        # meta_* tables also live in the DB (queried at prompt build time)
-        ("meta_tables_db", "sys_prompt",    "build_system\n_prompt()",  "#9561e2", 0),
-        # LLM → final answer
-        ("llm",            "final_ans",     "response",     "#38c172", 0),
-    ]
-
-    # Draw edges
-    for src_id, tgt_id, elabel, ecolor, offset in edge_defs:
-        src = nmap[src_id]
-        tgt = nmap[tgt_id]
-        fig.add_trace(go.Scatter(
-            x=[src[2], tgt[2], None],
-            y=[src[3], tgt[3], None],
-            mode="lines",
-            line=dict(width=1.8, color=ecolor),
-            hoverinfo="none",
-            showlegend=False,
-        ))
-        mx = (src[2] + tgt[2]) / 2
-        my = (src[3] + tgt[3]) / 2 + offset
-        fig.add_annotation(
-            x=mx, y=my, text=elabel,
-            showarrow=False,
-            font=dict(size=8, color=ecolor),
-            bgcolor="rgba(255,255,255,0.85)",
-            borderpad=2,
-        )
-
-    # Draw nodes grouped by color/group for the legend
-    color_groups: dict = {}
-    for nd in node_defs:
-        color_groups.setdefault(nd[6], []).append(nd)
-
-    for group, gnodes in color_groups.items():
-        fig.add_trace(go.Scatter(
-            x=[n[2] for n in gnodes],
-            y=[n[3] for n in gnodes],
-            mode="markers+text",
-            marker=dict(
-                size=[n[5] for n in gnodes],
-                color=[n[4] for n in gnodes],
-                symbol="circle",
-                line=dict(width=2, color="white"),
-            ),
-            text=[n[1] for n in gnodes],
-            textposition="bottom center",
-            textfont=dict(size=9),
-            hovertext=[n[7] for n in gnodes],
-            hoverinfo="text",
-            name=group,
-            showlegend=True,
-        ))
-
-    fig.update_layout(
-        title=dict(
-            text="AI Assistant — Request Processing Pipeline",
-            font=dict(size=14),
-            x=0.5,
-        ),
-        xaxis=dict(visible=False, range=[-0.3, 11.3]),
-        yaxis=dict(visible=False, range=[-0.3, 11.5]),
-        plot_bgcolor="white",
-        paper_bgcolor="white",
-        height=680,
-        legend=dict(
-            orientation="h",
-            yanchor="bottom", y=-0.08,
-            xanchor="center", x=0.5,
-            font=dict(size=10),
-        ),
-        margin=dict(l=10, r=10, t=50, b=60),
-    )
-
-    st.plotly_chart(fig, use_container_width=True)
+    st.graphviz_chart(dot, use_container_width=True)
 
     # ── Step-by-step breakdown ────────────────────────────────────────
     st.subheader("Step-by-Step Breakdown")
