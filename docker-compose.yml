@@ -20,11 +20,10 @@ services:
       CUBEJS_SCHEMA_PATH: "/cube/conf/model"
     healthcheck:
       test: ["CMD-SHELL", "node -e \"const http = require('http'); http.get('http://localhost:4000/readyz', r => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))\""]
-
-      interval: 10s
-      timeout: 5s
-      retries: 10
-      start_period: 30s
+      interval: 15s
+      timeout: 10s
+      retries: 15
+      start_period: 120s
 
   # ── Neo4j — Knowledge Graph ────────────────────────────────
   # Stores the entity-relationship model (10 nodes, 9 FK edges).
