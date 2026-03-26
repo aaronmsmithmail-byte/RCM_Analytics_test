@@ -31,10 +31,14 @@ source venv/bin/activate
 echo "📦 Installing dependencies..."
 pip install -q -r requirements.txt
 
-# ── Generate sample data (if not already present) ────────────
+# ── Generate sample data and initialize DB (BEFORE Docker) ───
+# The DuckDB file must be fully built before Cube starts, because
+# Cube will hold a write lock on the database file.
 if [ ! -f "data/rcm_analytics.db" ]; then
     echo "🗄️  Generating sample data..."
     python generate_sample_data.py
+    echo "🗄️  Initializing DuckDB database (medallion architecture)..."
+    python -m src.database
 else
     echo "🗄️  Database already exists — skipping data generation"
 fi

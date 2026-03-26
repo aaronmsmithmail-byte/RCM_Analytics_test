@@ -1135,7 +1135,7 @@ def has_medallion_schema(db_path=None):
     if not os.path.exists(path):
         return False
     try:
-        conn = duckdb.connect(path)
+        conn = duckdb.connect(path, read_only=True)
         # Check both that the table exists and that the schema is current
         # (fail_reason column was added in schema v2).
         conn.execute("SELECT fail_reason FROM silver_claims LIMIT 1")
