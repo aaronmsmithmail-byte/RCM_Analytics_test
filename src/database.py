@@ -656,19 +656,22 @@ _LEGACY_TABLES = [
 ]
 
 
-def get_connection(db_path=None):
+def get_connection(db_path=None, read_only=False):
     """
     Create and return a DuckDB database connection.
 
     Args:
         db_path: Optional override for the database file path.
                  Defaults to ./data/rcm_analytics.db.
+        read_only: If True, open the database in read-only mode.
+                   Use this to avoid lock conflicts when another
+                   process (e.g. Cube) holds a write lock.
 
     Returns:
         duckdb.DuckDBPyConnection.
     """
     path = db_path or DB_PATH
-    conn = duckdb.connect(path)
+    conn = duckdb.connect(path, read_only=read_only)
     return conn
 
 
@@ -1044,7 +1047,7 @@ def query_to_dataframe(sql, params=None, db_path=None):
     Returns:
         pd.DataFrame with query results.
     """
-    conn = get_connection(db_path)
+    conn = get_connection(db_path, read_only=True)
     try:
         if params:
             return conn.execute(sql, params).df()

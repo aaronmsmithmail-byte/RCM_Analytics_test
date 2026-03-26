@@ -157,10 +157,15 @@ def load_all_data():
         # Always refresh meta tables so source_system, KG nodes/edges, KPI
         # definitions, and semantic mappings stay in sync with the codebase.
         from src.database import get_connection, persist_metadata
-        _conn = get_connection()
-        persist_metadata(_conn)
-        _conn.commit()
-        _conn.close()
+        try:
+            _conn = get_connection()
+            persist_metadata(_conn)
+            _conn.commit()
+            _conn.close()
+        except Exception:
+            # Skip metadata refresh if another process (e.g. Cube) holds the write lock.
+            # Meta tables are populated during initialize_database() and rarely change.
+            pass
 
     # ------------------------------------------------------------------
     # Table configuration: logical name → SQL query + parse hints.
