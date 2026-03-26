@@ -86,8 +86,8 @@ from src.ai_chat import (  # AI Assistant tab backend
     build_system_prompt,
     run_agentic_turn,
 )
-from src.data_loader import load_all_data  # Loads all tables from DuckDB
 from src.backlog_page import render_feature_backlog
+from src.data_loader import load_all_data  # Loads all tables from DuckDB
 from src.metadata_pages import (  # Five supplemental metadata pages
     render_ai_architecture,
     render_data_catalog,

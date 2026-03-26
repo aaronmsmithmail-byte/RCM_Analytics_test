@@ -5,12 +5,12 @@ application restarts.  Users can create new items, and the development team
 can update status via an inline dropdown.
 """
 
-import streamlit as st
-import pandas as pd
 from datetime import datetime
 
-from src.database import get_connection, DB_PATH
+import pandas as pd
+import streamlit as st
 
+from src.database import get_connection
 
 # ── Priority / status colours for visual distinction ─────────────────
 
@@ -190,7 +190,7 @@ def render_feature_backlog():
 
         acceptance_criteria = st.text_area(
             "Acceptance Criteria",
-            placeholder="1. The system should...\\n2. Users can...\\n3. Data is...",
+            placeholder="1. The system should...\n2. Users can...\n3. Data is...",
             height=100,
         )
         benefits = st.text_area(

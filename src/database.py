@@ -879,9 +879,12 @@ def persist_metadata(conn):
 
 
 def _seed_backlog_examples(conn):
-    """Insert 3 example backlog items only if the table is empty."""
-    # Ensure table exists — it may be missing on databases initialised before
-    # the Feature Backlog feature was added.
+    """Insert 3 example backlog items only if the table is empty.
+
+    The CREATE TABLE here is intentionally duplicated from METADATA_SCHEMA_SQL
+    as a migration safety net — databases created before the Feature Backlog
+    feature was added won't have this table yet.
+    """
     conn.execute("""
         CREATE SEQUENCE IF NOT EXISTS seq_feature_backlog START 1;
         CREATE TABLE IF NOT EXISTS feature_backlog (

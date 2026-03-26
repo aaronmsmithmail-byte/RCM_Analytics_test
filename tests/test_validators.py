@@ -426,3 +426,13 @@ class TestCheckBooleanColumns:
     def test_no_issues_on_empty_tables(self, empty_db):
         issues = _check_boolean_columns(empty_db)
         assert issues == []
+
+    def test_warns_on_invalid_boolean_value(self, clean_db):
+        conn = duckdb.connect(clean_db)
+        conn.execute("UPDATE silver_claims SET is_clean_claim = 5 WHERE claim_id = 'CLM001'")
+        conn.close()
+        issues = _check_boolean_columns(clean_db)
+        assert any(
+            i["table"] == "silver_claims" and "invalid" in i["message"]
+            for i in issues
+        )
