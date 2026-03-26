@@ -17,7 +17,7 @@ from src.database import create_tables
 
 @pytest.fixture
 def db(tmp_path):
-    """Temporary SQLite database with a few Silver-layer rows."""
+    """Temporary DuckDB database with a few Silver-layer rows."""
     db_path = str(tmp_path / "test.db")
     conn = duckdb.connect(db_path)
     create_tables(conn)

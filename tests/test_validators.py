@@ -1,7 +1,7 @@
 """Unit tests for src/validators.py — all 6 SQL-based validation check functions.
 
-All validators now query Silver tables directly in SQLite.
-Each test uses a temporary SQLite database (via tmp_path) pre-loaded with
+All validators now query Silver tables directly in DuckDB.
+Each test uses a temporary DuckDB database (via tmp_path) pre-loaded with
 clean Silver-layer data. Individual tests update specific rows to introduce
 violations and verify the expected issues are returned.
 """

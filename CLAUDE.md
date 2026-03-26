@@ -130,7 +130,7 @@ Update `README.md` whenever:
 
 ```bash
 pytest tests/ -q          # must pass with 0 failures before every commit
-pytest tests/ -q | tail -1  # shows the count — currently 318 passed
+pytest tests/ -q | tail -1  # shows the count — currently 334 passed
 ```
 
 - `tests/test_metrics.py` — 151 tests covering all `query_*` functions in `src/metrics.py`
@@ -143,6 +143,8 @@ pytest tests/ -q | tail -1  # shows the count — currently 318 passed
 - `tests/test_app_utils.py` — 13 tests covering `df_to_csv`, `dfs_to_excel`, `_linear_forecast` from `app.py`
 - `tests/test_ai_chat_agentic.py` — 11 tests covering `run_agentic_turn()` tool-calling loop in `src/ai_chat.py`
 - `tests/test_ai_chat_config.py` — 10 tests covering `AI_MAX_ROWS` and `AI_MAX_ITERATIONS` env var parsing in `src/ai_chat.py`
+- `tests/test_cube_client.py` — 9 tests covering `is_cube_available()`, `query_cube()`, `build_cube_filters()` in `src/cube_client.py`
+- `tests/test_neo4j_client.py` — 7 tests covering `is_neo4j_available()`, `get_kg_nodes()`, `get_kg_edges()` in `src/neo4j_client.py`
 
 Every new `query_*` function **must** have at least two unit tests (happy path + edge case with empty data).
 
@@ -167,8 +169,48 @@ The `.env` file is not committed. All other tabs work without it.
 
 ## Code Conventions
 
-- **SQL:** write queries using parameterized `?` placeholders — never f-strings with user input
-- **Metrics:** every `query_*` function in `metrics.py` must accept a `FilterParams` argument and use `build_filter_cte(fp)` for consistent filtering
-- **Caching:** use `@st.cache_data` with `ttl=3600` for any function reading from the DB in `app.py`; pass `db_path` as a parameter so tests can inject a temp database
-- **Metadata pages:** query `meta_*` tables at render time via `_query_meta(sql)` — don't hardcode data that already lives in the DB
-- **Error handling:** `execute_sql_tool()` and metadata page queries must catch exceptions and return a graceful empty result rather than crashing the page
+For the complete standards reference, see `.claude/skills/standards.md`. Key rules:
+
+- **SQL:** parameterized `?` placeholders — never f-strings with user input
+- **Metrics:** every `query_*` function must accept `FilterParams` and use `build_filter_cte(fp)`
+- **Caching:** `@st.cache_data(ttl=3600)` for DB reads in `app.py`; pass `db_path` for test injection
+- **Error handling:** metadata queries and `execute_sql_tool()` must catch exceptions and return graceful empty results (empty DataFrame or `{"error": msg}`) — never crash the page
+- **Client modules:** return `None` when external service unavailable; callers fall back to DuckDB
+
+---
+
+## Development Workflow
+
+Every non-trivial change follows this 6-stage process. See `.claude/skills/feature-workflow.md` for the full orchestration.
+
+```
+1. PLAN → 2. APPROVE → 3. CODE → 4. VERIFY → 5. REVIEW → 6. DEPLOY
+```
+
+| Stage | What happens | Gate |
+|-------|-------------|------|
+| **1. Plan** | Write plan: what changes, which files, acceptance criteria, test plan | — |
+| **2. Approve** | User reviews and approves the plan before coding starts | User says "proceed" |
+| **3. Code** | Implement against approved plan; follow standards; write tests | — |
+| **4. Verify** | `make verify` (tests + lint), then `/verify-gates` for full 5-gate check | All gates pass |
+| **5. Review** | `/pre-commit-review` (local, before commit) | No 🔴 issues |
+| **6. Deploy** | Commit, push; `/code-review` or `/review-pr` for PR review | — |
+
+**Skills and when to use them:**
+| Skill / Command | When | What it does |
+|----------------|------|-------------|
+| `/feature-workflow` | Starting any feature | Orchestrates all 6 stages |
+| `/standards` | During coding + review | Project conventions reference |
+| `/verify-gates` | After coding, before review | 5 automated gates (tests, lint, coverage, docs, standards) |
+| `/pre-commit-review` | Before committing | Simplify + structural review + quality checks + standards |
+| `/code-review` | After PR is created | GitHub PR review with parallel bug-finding agents |
+| `/review-pr` | After PR is created | Comprehensive multi-agent PR review (tests, errors, types, comments) |
+
+> **`make verify`** runs tests + lint only (fast gate). **`/verify-gates`** adds coverage, docs, and standards checks (thorough gate).
+
+**Quick commands:**
+```bash
+make test      # run pytest
+make lint      # run ruff
+make verify    # test + lint (fast gate)
+```

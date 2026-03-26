@@ -1,7 +1,7 @@
 """Unit tests for src/database.py — build_filter_cte().
 
 Tests cover SQL structure validation (CTE shape, parameterisation) and
-execution against a real SQLite database with representative Silver data.
+execution against a real DuckDB database with representative Silver data.
 """
 
 import duckdb
@@ -15,7 +15,7 @@ from src.database import build_filter_cte, create_tables
 
 @pytest.fixture
 def db(tmp_path):
-    """Temporary SQLite database pre-loaded with representative Silver data.
+    """Temporary DuckDB database pre-loaded with representative Silver data.
 
     Data layout (4 claims across 2 payers, 2 departments, 3 encounter types):
         CLM001  PYR001  Outpatient   Cardiology    2024-01-15

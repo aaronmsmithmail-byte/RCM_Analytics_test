@@ -19,7 +19,7 @@ from src.database import (
 
 @pytest.fixture
 def conn(tmp_path):
-    """Fresh SQLite connection with schema created."""
+    """Fresh DuckDB connection with schema created."""
     db_path = str(tmp_path / "test.db")
     c = duckdb.connect(db_path)
     create_tables(c)

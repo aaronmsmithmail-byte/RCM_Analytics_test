@@ -1,6 +1,6 @@
 """Unit tests for src/metrics.py — all 26 RCM metric functions.
 
-All tests use an in-memory SQLite database via pytest's tmp_path fixture,
+All tests use an in-memory DuckDB database via pytest's tmp_path fixture,
 populating the Silver layer tables directly to verify SQL-based metric queries.
 """
 
@@ -44,7 +44,7 @@ from src.metrics import (
 
 @pytest.fixture
 def db(tmp_path):
-    """Temporary SQLite database pre-loaded with representative Silver data.
+    """Temporary DuckDB database pre-loaded with representative Silver data.
 
     Data summary (all dates in 2024):
         silver_claims:
@@ -144,7 +144,7 @@ def full_params():
 
 @pytest.fixture
 def empty_db(tmp_path):
-    """SQLite database with schema only — no data rows."""
+    """DuckDB database with schema only — no data rows."""
     db_path = str(tmp_path / "empty.db")
     conn = duckdb.connect(db_path)
     create_tables(conn)

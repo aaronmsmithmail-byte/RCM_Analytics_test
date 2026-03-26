@@ -85,7 +85,7 @@ TOOL_SCHEMA = [
                     "query": {
                         "type": "string",
                         "description": (
-                            "A valid SQLite SELECT statement. "
+                            "A valid DuckDB SELECT statement. "
                             "May use CTEs (WITH … AS). "
                             "Only SELECT and WITH are permitted — no INSERT, UPDATE, "
                             "DELETE, DROP, or other write operations."
