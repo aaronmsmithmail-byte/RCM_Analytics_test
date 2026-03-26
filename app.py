@@ -523,6 +523,12 @@ if not _freshness_df.empty:
                 f"&nbsp;&nbsp;{int(_row['row_count']):,} rows · {_age_str} · cadence {int(_row['cadence_hours'])}h"
             )
 
+# ── Feature Backlog navigation (sidebar) ─────────────────────────────
+st.sidebar.divider()
+st.sidebar.markdown("### Feature Backlog")
+if st.sidebar.button("Review/Edit Backlog", width="stretch"):
+    st.session_state["active_page"] = "feature_backlog"
+
 # ── Metadata navigation (sidebar) ────────────────────────────────────
 # These buttons must render BEFORE the page router so they appear on
 # every page, including metadata pages that call st.stop() early.
