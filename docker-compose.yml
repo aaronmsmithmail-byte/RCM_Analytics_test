@@ -19,11 +19,11 @@ services:
       CUBEJS_DB_DUCKDB_DATABASE_PATH: "/cube/data/rcm_analytics.db"
       CUBEJS_SCHEMA_PATH: "/cube/conf/model"
     healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://localhost:4000/readyz"]
-      interval: 10s
-      timeout: 5s
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:4000/livez"]
+      interval: 15s
+      timeout: 10s
       retries: 10
-      start_period: 30s
+      start_period: 60s
 
   # ── Neo4j — Knowledge Graph ────────────────────────────────
   # Stores the entity-relationship model (10 nodes, 9 FK edges).

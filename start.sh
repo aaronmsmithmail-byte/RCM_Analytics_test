@@ -14,6 +14,10 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$SCRIPT_DIR"
 echo "📁 Working directory: $SCRIPT_DIR"
 
+# ── Pull latest code ─────────────────────────────────────────
+echo "🔄 Pulling latest changes from main..."
+git pull origin main --ff-only 2>/dev/null || echo "⚠️  Git pull skipped (not on main or no remote)"
+
 # ── Create/activate virtual environment ──────────────────────
 if [ ! -d "venv" ]; then
     echo "🐍 Creating virtual environment..."
