@@ -1523,7 +1523,7 @@ def query_data_freshness(db_path=None):
     now = pd.Timestamp.utcnow().replace(tzinfo=None)
     df["label"]         = df["domain"].map(_DOMAIN_LABELS).fillna(df["domain"])
     df["cadence_hours"] = df["domain"].map(_DOMAIN_CADENCE_HOURS).fillna(24)
-    df["last_loaded_at_dt"] = pd.to_datetime(df["last_loaded_at"], errors="coerce")
+    df["last_loaded_at_dt"] = pd.to_datetime(df["last_loaded_at"], errors="coerce", utc=True).dt.tz_localize(None)
     df["age_hours"] = (now - df["last_loaded_at_dt"]).dt.total_seconds() / 3600
     df["status"] = "fresh"
     df.loc[df["age_hours"] > df["cadence_hours"],       "status"] = "stale"
