@@ -540,11 +540,6 @@ if st.sidebar.button("AI Architecture", width="stretch"):
     st.session_state["active_page"] = "ai_architecture"
 if st.sidebar.button("Data Validation", width="stretch"):
     st.session_state["active_page"] = "data_validation"
-# ── Feature Backlog navigation (sidebar) ─────────────────────────────
-st.sidebar.divider()
-st.sidebar.markdown("### Feature Backlog")
-if st.sidebar.button("Review/Edit Backlog", width="stretch"):
-    st.session_state["active_page"] = "feature_backlog"
 
 if st.session_state["active_page"] != "dashboard":
     if st.sidebar.button("Back to Dashboard", type="primary", width="stretch"):

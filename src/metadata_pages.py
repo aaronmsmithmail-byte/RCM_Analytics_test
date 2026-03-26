@@ -683,11 +683,12 @@ def render_knowledge_graph():
 
     dot = graphviz.Digraph("kg", format="svg")
     dot.attr(rankdir="TB", bgcolor="white", fontname="Helvetica",
-             nodesep="0.6", ranksep="0.9", splines="ortho")
-    dot.attr("node", fontname="Helvetica", fontsize="10", style="filled,rounded",
-             shape="box", penwidth="1.5")
-    dot.attr("edge", fontname="Helvetica", fontsize="8", color="#555555",
-             arrowsize="0.8", penwidth="1.2")
+             nodesep="0.3", ranksep="0.5", splines="ortho",
+             size="10,6", ratio="compress")
+    dot.attr("node", fontname="Helvetica", fontsize="9", style="filled,rounded",
+             shape="box", penwidth="1.5", width="1.2", height="0.35")
+    dot.attr("edge", fontname="Helvetica", fontsize="7", color="#555555",
+             arrowsize="0.6", penwidth="1.0")
 
     # Create subgraph clusters per category
     for group_name, cfg in _GROUPS.items():
