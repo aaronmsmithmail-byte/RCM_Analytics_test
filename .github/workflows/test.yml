@@ -26,5 +26,8 @@ jobs:
       - name: Generate sample data
         run: python generate_sample_data.py
 
+      - name: Lint
+        run: ruff check src/ tests/ app.py generate_sample_data.py
+
       - name: Run tests
         run: pytest tests/ -v --tb=short

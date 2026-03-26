@@ -172,3 +172,35 @@ The `.env` file is not committed. All other tabs work without it.
 - **Caching:** use `@st.cache_data` with `ttl=3600` for any function reading from the DB in `app.py`; pass `db_path` as a parameter so tests can inject a temp database
 - **Metadata pages:** query `meta_*` tables at render time via `_query_meta(sql)` — don't hardcode data that already lives in the DB
 - **Error handling:** `execute_sql_tool()` and metadata page queries must catch exceptions and return a graceful empty result rather than crashing the page
+
+---
+
+## Development Workflow
+
+Every non-trivial change follows this 6-stage process. See `.claude/skills/feature-workflow.md` for the full orchestration.
+
+```
+1. PLAN → 2. APPROVE → 3. CODE → 4. VERIFY → 5. REVIEW → 6. DEPLOY
+```
+
+| Stage | What happens | Gate |
+|-------|-------------|------|
+| **1. Plan** | Write plan: what changes, which files, acceptance criteria, test plan | — |
+| **2. Approve** | User reviews and approves the plan before coding starts | User says "proceed" |
+| **3. Code** | Implement against approved plan; follow standards; write tests | — |
+| **4. Verify** | `make verify` — tests pass, lint clean, docs current | All gates pass |
+| **5. Review** | Pre-commit review + standards check + specialized agents | No critical issues |
+| **6. Deploy** | Commit, push, create PR if requested | — |
+
+**Key skills:**
+- `/feature-workflow` — orchestrates all 6 stages
+- `/verify-gates` — runs automated checks (Stage 4)
+- `/pre-commit-review` — technical review (Stage 5)
+- `/standards` — project conventions reference (used in Stages 3 and 5)
+
+**Quick commands:**
+```bash
+make test      # run pytest
+make lint      # run ruff
+make verify    # test + lint
+```
