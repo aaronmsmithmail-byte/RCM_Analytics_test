@@ -401,6 +401,7 @@ pytest tests/ -v
 | pandas | ≥ 2.0.0 | Data manipulation and DataFrame results |
 | plotly | ≥ 5.18.0 | Interactive visualizations |
 | numpy | ≥ 1.24.0 | Numerical calculations and trend extrapolation |
+| duckdb | ≥ 1.0.0 | Columnar OLAP database engine (Snowflake-like architecture) |
 | openpyxl | ≥ 3.1.0 | Excel export support |
 | openai | ≥ 1.0.0 | OpenRouter API client (OpenAI-compatible) for the AI tab |
 | python-dotenv | ≥ 1.0.0 | Loads `OPENROUTER_API_KEY` from the `.env` file |

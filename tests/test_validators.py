@@ -6,7 +6,7 @@ clean Silver-layer data. Individual tests update specific rows to introduce
 violations and verify the expected issues are returned.
 """
 
-import sqlite3
+import duckdb
 import pytest
 
 from src.database import create_tables
@@ -26,7 +26,7 @@ from src.validators import (
 
 def _insert_clean_data(conn):
     """Insert a minimal, clean Silver-layer dataset into the given connection."""
-    conn.executescript("""
+    conn.execute("""
         INSERT INTO silver_payers VALUES ('PYR001','Aetna','Commercial',0.80,'C001');
         INSERT INTO silver_payers VALUES ('PYR002','Medicare','Government',0.75,'C002');
 
@@ -74,13 +74,35 @@ def _insert_clean_data(conn):
     conn.commit()
 
 
+def _create_tables_no_constraints(conn):
+    """Create Silver tables without FK or PK constraints for validator testing.
+
+    Validators intentionally create orphaned keys, NULL PKs, and invalid data
+    to test detection logic. DuckDB enforces constraints strictly, so we strip
+    FOREIGN KEY clauses and PRIMARY KEY from the schema here.
+    """
+    import re
+    from src.database import (
+        BRONZE_SCHEMA_SQL, SILVER_SCHEMA_SQL, GOLD_VIEWS_SQL,
+        INDEX_SQL, METADATA_SCHEMA_SQL,
+    )
+    # Remove FOREIGN KEY clauses, PRIMARY KEY, and NOT NULL from Silver schema
+    silver_relaxed = re.sub(r',?\s*FOREIGN KEY\s*\([^)]*\)\s*REFERENCES\s*\w+\([^)]*\)', '', SILVER_SCHEMA_SQL)
+    silver_relaxed = silver_relaxed.replace(' PRIMARY KEY', '')
+    silver_relaxed = silver_relaxed.replace(' NOT NULL', '')
+    conn.execute(BRONZE_SCHEMA_SQL)
+    conn.execute(silver_relaxed)
+    conn.execute(GOLD_VIEWS_SQL)
+    conn.execute(INDEX_SQL)
+    conn.execute(METADATA_SCHEMA_SQL)
+
+
 @pytest.fixture
 def clean_db(tmp_path):
-    """Temporary SQLite database pre-loaded with clean Silver-layer data."""
+    """Temporary DuckDB database pre-loaded with clean Silver-layer data (no FK constraints)."""
     db_path = str(tmp_path / "test.db")
-    conn = sqlite3.connect(db_path)
-    conn.execute("PRAGMA foreign_keys=OFF")  # allow test mutations without FK errors
-    create_tables(conn)
+    conn = duckdb.connect(db_path)
+    _create_tables_no_constraints(conn)
     _insert_clean_data(conn)
     conn.close()
     return db_path
@@ -88,10 +110,10 @@ def clean_db(tmp_path):
 
 @pytest.fixture
 def empty_db(tmp_path):
-    """Temporary SQLite database with Silver schema but no data rows."""
+    """Temporary DuckDB database with Silver schema but no data rows."""
     db_path = str(tmp_path / "empty.db")
-    conn = sqlite3.connect(db_path)
-    create_tables(conn)
+    conn = duckdb.connect(db_path)
+    _create_tables_no_constraints(conn)
     conn.close()
     return db_path
 
@@ -109,7 +131,7 @@ class TestValidateAll:
         assert issues == []
 
     def test_issues_have_required_keys(self, clean_db):
-        conn = sqlite3.connect(clean_db)
+        conn = duckdb.connect(clean_db)
         conn.execute("UPDATE silver_claims SET total_charge_amount = -100 WHERE claim_id = 'CLM001'")
         conn.commit()
         conn.close()
@@ -135,7 +157,7 @@ class TestCheckNegativeAmounts:
         assert issues == []
 
     def test_warns_on_negative_charge_amount(self, clean_db):
-        conn = sqlite3.connect(clean_db)
+        conn = duckdb.connect(clean_db)
         conn.execute("UPDATE silver_claims SET total_charge_amount = -50 WHERE claim_id = 'CLM001'")
         conn.commit(); conn.close()
         issues = _check_negative_amounts(clean_db)
@@ -145,7 +167,7 @@ class TestCheckNegativeAmounts:
         assert "total_charge_amount" in issues[0]["message"]
 
     def test_warns_on_negative_payment_amount(self, clean_db):
-        conn = sqlite3.connect(clean_db)
+        conn = duckdb.connect(clean_db)
         conn.execute("UPDATE silver_payments SET payment_amount = -10 WHERE payment_id = 'PAY001'")
         conn.commit(); conn.close()
         issues = _check_negative_amounts(clean_db)
@@ -153,14 +175,14 @@ class TestCheckNegativeAmounts:
         assert "silver_payments" in tables
 
     def test_warns_on_negative_denied_amount(self, clean_db):
-        conn = sqlite3.connect(clean_db)
+        conn = duckdb.connect(clean_db)
         conn.execute("UPDATE silver_denials SET denied_amount = -200 WHERE denial_id = 'DEN001'")
         conn.commit(); conn.close()
         issues = _check_negative_amounts(clean_db)
         assert any(i["table"] == "silver_denials" for i in issues)
 
     def test_warns_on_negative_rcm_cost(self, clean_db):
-        conn = sqlite3.connect(clean_db)
+        conn = duckdb.connect(clean_db)
         conn.execute("UPDATE silver_operating_costs SET total_rcm_cost = -1000 WHERE period = '2024-06'")
         conn.commit(); conn.close()
         issues = _check_negative_amounts(clean_db)
@@ -171,7 +193,7 @@ class TestCheckNegativeAmounts:
         assert issues == []
 
     def test_counts_multiple_negatives(self, clean_db):
-        conn = sqlite3.connect(clean_db)
+        conn = duckdb.connect(clean_db)
         conn.execute("UPDATE silver_payments SET payment_amount = -10")  # all rows
         conn.commit(); conn.close()
         issues = _check_negative_amounts(clean_db)
@@ -190,35 +212,35 @@ class TestCheckOrphanedKeys:
         assert issues == []
 
     def test_warns_on_payment_with_unknown_claim(self, clean_db):
-        conn = sqlite3.connect(clean_db)
+        conn = duckdb.connect(clean_db)
         conn.execute("UPDATE silver_payments SET claim_id = 'GHOST_CLAIM' WHERE payment_id = 'PAY001'")
         conn.commit(); conn.close()
         issues = _check_orphaned_keys(clean_db)
         assert any("silver_payments" in i["table"] for i in issues)
 
     def test_warns_on_denial_with_unknown_claim(self, clean_db):
-        conn = sqlite3.connect(clean_db)
+        conn = duckdb.connect(clean_db)
         conn.execute("UPDATE silver_denials SET claim_id = 'MISSING' WHERE denial_id = 'DEN001'")
         conn.commit(); conn.close()
         issues = _check_orphaned_keys(clean_db)
         assert any(i["table"] == "silver_denials" for i in issues)
 
     def test_warns_on_claim_with_unknown_payer(self, clean_db):
-        conn = sqlite3.connect(clean_db)
+        conn = duckdb.connect(clean_db)
         conn.execute("UPDATE silver_claims SET payer_id = 'PYR999' WHERE claim_id = 'CLM001'")
         conn.commit(); conn.close()
         issues = _check_orphaned_keys(clean_db)
         assert any(i["table"] == "silver_claims" for i in issues)
 
     def test_warns_on_encounter_with_unknown_patient(self, clean_db):
-        conn = sqlite3.connect(clean_db)
+        conn = duckdb.connect(clean_db)
         conn.execute("UPDATE silver_encounters SET patient_id = 'GHOST_PAT' WHERE encounter_id = 'ENC001'")
         conn.commit(); conn.close()
         issues = _check_orphaned_keys(clean_db)
         assert any(i["table"] == "silver_encounters" for i in issues)
 
     def test_issue_level_is_warning(self, clean_db):
-        conn = sqlite3.connect(clean_db)
+        conn = duckdb.connect(clean_db)
         conn.execute("UPDATE silver_payments SET claim_id = 'GHOST' WHERE payment_id = 'PAY001'")
         conn.commit(); conn.close()
         issues = _check_orphaned_keys(clean_db)
@@ -240,52 +262,31 @@ class TestCheckNulls:
         assert issues == []
 
     def test_errors_on_null_claim_id(self, clean_db):
-        conn = sqlite3.connect(clean_db)
-        # SQLite allows NULL PKs when FK enforcement is OFF
+        conn = duckdb.connect(clean_db)
         conn.execute("UPDATE silver_claims SET claim_id = NULL WHERE claim_id = 'CLM001'")
-        conn.commit(); conn.close()
+        conn.close()
         issues = _check_nulls(clean_db)
         assert any(i["level"] == "error" and "silver_claims" in i["table"] for i in issues)
 
-    def test_errors_on_null_payment_amount(self, tmp_path):
-        # Create a minimal silver_payments table WITHOUT NOT NULL constraints
-        # so we can inject a NULL to verify the validator catches it.
-        db_path = str(tmp_path / "null_pay.db")
-        conn = sqlite3.connect(db_path)
-        conn.execute("""CREATE TABLE silver_payments (
-            payment_id TEXT, claim_id TEXT, payer_id TEXT,
-            payment_amount REAL, allowed_amount REAL,
-            payment_date TEXT, payment_method TEXT, is_accurate_payment INTEGER
-        )""")
-        conn.execute("INSERT INTO silver_payments VALUES ('PAY001','CLM001','PYR001',NULL,NULL,'2024-07-01','EFT',1)")
-        conn.commit(); conn.close()
-        issues = _check_nulls(db_path)
+    def test_errors_on_null_payment_amount(self, clean_db):
+        conn = duckdb.connect(clean_db)
+        conn.execute("UPDATE silver_payments SET payment_amount = NULL WHERE payment_id = 'PAY001'")
+        conn.close()
+        issues = _check_nulls(clean_db)
         assert any(i["level"] == "error" and i["table"] == "silver_payments" for i in issues)
 
-    def test_errors_on_null_encounter_date(self, tmp_path):
-        db_path = str(tmp_path / "null_enc.db")
-        conn = sqlite3.connect(db_path)
-        conn.execute("""CREATE TABLE silver_encounters (
-            encounter_id TEXT, patient_id TEXT, provider_id TEXT,
-            date_of_service TEXT, discharge_date TEXT, encounter_type TEXT, department TEXT
-        )""")
-        conn.execute("INSERT INTO silver_encounters VALUES ('ENC001','PAT001','PROV01',NULL,NULL,'Outpatient','Cardiology')")
-        conn.commit(); conn.close()
-        issues = _check_nulls(db_path)
+    def test_errors_on_null_encounter_date(self, clean_db):
+        conn = duckdb.connect(clean_db)
+        conn.execute("UPDATE silver_encounters SET date_of_service = NULL WHERE encounter_id = 'ENC001'")
+        conn.close()
+        issues = _check_nulls(clean_db)
         assert any(i["level"] == "error" and i["table"] == "silver_encounters" for i in issues)
 
-    def test_error_message_names_column(self, tmp_path):
-        db_path = str(tmp_path / "null_status.db")
-        conn = sqlite3.connect(db_path)
-        conn.execute("""CREATE TABLE silver_claims (
-            claim_id TEXT, encounter_id TEXT, patient_id TEXT, payer_id TEXT,
-            date_of_service TEXT, submission_date TEXT, total_charge_amount REAL,
-            claim_status TEXT, is_clean_claim INTEGER, submission_method TEXT,
-            fail_reason TEXT
-        )""")
-        conn.execute("INSERT INTO silver_claims VALUES ('CLM001','ENC001','PAT001','PYR001','2024-06-01','2024-06-03',500.0,NULL,1,'Electronic',NULL)")
-        conn.commit(); conn.close()
-        issues = _check_nulls(db_path)
+    def test_error_message_names_column(self, clean_db):
+        conn = duckdb.connect(clean_db)
+        conn.execute("UPDATE silver_claims SET claim_status = NULL WHERE claim_id = 'CLM001'")
+        conn.close()
+        issues = _check_nulls(clean_db)
         claim_issues = [i for i in issues if i["table"] == "silver_claims"]
         assert any("claim_status" in i["message"] for i in claim_issues)
 
@@ -303,41 +304,33 @@ class TestCheckDateRanges:
         assert issues == []
 
     def test_warns_on_date_before_2020(self, clean_db):
-        conn = sqlite3.connect(clean_db)
+        conn = duckdb.connect(clean_db)
         conn.execute("UPDATE silver_claims SET date_of_service = '2019-12-31' WHERE claim_id = 'CLM001'")
         conn.commit(); conn.close()
         issues = _check_date_ranges(clean_db)
         assert any(i["table"] == "silver_claims" for i in issues)
 
     def test_warns_on_date_after_2030(self, clean_db):
-        conn = sqlite3.connect(clean_db)
+        conn = duckdb.connect(clean_db)
         conn.execute("UPDATE silver_payments SET payment_date = '2031-01-01' WHERE payment_id = 'PAY001'")
         conn.commit(); conn.close()
         issues = _check_date_ranges(clean_db)
         assert any(i["table"] == "silver_payments" for i in issues)
 
     def test_issue_level_is_warning(self, clean_db):
-        conn = sqlite3.connect(clean_db)
+        conn = duckdb.connect(clean_db)
         conn.execute("UPDATE silver_claims SET date_of_service = '2015-01-01' WHERE claim_id = 'CLM001'")
         conn.commit(); conn.close()
         issues = _check_date_ranges(clean_db)
         for i in issues:
             assert i["level"] == "warning"
 
-    def test_null_dates_not_flagged_as_out_of_range(self, tmp_path):
-        # Build a minimal silver_claims without NOT NULL so we can inject NULL dates.
-        db_path = str(tmp_path / "null_date.db")
-        conn = sqlite3.connect(db_path)
-        conn.execute("""CREATE TABLE silver_claims (
-            claim_id TEXT, encounter_id TEXT, patient_id TEXT, payer_id TEXT,
-            date_of_service TEXT, submission_date TEXT, total_charge_amount REAL,
-            claim_status TEXT, is_clean_claim INTEGER, submission_method TEXT,
-            fail_reason TEXT
-        )""")
+    def test_null_dates_not_flagged_as_out_of_range(self, clean_db):
+        conn = duckdb.connect(clean_db)
         # NULL submission_date — should NOT be flagged as out-of-range
-        conn.execute("INSERT INTO silver_claims VALUES ('CLM001','ENC001','PAT001','PYR001','2024-06-01',NULL,500.0,'Paid',1,'Electronic',NULL)")
-        conn.commit(); conn.close()
-        issues = _check_date_ranges(db_path)
+        conn.execute("UPDATE silver_claims SET submission_date = NULL WHERE claim_id = 'CLM001'")
+        conn.close()
+        issues = _check_date_ranges(clean_db)
         assert not any(
             "submission_date" in i["message"] for i in issues
             if i["table"] == "silver_claims"
@@ -354,7 +347,7 @@ class TestCheckClaimStatusValues:
         assert issues == []
 
     def test_warns_on_unknown_status(self, clean_db):
-        conn = sqlite3.connect(clean_db)
+        conn = duckdb.connect(clean_db)
         conn.execute("UPDATE silver_claims SET claim_status = 'Unknown' WHERE claim_id = 'CLM001'")
         conn.commit(); conn.close()
         issues = _check_claim_status_values(clean_db)
@@ -363,7 +356,7 @@ class TestCheckClaimStatusValues:
         assert "Unknown" in issues[0]["message"]
 
     def test_message_lists_bad_values(self, clean_db):
-        conn = sqlite3.connect(clean_db)
+        conn = duckdb.connect(clean_db)
         conn.execute("UPDATE silver_claims SET claim_status = 'Bad1' WHERE claim_id = 'CLM001'")
         conn.execute("UPDATE silver_claims SET claim_status = 'Bad2' WHERE claim_id = 'CLM002'")
         conn.commit(); conn.close()
@@ -378,14 +371,14 @@ class TestCheckClaimStatusValues:
 
     def test_all_valid_status_values_accepted(self, clean_db):
         for status in ["Paid", "Denied", "Appealed", "Pending", "Partially Paid"]:
-            conn = sqlite3.connect(clean_db)
+            conn = duckdb.connect(clean_db)
             conn.execute("UPDATE silver_claims SET claim_status = ?", (status,))
             conn.commit(); conn.close()
             issues = _check_claim_status_values(clean_db)
             assert issues == [], f"'{status}' should be valid but got: {issues}"
 
     def test_partially_paid_is_valid(self, clean_db):
-        conn = sqlite3.connect(clean_db)
+        conn = duckdb.connect(clean_db)
         conn.execute("UPDATE silver_claims SET claim_status = 'Partially Paid'")
         conn.commit(); conn.close()
         issues = _check_claim_status_values(clean_db)
@@ -401,7 +394,7 @@ class TestCheckBooleanColumns:
         assert issues == []
 
     def test_warns_on_null_is_clean_claim(self, clean_db):
-        conn = sqlite3.connect(clean_db)
+        conn = duckdb.connect(clean_db)
         conn.execute("UPDATE silver_claims SET is_clean_claim = NULL WHERE claim_id = 'CLM001'")
         conn.commit(); conn.close()
         issues = _check_boolean_columns(clean_db)
@@ -411,7 +404,7 @@ class TestCheckBooleanColumns:
         )
 
     def test_warns_on_null_is_accurate_payment(self, clean_db):
-        conn = sqlite3.connect(clean_db)
+        conn = duckdb.connect(clean_db)
         conn.execute("UPDATE silver_payments SET is_accurate_payment = NULL WHERE payment_id = 'PAY001'")
         conn.commit(); conn.close()
         issues = _check_boolean_columns(clean_db)
@@ -421,7 +414,7 @@ class TestCheckBooleanColumns:
         )
 
     def test_issue_level_is_warning(self, clean_db):
-        conn = sqlite3.connect(clean_db)
+        conn = duckdb.connect(clean_db)
         conn.execute("UPDATE silver_claims SET is_clean_claim = NULL WHERE claim_id = 'CLM001'")
         conn.commit(); conn.close()
         issues = _check_boolean_columns(clean_db)

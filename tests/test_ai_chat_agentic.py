@@ -7,7 +7,7 @@ validation, and error paths.
 
 import json
 import os
-import sqlite3
+import duckdb
 import pytest
 from unittest.mock import patch, MagicMock
 
@@ -65,12 +65,17 @@ def _make_tool_call_response(query="SELECT 1", description="Test query", tool_ca
 def db(tmp_path):
     """Temporary database for tool execution."""
     db_path = str(tmp_path / "test.db")
-    conn = sqlite3.connect(db_path)
-    conn.execute("PRAGMA foreign_keys=OFF")
+    conn = duckdb.connect(db_path)
     create_tables(conn)
-    conn.executescript("""
+    conn.execute("""
         INSERT INTO silver_payers VALUES
             ('PYR001','Aetna','Commercial',0.85,'C001');
+        INSERT INTO silver_patients VALUES
+            ('PAT001','Alice','Smith','1980-01-01','F','PYR001','M001','10001');
+        INSERT INTO silver_providers VALUES
+            ('PRV001','Dr. A','1111111111','Cardiology','Internal Medicine');
+        INSERT INTO silver_encounters VALUES
+            ('ENC010','PAT001','PRV001','2024-01-15','2024-01-15','Outpatient','Cardiology');
         INSERT INTO silver_claims VALUES
             ('CLM001','ENC010','PAT001','PYR001','2024-01-15','2024-01-17',
              1000.0,'Paid',1,'Electronic',NULL);

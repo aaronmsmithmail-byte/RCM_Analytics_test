@@ -4,7 +4,7 @@ All tests use an in-memory SQLite database via pytest's tmp_path fixture,
 populating the Silver layer tables directly to verify SQL-based metric queries.
 """
 
-import sqlite3
+import duckdb
 import pytest
 
 from src.database import create_tables
@@ -79,10 +79,9 @@ def db(tmp_path):
             CHG003  ENC030  service=2024-02-10  post=2024-02-12  (lag=2)
     """
     db_path = str(tmp_path / "test.db")
-    conn = sqlite3.connect(db_path)
-    conn.execute("PRAGMA foreign_keys=OFF")
+    conn = duckdb.connect(db_path)
     create_tables(conn)
-    conn.executescript("""
+    conn.execute("""
         INSERT INTO silver_payers VALUES
             ('PYR001','Aetna','Commercial',0.85,'C001'),
             ('PYR002','Medicaid','Government',0.70,'G001');
@@ -148,7 +147,7 @@ def full_params():
 def empty_db(tmp_path):
     """SQLite database with schema only — no data rows."""
     db_path = str(tmp_path / "empty.db")
-    conn = sqlite3.connect(db_path)
+    conn = duckdb.connect(db_path)
     create_tables(conn)
     conn.close()
     return db_path
@@ -1067,8 +1066,7 @@ class TestQueryDataFreshness:
         """Database with pipeline_runs populated."""
         import datetime
         db_path = str(tmp_path / "test.db")
-        conn = sqlite3.connect(db_path)
-        conn.execute("PRAGMA foreign_keys=OFF")
+        conn = duckdb.connect(db_path)
         create_tables(conn)
         # Insert a recent pipeline run
         now = datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")

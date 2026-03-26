@@ -4,7 +4,7 @@ Tests cover SQL structure validation (CTE shape, parameterisation) and
 execution against a real SQLite database with representative Silver data.
 """
 
-import sqlite3
+import duckdb
 import pytest
 
 from src.database import build_filter_cte, create_tables
@@ -25,10 +25,9 @@ def db(tmp_path):
         CLM004  PYR002  Emergency    Orthopedics   2024-02-25
     """
     db_path = str(tmp_path / "test.db")
-    conn = sqlite3.connect(db_path)
-    conn.execute("PRAGMA foreign_keys=OFF")
+    conn = duckdb.connect(db_path)
     create_tables(conn)
-    conn.executescript("""
+    conn.execute("""
         INSERT INTO silver_payers VALUES
             ('PYR001','Aetna','Commercial',0.85,'C001'),
             ('PYR002','Medicaid','Government',0.70,'G001');
@@ -62,7 +61,7 @@ def db(tmp_path):
 
 def _execute_cte(db_path, cte_sql, params):
     """Run the CTE and return filtered claim_id values as a set."""
-    conn = sqlite3.connect(db_path)
+    conn = duckdb.connect(db_path)
     try:
         query = cte_sql + "SELECT claim_id FROM filtered_claims"
         rows = conn.execute(query, params).fetchall()

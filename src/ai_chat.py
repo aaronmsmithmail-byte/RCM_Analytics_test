@@ -138,11 +138,10 @@ def execute_sql_tool(query: str, db_path=None) -> dict:
             return {"error": "Only SELECT and WITH (CTE) queries are permitted."}
 
     from src.database import get_connection
-    import pandas as pd
 
     conn = get_connection(db_path)
     try:
-        df = pd.read_sql_query(query, conn)
+        df = conn.execute(query).df()
         total_rows = len(df)
         truncated = total_rows > _MAX_ROWS
         df = df.head(_MAX_ROWS)
@@ -194,7 +193,7 @@ def _get_meta_context(db_path=None) -> str:
 
     Sections (all derived from the DB — nothing hardcoded here):
       1. Valid table names  — from meta_kg_nodes
-      2. Table schemas      — PRAGMA table_info per silver table
+      2. Table schemas      — DESCRIBE per silver table
       3. Join paths         — from meta_kg_edges
       4. Semantic mappings  — from meta_semantic_layer (business concept → columns)
       5. KPI definitions    — from meta_kpi_catalog
@@ -214,7 +213,7 @@ def _get_meta_context(db_path=None) -> str:
     if not nodes:
         live_tables = [
             r[0] for r in conn.execute(
-                "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'silver_%' ORDER BY name"
+                "SELECT table_name FROM information_schema.tables WHERE table_name LIKE 'silver_%' ORDER BY table_name"
             ).fetchall()
         ]
         nodes = [(t.replace("silver_", ""), "Unknown", t, "") for t in live_tables]
@@ -249,9 +248,9 @@ def _get_meta_context(db_path=None) -> str:
         if silver_table:
             try:
                 cols = conn.execute(
-                    f"PRAGMA table_info({silver_table})"
+                    f"DESCRIBE {silver_table}"
                 ).fetchall()
-                table_columns[silver_table] = [f"{c[1]} ({c[2]})" for c in cols]
+                table_columns[silver_table] = [f"{c[0]} ({c[1]})" for c in cols]
             except Exception:
                 pass
 
@@ -267,7 +266,7 @@ def _get_meta_context(db_path=None) -> str:
         + ", ".join(valid_tables)
     )
 
-    # ── 2. Table schemas (columns from PRAGMA, descriptions from meta_kg_nodes) ──
+    # ── 2. Table schemas (columns from DESCRIBE, descriptions from meta_kg_nodes) ──
     lines.append("\n## Table Schemas  (exact column names and types)")
     for _, group, silver_table, desc in nodes:
         if not silver_table:
