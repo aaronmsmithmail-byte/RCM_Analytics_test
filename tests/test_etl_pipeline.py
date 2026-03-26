@@ -5,7 +5,7 @@ NULL/empty PK filtering, duplicate handling, and missing file behaviour.
 """
 
 import os
-import sqlite3
+import duckdb
 import pytest
 
 from src.database import (
@@ -23,8 +23,7 @@ from src.database import (
 def conn(tmp_path):
     """Fresh SQLite connection with schema created."""
     db_path = str(tmp_path / "test.db")
-    c = sqlite3.connect(db_path)
-    c.execute("PRAGMA foreign_keys=OFF")
+    c = duckdb.connect(db_path)
     create_tables(c)
     yield c
     c.close()
@@ -136,7 +135,7 @@ class TestLoadCsvToBronze:
 class TestEtlBronzeToSilver:
     def _load_bronze_data(self, conn):
         """Insert representative bronze data directly for ETL testing."""
-        conn.executescript("""
+        conn.execute("""
             INSERT INTO bronze_payers (payer_id, payer_name, payer_type,
                 avg_reimbursement_pct, contract_id)
             VALUES ('PYR001', 'Aetna', 'Commercial', '0.85', 'C001');
@@ -229,6 +228,7 @@ class TestEtlBronzeToSilver:
         assert val == 1
 
     def test_boolean_false_converted_to_0(self, conn):
+        self._load_bronze_data(conn)
         conn.execute("""
             INSERT INTO bronze_claims (claim_id, encounter_id, patient_id, payer_id,
                 date_of_service, submission_date, total_charge_amount, claim_status,
@@ -253,6 +253,7 @@ class TestEtlBronzeToSilver:
         assert val is None
 
     def test_nonempty_fail_reason_preserved(self, conn):
+        self._load_bronze_data(conn)
         conn.execute("""
             INSERT INTO bronze_claims (claim_id, encounter_id, patient_id, payer_id,
                 date_of_service, submission_date, total_charge_amount, claim_status,
@@ -326,6 +327,7 @@ class TestEtlBronzeToSilver:
         assert val == pytest.approx(450.00)
 
     def test_empty_recovered_amount_defaults_to_zero(self, conn):
+        self._load_bronze_data(conn)
         conn.execute("""
             INSERT INTO bronze_denials (denial_id, claim_id, denial_reason_code,
                 denial_reason_description, denial_date, denied_amount,

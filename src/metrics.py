@@ -151,16 +151,16 @@ def query_days_in_ar(p: FilterParams, db_path=None):
     # causing SUM(charge_amount) to be overcounted by a factor of N).
     sql = cte + """
 , monthly_charges AS (
-    SELECT strftime('%Y-%m', date_of_service) AS period,
+    SELECT strftime(CAST(date_of_service AS DATE), '%Y-%m') AS period,
            SUM(total_charge_amount)           AS charges
     FROM filtered_claims
-    GROUP BY strftime('%Y-%m', date_of_service)
+    GROUP BY strftime(CAST(date_of_service AS DATE), '%Y-%m')
 ), monthly_payments AS (
-    SELECT strftime('%Y-%m', fc.date_of_service) AS period,
+    SELECT strftime(CAST(fc.date_of_service AS DATE), '%Y-%m') AS period,
            COALESCE(SUM(p.payment_amount), 0)    AS payments
     FROM filtered_claims fc
     LEFT JOIN silver_payments p ON fc.claim_id = p.claim_id
-    GROUP BY strftime('%Y-%m', fc.date_of_service)
+    GROUP BY strftime(CAST(fc.date_of_service AS DATE), '%Y-%m')
 )
 SELECT c.period, c.charges, COALESCE(mp.payments, 0) AS payments
 FROM monthly_charges c
@@ -200,23 +200,23 @@ def query_net_collection_rate(p: FilterParams, db_path=None):
     # claim has multiple payments or multiple adjustments.
     sql = cte + """
 , monthly_charges AS (
-    SELECT strftime('%Y-%m', date_of_service) AS period,
+    SELECT strftime(CAST(date_of_service AS DATE), '%Y-%m') AS period,
            SUM(total_charge_amount)           AS charges
     FROM filtered_claims
-    GROUP BY strftime('%Y-%m', date_of_service)
+    GROUP BY strftime(CAST(date_of_service AS DATE), '%Y-%m')
 ), monthly_payments AS (
-    SELECT strftime('%Y-%m', fc.date_of_service) AS period,
+    SELECT strftime(CAST(fc.date_of_service AS DATE), '%Y-%m') AS period,
            COALESCE(SUM(p.payment_amount), 0)    AS payments
     FROM filtered_claims fc
     LEFT JOIN silver_payments p ON fc.claim_id = p.claim_id
-    GROUP BY strftime('%Y-%m', fc.date_of_service)
+    GROUP BY strftime(CAST(fc.date_of_service AS DATE), '%Y-%m')
 ), monthly_contractual AS (
-    SELECT strftime('%Y-%m', fc.date_of_service) AS period,
+    SELECT strftime(CAST(fc.date_of_service AS DATE), '%Y-%m') AS period,
            COALESCE(SUM(CASE WHEN a.adjustment_type_code = 'CONTRACTUAL'
                              THEN a.adjustment_amount ELSE 0 END), 0) AS contractual_adj
     FROM filtered_claims fc
     LEFT JOIN silver_adjustments a ON fc.claim_id = a.claim_id
-    GROUP BY strftime('%Y-%m', fc.date_of_service)
+    GROUP BY strftime(CAST(fc.date_of_service AS DATE), '%Y-%m')
 )
 SELECT c.period,
        c.charges,
@@ -261,16 +261,16 @@ def query_gross_collection_rate(p: FilterParams, db_path=None):
     cte, params = _cte(p)
     sql = cte + """
 , monthly_charges AS (
-    SELECT strftime('%Y-%m', date_of_service) AS period,
+    SELECT strftime(CAST(date_of_service AS DATE), '%Y-%m') AS period,
            SUM(total_charge_amount)           AS charges
     FROM filtered_claims
-    GROUP BY strftime('%Y-%m', date_of_service)
+    GROUP BY strftime(CAST(date_of_service AS DATE), '%Y-%m')
 ), monthly_payments AS (
-    SELECT strftime('%Y-%m', fc.date_of_service) AS period,
+    SELECT strftime(CAST(fc.date_of_service AS DATE), '%Y-%m') AS period,
            COALESCE(SUM(p.payment_amount), 0)    AS payments
     FROM filtered_claims fc
     LEFT JOIN silver_payments p ON fc.claim_id = p.claim_id
-    GROUP BY strftime('%Y-%m', fc.date_of_service)
+    GROUP BY strftime(CAST(fc.date_of_service AS DATE), '%Y-%m')
 )
 SELECT c.period, c.charges, COALESCE(mp.payments, 0) AS payments
 FROM monthly_charges c
@@ -304,11 +304,11 @@ def query_clean_claim_rate(p: FilterParams, db_path=None):
     """
     cte, params = _cte(p)
     sql = cte + """
-SELECT strftime('%Y-%m', submission_date)       AS period,
+SELECT strftime(CAST(submission_date AS DATE), '%Y-%m')       AS period,
        COUNT(*)                                 AS total_claims,
        SUM(is_clean_claim)                      AS clean_claims
 FROM filtered_claims
-GROUP BY strftime('%Y-%m', submission_date)
+GROUP BY strftime(CAST(submission_date AS DATE), '%Y-%m')
 ORDER BY period
 """
     df = query_to_dataframe(sql, params=params, db_path=db_path)
@@ -338,12 +338,12 @@ def query_denial_rate(p: FilterParams, db_path=None):
     """
     cte, params = _cte(p)
     sql = cte + """
-SELECT strftime('%Y-%m', submission_date) AS period,
+SELECT strftime(CAST(submission_date AS DATE), '%Y-%m') AS period,
        COUNT(*)                           AS total_claims,
        SUM(CASE WHEN claim_status IN ('Denied', 'Appealed')
                THEN 1 ELSE 0 END)         AS denied_claims
 FROM filtered_claims
-GROUP BY strftime('%Y-%m', submission_date)
+GROUP BY strftime(CAST(submission_date AS DATE), '%Y-%m')
 ORDER BY period
 """
     df = query_to_dataframe(sql, params=params, db_path=db_path)
@@ -414,11 +414,11 @@ def query_first_pass_rate(p: FilterParams, db_path=None):
     """
     cte, params = _cte(p)
     sql = cte + """
-SELECT strftime('%Y-%m', submission_date) AS period,
+SELECT strftime(CAST(submission_date AS DATE), '%Y-%m') AS period,
        COUNT(*)                           AS total,
        SUM(CASE WHEN claim_status = 'Paid' THEN 1 ELSE 0 END) AS paid
 FROM filtered_claims
-GROUP BY strftime('%Y-%m', submission_date)
+GROUP BY strftime(CAST(submission_date AS DATE), '%Y-%m')
 ORDER BY period
 """
     df = query_to_dataframe(sql, params=params, db_path=db_path)
@@ -449,9 +449,9 @@ def query_charge_lag(p: FilterParams, db_path=None):
     cte, params = _cte(p)
     # Charges for encounters that appear in filtered claims
     sql = cte + """
-SELECT strftime('%Y-%m', ch.service_date)                              AS period,
-       CAST(julianday(ch.post_date) - julianday(ch.service_date)
-            AS INTEGER)                                                AS lag_days
+SELECT strftime(CAST(ch.service_date AS DATE), '%Y-%m')                              AS period,
+       date_diff('day', CAST(ch.service_date AS DATE),
+                       CAST(ch.post_date AS DATE))                     AS lag_days
 FROM silver_charges ch
 WHERE ch.encounter_id IN (SELECT DISTINCT encounter_id FROM filtered_claims)
   AND ch.post_date   IS NOT NULL
@@ -485,11 +485,11 @@ def query_cost_to_collect(p: FilterParams, db_path=None):
     cte, params = _cte(p)
     # Monthly collections from filtered claims
     sql = cte + """
-SELECT strftime('%Y-%m', fc.date_of_service) AS period,
+SELECT strftime(CAST(fc.date_of_service AS DATE), '%Y-%m') AS period,
        COALESCE(SUM(p.payment_amount), 0)    AS collections
 FROM filtered_claims fc
 LEFT JOIN silver_payments p ON fc.claim_id = p.claim_id
-GROUP BY strftime('%Y-%m', fc.date_of_service)
+GROUP BY strftime(CAST(fc.date_of_service AS DATE), '%Y-%m')
 ORDER BY period
 """
     collections_df = query_to_dataframe(sql, params=params, db_path=db_path)
@@ -538,7 +538,7 @@ def query_ar_aging(p: FilterParams, db_path=None):
 SELECT fc.claim_id,
        fc.date_of_service,
        fc.total_charge_amount - COALESCE(SUM(p.payment_amount), 0) AS ar_balance,
-       CAST(julianday('now') - julianday(fc.date_of_service) AS INTEGER) AS days_outstanding
+       date_diff('day', CAST(fc.date_of_service AS DATE), CURRENT_DATE) AS days_outstanding
 FROM filtered_claims fc
 LEFT JOIN silver_payments p ON fc.claim_id = p.claim_id
 GROUP BY fc.claim_id, fc.date_of_service, fc.total_charge_amount
@@ -670,7 +670,7 @@ def query_avg_reimbursement(p: FilterParams, db_path=None):
     """
     cte, params = _cte(p)
     sql = cte + """
-SELECT strftime('%Y-%m', fc.date_of_service) AS period,
+SELECT strftime(CAST(fc.date_of_service AS DATE), '%Y-%m') AS period,
        COALESCE(SUM(p.payment_amount), 0)    AS payment_amount
 FROM filtered_claims fc
 LEFT JOIN silver_payments p ON fc.claim_id = p.claim_id
@@ -1013,7 +1013,7 @@ def query_underpayment_trend(p: FilterParams, db_path=None):
     """
     cte, params = _cte(p)
     sql = cte + """
-SELECT strftime('%Y-%m', p.payment_date)                              AS period,
+SELECT strftime(CAST(p.payment_date AS DATE), '%Y-%m')                              AS period,
        SUM(p.allowed_amount)                                          AS total_allowed,
        SUM(p.payment_amount)                                          AS total_paid,
        SUM(CASE WHEN p.allowed_amount > p.payment_amount
@@ -1022,7 +1022,7 @@ SELECT strftime('%Y-%m', p.payment_date)                              AS period,
 FROM filtered_claims fc
 JOIN silver_payments p ON fc.claim_id = p.claim_id
 WHERE p.allowed_amount IS NOT NULL AND p.allowed_amount > 0
-GROUP BY strftime('%Y-%m', p.payment_date)
+GROUP BY strftime(CAST(p.payment_date AS DATE), '%Y-%m')
 ORDER BY period
 """
     df = query_to_dataframe(sql, params=params, db_path=db_path)
@@ -1174,7 +1174,7 @@ def query_patient_responsibility_trend(p: FilterParams, db_path=None):
     """
     cte, params = _cte(p)
     sql = cte + """
-SELECT strftime('%Y-%m', fc.date_of_service)                                  AS period,
+SELECT strftime(CAST(fc.date_of_service AS DATE), '%Y-%m')                                  AS period,
        SUM(CASE WHEN p.allowed_amount > p.payment_amount
                 THEN p.allowed_amount - p.payment_amount ELSE 0 END)          AS total_patient_resp,
        SUM(p.allowed_amount)                                                   AS total_allowed,
@@ -1182,7 +1182,7 @@ SELECT strftime('%Y-%m', fc.date_of_service)                                  AS
 FROM filtered_claims fc
 JOIN silver_payments p ON fc.claim_id = p.claim_id
 WHERE p.allowed_amount IS NOT NULL AND p.allowed_amount > 0
-GROUP BY strftime('%Y-%m', fc.date_of_service)
+GROUP BY strftime(CAST(fc.date_of_service AS DATE), '%Y-%m')
 ORDER BY period
 """
     df = query_to_dataframe(sql, params=params, db_path=db_path)

@@ -33,7 +33,7 @@ def _query_meta(sql: str) -> pd.DataFrame:
     from src.database import get_connection
     conn = get_connection()
     try:
-        return pd.read_sql_query(sql, conn)
+        return conn.execute(sql).df()
     except Exception:
         return pd.DataFrame()
     finally:

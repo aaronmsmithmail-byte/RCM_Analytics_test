@@ -4,7 +4,7 @@ Covers _parse_dates, _parse_booleans, _validate_columns, and
 load_all_data / load_gold_data against a real test database.
 """
 
-import sqlite3
+import duckdb
 import pytest
 import pandas as pd
 import numpy as np
@@ -115,30 +115,29 @@ class TestLoadAllData:
     def populated_db(self, tmp_path, monkeypatch):
         """Database with Bronze + Silver data, patched as default DB."""
         db_path = str(tmp_path / "test.db")
-        conn = sqlite3.connect(db_path)
-        conn.execute("PRAGMA foreign_keys=OFF")
+        conn = duckdb.connect(db_path)
         create_tables(conn)
-        conn.executescript("""
+        conn.execute("""
             INSERT INTO bronze_payers VALUES
-                ('PYR001','Aetna','Commercial','0.85','C001',datetime('now'));
+                ('PYR001','Aetna','Commercial','0.85','C001',CURRENT_TIMESTAMP);
             INSERT INTO bronze_patients VALUES
-                ('PAT001','Alice','Smith','1980-01-01','F','PYR001','M001','10001',datetime('now'));
+                ('PAT001','Alice','Smith','1980-01-01','F','PYR001','M001','10001',CURRENT_TIMESTAMP);
             INSERT INTO bronze_providers VALUES
-                ('PRV001','Dr. A','1111111111','Cardiology','Internal Medicine',datetime('now'));
+                ('PRV001','Dr. A','1111111111','Cardiology','Internal Medicine',CURRENT_TIMESTAMP);
             INSERT INTO bronze_encounters VALUES
-                ('ENC001','PAT001','PRV001','2024-01-15','2024-01-15','Outpatient','Cardiology',datetime('now'));
+                ('ENC001','PAT001','PRV001','2024-01-15','2024-01-15','Outpatient','Cardiology',CURRENT_TIMESTAMP);
             INSERT INTO bronze_charges VALUES
-                ('CHG001','ENC001','99213','Office Visit','1','200.00','2024-01-15','2024-01-17','Z00.00',datetime('now'));
+                ('CHG001','ENC001','99213','Office Visit','1','200.00','2024-01-15','2024-01-17','Z00.00',CURRENT_TIMESTAMP);
             INSERT INTO bronze_claims VALUES
-                ('CLM001','ENC001','PAT001','PYR001','2024-01-15','2024-01-17','1000','Paid','True','Electronic','',datetime('now'));
+                ('CLM001','ENC001','PAT001','PYR001','2024-01-15','2024-01-17','1000','Paid','True','Electronic','',CURRENT_TIMESTAMP);
             INSERT INTO bronze_payments VALUES
-                ('PAY001','CLM001','PYR001','900','950','2024-02-01','EFT','1',datetime('now'));
+                ('PAY001','CLM001','PYR001','900','950','2024-02-01','EFT','1',CURRENT_TIMESTAMP);
             INSERT INTO bronze_denials VALUES
-                ('DEN001','CLM001','CO-4','Not covered','2024-02-01','500','Won','2024-03-01','450',datetime('now'));
+                ('DEN001','CLM001','CO-4','Not covered','2024-02-01','500','Won','2024-03-01','450',CURRENT_TIMESTAMP);
             INSERT INTO bronze_adjustments VALUES
-                ('ADJ001','CLM001','CONTRACTUAL','Contractual','50','2024-02-01',datetime('now'));
+                ('ADJ001','CLM001','CONTRACTUAL','Contractual','50','2024-02-01',CURRENT_TIMESTAMP);
             INSERT INTO bronze_operating_costs VALUES
-                ('2024-01','10000','2000','5000','500','17500',datetime('now'));
+                ('2024-01','10000','2000','5000','500','17500',CURRENT_TIMESTAMP);
         """)
         _etl_bronze_to_silver(conn)
         conn.commit()
@@ -182,20 +181,23 @@ class TestLoadGoldData:
     def populated_db(self, tmp_path, monkeypatch):
         """Same as above — need Silver data for Gold views."""
         db_path = str(tmp_path / "test.db")
-        conn = sqlite3.connect(db_path)
-        conn.execute("PRAGMA foreign_keys=OFF")
+        conn = duckdb.connect(db_path)
         create_tables(conn)
-        conn.executescript("""
+        conn.execute("""
             INSERT INTO bronze_payers VALUES
-                ('PYR001','Aetna','Commercial','0.85','C001',datetime('now'));
+                ('PYR001','Aetna','Commercial','0.85','C001',CURRENT_TIMESTAMP);
+            INSERT INTO bronze_patients VALUES
+                ('PAT001','Alice','Smith','1980-01-01','F','PYR001','M001','10001',CURRENT_TIMESTAMP);
+            INSERT INTO bronze_providers VALUES
+                ('PRV001','Dr. A','1111111111','Cardiology','Internal Medicine',CURRENT_TIMESTAMP);
             INSERT INTO bronze_encounters VALUES
-                ('ENC001','PAT001','PRV001','2024-01-15','2024-01-15','Outpatient','Cardiology',datetime('now'));
+                ('ENC001','PAT001','PRV001','2024-01-15','2024-01-15','Outpatient','Cardiology',CURRENT_TIMESTAMP);
             INSERT INTO bronze_claims VALUES
-                ('CLM001','ENC001','PAT001','PYR001','2024-01-15','2024-01-17','1000','Paid','True','Electronic','',datetime('now'));
+                ('CLM001','ENC001','PAT001','PYR001','2024-01-15','2024-01-17','1000','Paid','True','Electronic','',CURRENT_TIMESTAMP);
             INSERT INTO bronze_payments VALUES
-                ('PAY001','CLM001','PYR001','900','950','2024-02-01','EFT','1',datetime('now'));
+                ('PAY001','CLM001','PYR001','900','950','2024-02-01','EFT','1',CURRENT_TIMESTAMP);
             INSERT INTO bronze_denials VALUES
-                ('DEN001','CLM001','CO-4','Not covered','2024-02-01','500','Won','2024-03-01','450',datetime('now'));
+                ('DEN001','CLM001','CO-4','Not covered','2024-02-01','500','Won','2024-03-01','450',CURRENT_TIMESTAMP);
         """)
         _etl_bronze_to_silver(conn)
         conn.commit()

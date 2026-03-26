@@ -4,7 +4,7 @@ Covers SQL validation (read-only enforcement), row truncation, NaN handling,
 error paths, and the LLM result formatter.
 """
 
-import sqlite3
+import duckdb
 import math
 import pytest
 
@@ -20,14 +20,22 @@ from src.ai_chat import execute_sql_tool, _format_result_for_llm
 def db(tmp_path):
     """Temporary SQLite database with a few Silver-layer rows."""
     db_path = str(tmp_path / "test.db")
-    conn = sqlite3.connect(db_path)
-    conn.execute("PRAGMA foreign_keys=OFF")
+    conn = duckdb.connect(db_path)
     create_tables(conn)
-    conn.executescript("""
+    conn.execute("""
         INSERT INTO silver_payers VALUES
             ('PYR001','Aetna','Commercial',0.85,'C001'),
             ('PYR002','Medicaid','Government',0.70,'G001');
-
+        INSERT INTO silver_patients VALUES
+            ('PAT001','Alice','Smith','1980-01-01','F','PYR001','M001','10001'),
+            ('PAT002','Bob','Jones','1975-05-15','M','PYR001','M002','10002'),
+            ('PAT003','Carol','Lee','1990-03-20','F','PYR002','M003','10003');
+        INSERT INTO silver_providers VALUES
+            ('PRV001','Dr. A','1111111111','Cardiology','Internal Medicine');
+        INSERT INTO silver_encounters VALUES
+            ('ENC010','PAT001','PRV001','2024-01-15','2024-01-15','Outpatient','Cardiology'),
+            ('ENC020','PAT002','PRV001','2024-01-20','2024-01-20','Outpatient','Cardiology'),
+            ('ENC030','PAT003','PRV001','2024-02-10','2024-02-11','Inpatient','Cardiology');
         INSERT INTO silver_claims VALUES
             ('CLM001','ENC010','PAT001','PYR001','2024-01-15','2024-01-17',1000.0,'Paid',1,'Electronic',NULL),
             ('CLM002','ENC020','PAT002','PYR001','2024-01-20','2024-01-22',2000.0,'Denied',0,'Electronic','CODING_ERROR'),

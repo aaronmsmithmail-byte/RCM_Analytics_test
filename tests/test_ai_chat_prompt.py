@@ -4,7 +4,7 @@ Covers meta-table reading, fallback behaviour when tables are empty,
 live KPI snapshot injection, and system prompt structure.
 """
 
-import sqlite3
+import duckdb
 import pytest
 
 from src.database import create_tables, persist_metadata
@@ -19,8 +19,7 @@ from src.ai_chat import build_system_prompt, _get_meta_context
 def db_with_meta(tmp_path):
     """Database with schema + metadata tables populated."""
     db_path = str(tmp_path / "test.db")
-    conn = sqlite3.connect(db_path)
-    conn.execute("PRAGMA foreign_keys=OFF")
+    conn = duckdb.connect(db_path)
     create_tables(conn)
     persist_metadata(conn)
     conn.commit()
@@ -32,8 +31,7 @@ def db_with_meta(tmp_path):
 def db_empty(tmp_path):
     """Database with schema only — no metadata rows."""
     db_path = str(tmp_path / "empty.db")
-    conn = sqlite3.connect(db_path)
-    conn.execute("PRAGMA foreign_keys=OFF")
+    conn = duckdb.connect(db_path)
     create_tables(conn)
     conn.commit()
     conn.close()

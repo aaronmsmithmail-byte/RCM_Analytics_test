@@ -2,7 +2,7 @@
 Database Setup and Management for Healthcare RCM Analytics
 ==========================================================
 
-This module implements a Medallion Architecture (Bronze → Silver → Gold) using SQLite
+This module implements a Medallion Architecture (Bronze → Silver → Gold) using DuckDB
 as the storage engine for the RCM Analytics application.
 
 Medallion Architecture Overview
@@ -32,11 +32,11 @@ Table naming convention:
     silver_payers, silver_claims, ...   (10 silver tables)
     gold_monthly_kpis, gold_payer_performance, ... (5 gold views)
 
-Why SQLite?
-    - Zero configuration; single portable file.
-    - Ships with Python's standard library.
-    - Handles millions of rows for local analytics workloads.
-    - Full SQL support for joins, aggregations, and window functions.
+Why DuckDB?
+    - Columnar, OLAP-optimized engine — same architecture as Snowflake.
+    - Single portable file; zero server configuration.
+    - Vectorized execution for fast analytical queries (GROUP BY, aggregations).
+    - Full SQL support including window functions, CTEs, and date arithmetic.
 
 Usage:
     # One-time / refresh setup
@@ -47,7 +47,7 @@ Usage:
     initialize_database()
 """
 
-import sqlite3
+import duckdb
 import os
 import pandas as pd
 
@@ -88,7 +88,7 @@ CREATE TABLE IF NOT EXISTS bronze_payers (
     payer_type            TEXT,
     avg_reimbursement_pct TEXT,
     contract_id           TEXT,
-    _loaded_at            TEXT DEFAULT (datetime('now'))
+    _loaded_at            TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS bronze_patients (
@@ -100,7 +100,7 @@ CREATE TABLE IF NOT EXISTS bronze_patients (
     primary_payer_id TEXT,
     member_id        TEXT,
     zip_code         TEXT,
-    _loaded_at       TEXT DEFAULT (datetime('now'))
+    _loaded_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS bronze_providers (
@@ -109,7 +109,7 @@ CREATE TABLE IF NOT EXISTS bronze_providers (
     npi           TEXT,
     department    TEXT,
     specialty     TEXT,
-    _loaded_at    TEXT DEFAULT (datetime('now'))
+    _loaded_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS bronze_encounters (
@@ -120,7 +120,7 @@ CREATE TABLE IF NOT EXISTS bronze_encounters (
     discharge_date  TEXT,
     encounter_type  TEXT,
     department      TEXT,
-    _loaded_at      TEXT DEFAULT (datetime('now'))
+    _loaded_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS bronze_charges (
@@ -133,7 +133,7 @@ CREATE TABLE IF NOT EXISTS bronze_charges (
     service_date    TEXT,
     post_date       TEXT,
     icd10_code      TEXT,
-    _loaded_at      TEXT DEFAULT (datetime('now'))
+    _loaded_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS bronze_claims (
@@ -148,7 +148,7 @@ CREATE TABLE IF NOT EXISTS bronze_claims (
     is_clean_claim      TEXT,
     submission_method   TEXT,
     fail_reason         TEXT,
-    _loaded_at          TEXT DEFAULT (datetime('now'))
+    _loaded_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS bronze_payments (
@@ -160,7 +160,7 @@ CREATE TABLE IF NOT EXISTS bronze_payments (
     payment_date        TEXT,
     payment_method      TEXT,
     is_accurate_payment TEXT,
-    _loaded_at          TEXT DEFAULT (datetime('now'))
+    _loaded_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS bronze_denials (
@@ -173,7 +173,7 @@ CREATE TABLE IF NOT EXISTS bronze_denials (
     appeal_status             TEXT,
     appeal_date               TEXT,
     recovered_amount          TEXT,
-    _loaded_at                TEXT DEFAULT (datetime('now'))
+    _loaded_at                TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS bronze_adjustments (
@@ -183,7 +183,7 @@ CREATE TABLE IF NOT EXISTS bronze_adjustments (
     adjustment_type_description TEXT,
     adjustment_amount           TEXT,
     adjustment_date             TEXT,
-    _loaded_at                  TEXT DEFAULT (datetime('now'))
+    _loaded_at                  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS bronze_operating_costs (
@@ -193,7 +193,7 @@ CREATE TABLE IF NOT EXISTS bronze_operating_costs (
     outsourcing_cost   TEXT,
     supplies_overhead  TEXT,
     total_rcm_cost     TEXT,
-    _loaded_at         TEXT DEFAULT (datetime('now'))
+    _loaded_at         TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 """
 
@@ -457,7 +457,7 @@ GOLD_VIEWS_SQL = """
 -- Powers the trend charts in the Executive Summary and Revenue tabs.
 CREATE VIEW IF NOT EXISTS gold_monthly_kpis AS
 SELECT
-    strftime('%Y-%m', c.date_of_service)                                         AS period,
+    strftime(CAST(c.date_of_service AS DATE), '%Y-%m')                                         AS period,
     COUNT(DISTINCT c.claim_id)                                                   AS total_claims,
     SUM(c.total_charge_amount)                                                   AS total_charges,
     COALESCE(SUM(p.payment_amount), 0)                                           AS total_payments,
@@ -469,7 +469,7 @@ SELECT
         / NULLIF(SUM(c.total_charge_amount), 0)                                  AS gross_collection_rate
 FROM silver_claims c
 LEFT JOIN silver_payments p ON c.claim_id = p.claim_id
-GROUP BY strftime('%Y-%m', c.date_of_service)
+GROUP BY strftime(CAST(c.date_of_service AS DATE), '%Y-%m')
 ORDER BY period;
 
 -- Gold: Payer performance summary
@@ -517,10 +517,10 @@ ORDER BY total_payments DESC;
 CREATE VIEW IF NOT EXISTS gold_ar_aging AS
 SELECT
     CASE
-        WHEN julianday('now') - julianday(c.date_of_service) <=  30 THEN '0-30 days'
-        WHEN julianday('now') - julianday(c.date_of_service) <=  60 THEN '31-60 days'
-        WHEN julianday('now') - julianday(c.date_of_service) <=  90 THEN '61-90 days'
-        WHEN julianday('now') - julianday(c.date_of_service) <= 120 THEN '91-120 days'
+        WHEN date_diff('day', CAST(c.date_of_service AS DATE), CURRENT_DATE) <=  30 THEN '0-30 days'
+        WHEN date_diff('day', CAST(c.date_of_service AS DATE), CURRENT_DATE) <=  60 THEN '31-60 days'
+        WHEN date_diff('day', CAST(c.date_of_service AS DATE), CURRENT_DATE) <=  90 THEN '61-90 days'
+        WHEN date_diff('day', CAST(c.date_of_service AS DATE), CURRENT_DATE) <= 120 THEN '91-120 days'
         ELSE '120+ days'
     END                                                                          AS aging_bucket,
     COUNT(c.claim_id)                                                            AS claim_count,
@@ -614,8 +614,9 @@ CREATE TABLE IF NOT EXISTS meta_kpi_catalog (
     benchmark     TEXT
 );
 
+CREATE SEQUENCE IF NOT EXISTS seq_semantic_layer START 1;
 CREATE TABLE IF NOT EXISTS meta_semantic_layer (
-    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+    id               INTEGER PRIMARY KEY DEFAULT nextval('seq_semantic_layer'),
     business_concept TEXT NOT NULL,
     kpi_name         TEXT NOT NULL,
     silver_columns   TEXT,
@@ -632,8 +633,9 @@ CREATE TABLE IF NOT EXISTS meta_kg_nodes (
     source_system TEXT
 );
 
+CREATE SEQUENCE IF NOT EXISTS seq_kg_edges START 1;
 CREATE TABLE IF NOT EXISTS meta_kg_edges (
-    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+    id               INTEGER PRIMARY KEY DEFAULT nextval('seq_kg_edges'),
     parent_entity    TEXT NOT NULL,
     child_entity     TEXT NOT NULL,
     join_column      TEXT,
@@ -655,19 +657,17 @@ _LEGACY_TABLES = [
 
 def get_connection(db_path=None):
     """
-    Create and return a SQLite database connection.
+    Create and return a DuckDB database connection.
 
     Args:
         db_path: Optional override for the database file path.
                  Defaults to ./data/rcm_analytics.db.
 
     Returns:
-        sqlite3.Connection with WAL mode and foreign-key enforcement enabled.
+        duckdb.DuckDBPyConnection.
     """
     path = db_path or DB_PATH
-    conn = sqlite3.connect(path)
-    conn.execute("PRAGMA journal_mode=WAL;")
-    conn.execute("PRAGMA foreign_keys=ON;")
+    conn = duckdb.connect(path)
     return conn
 
 
@@ -679,14 +679,13 @@ def create_tables(conn):
     mean this is safe to call on an already-initialised database.
 
     Args:
-        conn: An active SQLite connection.
+        conn: An active DuckDB connection.
     """
-    conn.executescript(BRONZE_SCHEMA_SQL)
-    conn.executescript(SILVER_SCHEMA_SQL)
-    conn.executescript(GOLD_VIEWS_SQL)
-    conn.executescript(INDEX_SQL)
-    conn.executescript(METADATA_SCHEMA_SQL)
-    conn.commit()
+    conn.execute(BRONZE_SCHEMA_SQL)
+    conn.execute(SILVER_SCHEMA_SQL)
+    conn.execute(GOLD_VIEWS_SQL)
+    conn.execute(INDEX_SQL)
+    conn.execute(METADATA_SCHEMA_SQL)
     print("  [OK] Bronze tables, Silver tables, Gold views, indexes, and metadata tables created.")
 
 
@@ -695,10 +694,10 @@ def load_csv_to_bronze(conn, bronze_table, csv_filename):
     Load a CSV file into the corresponding Bronze table.
 
     All values land as TEXT (raw, untyped) exactly as they appear in the CSV.
-    The _loaded_at column is set automatically by the SQLite DEFAULT expression.
+    The _loaded_at column is set automatically by the DuckDB DEFAULT expression.
 
     Args:
-        conn:          An active SQLite connection.
+        conn:          An active DuckDB connection.
         bronze_table:  Bronze table name (e.g. "bronze_claims").
         csv_filename:  CSV filename in the data directory (e.g. "claims.csv").
     """
@@ -713,17 +712,18 @@ def load_csv_to_bronze(conn, bronze_table, csv_filename):
     # Strip the metadata column if it happens to be in the CSV already
     df = df.drop(columns=["_loaded_at"], errors="ignore")
 
-    conn.execute(f"DELETE FROM {bronze_table};")
-    df.to_sql(bronze_table, conn, if_exists="append", index=False)
+    conn.execute(f"DELETE FROM {bronze_table}")
+    # DuckDB can INSERT directly from a pandas DataFrame variable
+    cols = ", ".join(df.columns)
+    conn.execute(f"INSERT INTO {bronze_table}({cols}) SELECT {cols} FROM df")
 
     # Record load event in pipeline_runs for data freshness tracking.
     domain = bronze_table.replace("bronze_", "")
     conn.execute(
         "INSERT OR REPLACE INTO pipeline_runs (domain, last_loaded_at, row_count, source_file) "
-        "VALUES (?, datetime('now'), ?, ?)",
-        (domain, len(df), csv_filename),
+        "VALUES (?, CURRENT_TIMESTAMP, ?, ?)",
+        [domain, len(df), csv_filename],
     )
-    conn.commit()
 
     print(f"  [OK] Bronze: loaded {len(df):,} rows into '{bronze_table}' from {csv_filename}")
 
@@ -738,14 +738,9 @@ def _etl_bronze_to_silver(conn):
       - Casts integer columns appropriately
       - Skips rows with NULL/empty primary keys
 
-    Foreign-key constraints on Silver tables enforce referential integrity;
-    rows that violate constraints are silently skipped by INSERT OR REPLACE.
+    Rows that violate constraints are silently skipped by INSERT OR REPLACE.
     """
-    # executescript issues its own COMMIT first, so we wrap the FK pragma
-    conn.execute("PRAGMA foreign_keys=OFF;")
-    conn.executescript(BRONZE_TO_SILVER_SQL)
-    conn.execute("PRAGMA foreign_keys=ON;")
-    conn.commit()
+    conn.execute(BRONZE_TO_SILVER_SQL)
     print("  [OK] Silver: ETL from Bronze complete.")
 
 
@@ -806,7 +801,7 @@ def persist_metadata(conn):
         )
 
     # ── meta_semantic_layer ────────────────────────────────────────────
-    conn.execute("DELETE FROM meta_semantic_layer;")
+    conn.execute("DELETE FROM meta_semantic_layer")
     for row in _SEMANTIC_LAYER:
         conn.execute(
             "INSERT INTO meta_semantic_layer "
@@ -822,7 +817,7 @@ def persist_metadata(conn):
         )
 
     # ── meta_kg_nodes ──────────────────────────────────────────────────
-    conn.execute("DELETE FROM meta_kg_nodes;")
+    conn.execute("DELETE FROM meta_kg_nodes")
     for node in _KG_NODES:
         # Derive silver_table name from the id (operating_costs → silver_operating_costs)
         silver_table = f"silver_{node['id']}"
@@ -841,7 +836,7 @@ def persist_metadata(conn):
         )
 
     # ── meta_kg_edges ──────────────────────────────────────────────────
-    conn.execute("DELETE FROM meta_kg_edges;")
+    conn.execute("DELETE FROM meta_kg_edges")
     for rel in _KG_RELATIONSHIPS:
         conn.execute(
             "INSERT INTO meta_kg_edges "
@@ -886,17 +881,14 @@ def initialize_database(db_path=None):
     # Step 1: Migrate legacy schema
     # ------------------------------------------------------------------
     print("Step 1: Removing legacy (pre-medallion) tables if present...")
-    conn.execute("PRAGMA foreign_keys=OFF;")
     for tbl in _LEGACY_TABLES:
-        conn.execute(f"DROP TABLE IF EXISTS {tbl};")
-    conn.execute("PRAGMA foreign_keys=ON;")
+        conn.execute(f"DROP TABLE IF EXISTS {tbl}")
     # Add source_system column to meta_kg_nodes if it was created before this
     # column existed (existing databases won't have it from CREATE TABLE alone).
     try:
-        conn.execute("ALTER TABLE meta_kg_nodes ADD COLUMN source_system TEXT;")
-    except sqlite3.OperationalError:
+        conn.execute("ALTER TABLE meta_kg_nodes ADD COLUMN source_system TEXT")
+    except Exception:
         pass  # Column already exists — safe to ignore
-    conn.commit()
     print("  [OK] Legacy tables cleared.\n")
 
     # ------------------------------------------------------------------
@@ -918,22 +910,22 @@ def initialize_database(db_path=None):
         # Check bronze_claims (not silver) because a previous partial run may
         # have already rebuilt silver_claims with the new schema while leaving
         # bronze_claims on the old schema (missing fail_reason).
-        cur = conn.execute("PRAGMA table_info(bronze_claims)")
-        existing_cols = {row[1] for row in cur.fetchall()}
+        cur = conn.execute(
+            "SELECT column_name FROM information_schema.columns "
+            "WHERE table_name = 'bronze_claims'"
+        )
+        existing_cols = {row[0] for row in cur.fetchall()}
         if existing_cols and "fail_reason" not in existing_cols:
             print("Step 1b: Schema migration — removing outdated Bronze/Silver/Gold objects...")
-            conn.execute("PRAGMA foreign_keys=OFF;")
             for tbl in _silver_tables:
-                conn.execute(f"DROP TABLE IF EXISTS {tbl};")
+                conn.execute(f"DROP TABLE IF EXISTS {tbl}")
             for vw in _gold_views:
-                conn.execute(f"DROP VIEW IF EXISTS {vw};")
+                conn.execute(f"DROP VIEW IF EXISTS {vw}")
             # Bronze tables are always reloaded from CSV — safe to drop for clean rebuild
             _bronze_tables = ["bronze_" + t.replace("silver_", "") for t in _silver_tables]
             for tbl in _bronze_tables:
-                conn.execute(f"DROP TABLE IF EXISTS {tbl};")
-            conn.execute("DROP TABLE IF EXISTS pipeline_runs;")
-            conn.execute("PRAGMA foreign_keys=ON;")
-            conn.commit()
+                conn.execute(f"DROP TABLE IF EXISTS {tbl}")
+            conn.execute("DROP TABLE IF EXISTS pipeline_runs")
             print("  [OK] Migration complete — all layers will be rebuilt.\n")
     except Exception:
         pass  # table doesn't exist yet; normal first-run
@@ -1029,7 +1021,7 @@ def query_to_dataframe(sql, params=None, db_path=None):
     Execute a SQL query and return results as a pandas DataFrame.
 
     Args:
-        sql:     SQL string (may contain ? placeholders).
+        sql:     SQL string (may contain $1/$2 or ? placeholders).
         params:  Optional tuple/list of parameters for the query.
         db_path: Optional path override.
 
@@ -1039,28 +1031,27 @@ def query_to_dataframe(sql, params=None, db_path=None):
     conn = get_connection(db_path)
     try:
         if params:
-            df = pd.read_sql_query(sql, conn, params=params)
+            return conn.execute(sql, params).df()
         else:
-            df = pd.read_sql_query(sql, conn)
-        return df
+            return conn.execute(sql).df()
     finally:
         conn.close()
 
 
 def get_table_info(table_name, db_path=None):
     """
-    Return PRAGMA table_info() for a named table (useful for debugging).
+    Return column metadata for a named table (useful for debugging).
 
     Args:
         table_name: Name of the table to inspect (use full name, e.g. 'silver_claims').
         db_path:    Optional path override.
 
     Returns:
-        list of tuples: (column_id, name, type, not_null, default, pk).
+        list of tuples: (column_name, data_type, is_nullable, key, default, extra).
     """
     conn = get_connection(db_path)
     try:
-        cursor = conn.execute(f"PRAGMA table_info({table_name});")
+        cursor = conn.execute(f"DESCRIBE {table_name}")
         return cursor.fetchall()
     finally:
         conn.close()
@@ -1121,13 +1112,13 @@ def has_medallion_schema(db_path=None):
     if not os.path.exists(path):
         return False
     try:
-        conn = sqlite3.connect(path)
+        conn = duckdb.connect(path)
         # Check both that the table exists and that the schema is current
         # (fail_reason column was added in schema v2).
         conn.execute("SELECT fail_reason FROM silver_claims LIMIT 1")
         conn.close()
         return True
-    except sqlite3.OperationalError:
+    except Exception:
         try:
             conn.close()
         except Exception:
