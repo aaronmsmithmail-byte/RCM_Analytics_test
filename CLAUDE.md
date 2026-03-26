@@ -125,14 +125,16 @@ Update `README.md` whenever:
 
 ```bash
 pytest tests/ -q          # must pass with 0 failures before every commit
-pytest tests/ -q | tail -1  # shows the count — currently 260 passed
+pytest tests/ -q | tail -1  # shows the count — currently 286 passed
 ```
 
 - `tests/test_metrics.py` — 151 tests covering all `query_*` functions in `src/metrics.py`
 - `tests/test_validators.py` — 40 tests covering all validators in `src/validators.py`
 - `tests/test_etl_pipeline.py` — 22 tests covering `load_csv_to_bronze()` and `_etl_bronze_to_silver()` in `src/database.py`
 - `tests/test_ai_chat_sql.py` — 22 tests covering `execute_sql_tool()` and `_format_result_for_llm()` in `src/ai_chat.py`
+- `tests/test_ai_chat_prompt.py` — 15 tests covering `build_system_prompt()` and `_get_meta_context()` in `src/ai_chat.py`
 - `tests/test_database.py` — 15 tests covering `build_filter_cte()` in `src/database.py`
+- `tests/test_ai_chat_agentic.py` — 11 tests covering `run_agentic_turn()` tool-calling loop in `src/ai_chat.py`
 - `tests/test_ai_chat_config.py` — 10 tests covering `AI_MAX_ROWS` and `AI_MAX_ITERATIONS` env var parsing in `src/ai_chat.py`
 
 Every new `query_*` function **must** have at least two unit tests (happy path + edge case with empty data).
