@@ -880,6 +880,22 @@ def persist_metadata(conn):
 
 def _seed_backlog_examples(conn):
     """Insert 3 example backlog items only if the table is empty."""
+    # Ensure table exists — it may be missing on databases initialised before
+    # the Feature Backlog feature was added.
+    conn.execute("""
+        CREATE SEQUENCE IF NOT EXISTS seq_feature_backlog START 1;
+        CREATE TABLE IF NOT EXISTS feature_backlog (
+            id                  INTEGER PRIMARY KEY DEFAULT nextval('seq_feature_backlog'),
+            title               TEXT NOT NULL,
+            description         TEXT,
+            priority            TEXT NOT NULL DEFAULT 'Medium',
+            acceptance_criteria TEXT,
+            benefits            TEXT,
+            status              TEXT NOT NULL DEFAULT 'Not Started',
+            created_at          TIMESTAMP DEFAULT current_timestamp,
+            updated_at          TIMESTAMP DEFAULT current_timestamp
+        );
+    """)
     count = conn.execute("SELECT COUNT(*) FROM feature_backlog").fetchone()[0]
     if count > 0:
         return
