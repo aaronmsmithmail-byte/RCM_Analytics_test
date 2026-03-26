@@ -10,6 +10,9 @@ openpyxl>=3.1.0
 streamlit-extras>=0.4.0
 streamlit-shadcn-ui>=0.1.0
 
+# Diagram rendering (metadata pages)
+graphviz>=0.20.0
+
 # AI Assistant tab
 openai>=1.30.0       # OpenAI-compatible SDK used with OpenRouter
 python-dotenv>=1.0.0 # Loads .env file into environment variables

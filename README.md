@@ -406,4 +406,5 @@ pytest tests/ -v
 | python-dotenv | ≥ 1.0.0 | Loads `OPENROUTER_API_KEY` from the `.env` file |
 | streamlit-shadcn-ui | latest | Polished KPI metric cards |
 | streamlit-extras | latest | Metric card styling |
+| graphviz | ≥ 0.20.0 | Publication-quality diagrams for metadata pages (Data Lineage, Knowledge Graph, Semantic Layer, AI Architecture) |
 | pytest | ≥ 7.0.0 | Unit testing (dev) |
