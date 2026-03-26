@@ -5,20 +5,19 @@ load_all_data / load_gold_data against a real test database.
 """
 
 import duckdb
-import pytest
-import pandas as pd
 import numpy as np
+import pandas as pd
+import pytest
 
-from src.database import create_tables, _etl_bronze_to_silver
 from src.data_loader import (
-    _parse_dates,
-    _parse_booleans,
-    _validate_columns,
     REQUIRED_COLUMNS,
+    _parse_booleans,
+    _parse_dates,
+    _validate_columns,
     load_all_data,
     load_gold_data,
 )
-
+from src.database import _etl_bronze_to_silver, create_tables
 
 # ===========================================================================
 # _parse_dates

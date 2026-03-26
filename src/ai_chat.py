@@ -26,7 +26,7 @@ Configuration (.env file in project root):
 
 import json
 import os
-from typing import Iterator
+from collections.abc import Iterator
 
 # Load .env file if present — no-op when the file is missing.
 try:
@@ -207,7 +207,7 @@ def _get_meta_context(db_path=None) -> str:
 
     # ── Knowledge Graph: try Neo4j first, fall back to DuckDB ────────
     try:
-        from src.neo4j_client import get_kg_nodes, get_kg_edges
+        from src.neo4j_client import get_kg_edges, get_kg_nodes
         neo4j_nodes = get_kg_nodes()
         neo4j_edges = get_kg_edges()
     except Exception:

@@ -1,0 +1,39 @@
+# Ruff linter configuration for Healthcare RCM Analytics
+# https://docs.astral.sh/ruff/
+
+target-version = "py311"
+line-length = 120
+
+[lint]
+# Rules enabled beyond defaults
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes
+    "I",    # isort (import ordering)
+    "UP",   # pyupgrade
+    "B",    # flake8-bugbear
+    "SIM",  # flake8-simplify
+    "T20",  # flake8-print (flag print statements in src/, allow in scripts)
+]
+ignore = [
+    "E501",   # line too long — handled by formatter, not linter
+    "E701",   # multiple statements on one line (colon) — used in compact test assertions
+    "E702",   # multiple statements on one line (semicolon) — used in test fixtures
+    "T201",   # print() — used intentionally in ETL pipeline for progress reporting
+    "SIM102", # nested if → combined if — often less readable with complex conditions
+    "SIM105", # try-except-pass → contextlib.suppress — less explicit
+    "SIM108", # use ternary — often less readable in data processing code
+    "SIM117", # nested with → combined with — less readable with mocks
+    "B007",   # unused loop variable — common in SQL-building loops
+    "B905",   # zip() without strict= — not needed for same-length sequences
+    "UP007",  # use X | Y for union types — keep Optional[] for clarity
+]
+
+[lint.per-file-ignores]
+"app.py" = ["E402"]                   # Streamlit requires st.set_page_config() before other imports
+"generate_sample_data.py" = ["T201"]  # print statements expected in data generation script
+"tests/*" = ["E702", "E701"]          # compact test assertions with semicolons
+
+[lint.isort]
+known-first-party = ["src"]

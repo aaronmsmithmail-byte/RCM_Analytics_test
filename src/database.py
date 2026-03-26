@@ -47,8 +47,9 @@ Usage:
     initialize_database()
 """
 
-import duckdb
 import os
+
+import duckdb
 import pandas as pd
 
 # Load .env BEFORE computing path constants so RCM_DB_PATH / RCM_DATA_DIR
@@ -763,11 +764,10 @@ def persist_metadata(conn):
         conn: An active DuckDB connection.
     """
     from src.metadata_pages import (
+        _KG_NODES,
+        _KG_RELATIONSHIPS,
         _KPI_CATALOG,
         _SEMANTIC_LAYER,
-        _KG_NODES,
-        _KG_EDGES,
-        _KG_RELATIONSHIPS,
     )
 
     # ── meta_kpi_catalog ───────────────────────────────────────────────
@@ -975,7 +975,7 @@ def initialize_database(db_path=None):
     # Step 4c: Seed Neo4j knowledge graph (if available)
     # ------------------------------------------------------------------
     try:
-        from src.neo4j_client import seed_knowledge_graph, is_neo4j_available
+        from src.neo4j_client import is_neo4j_available, seed_knowledge_graph
         if is_neo4j_available():
             print("Step 4c: Seeding Neo4j knowledge graph...")
             if seed_knowledge_graph():

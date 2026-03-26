@@ -44,8 +44,8 @@ Reproducibility:
 """
 
 import csv
-import random
 import os
+import random
 from datetime import datetime, timedelta
 
 # ---------------------------------------------------------------------------

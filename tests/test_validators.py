@@ -9,17 +9,15 @@ violations and verify the expected issues are returned.
 import duckdb
 import pytest
 
-from src.database import create_tables
 from src.validators import (
-    validate_all,
-    _check_negative_amounts,
-    _check_orphaned_keys,
-    _check_nulls,
-    _check_date_ranges,
-    _check_claim_status_values,
     _check_boolean_columns,
+    _check_claim_status_values,
+    _check_date_ranges,
+    _check_negative_amounts,
+    _check_nulls,
+    _check_orphaned_keys,
+    validate_all,
 )
-
 
 # ── Shared fixture ─────────────────────────────────────────────────────────────
 
@@ -82,9 +80,13 @@ def _create_tables_no_constraints(conn):
     FOREIGN KEY clauses and PRIMARY KEY from the schema here.
     """
     import re
+
     from src.database import (
-        BRONZE_SCHEMA_SQL, SILVER_SCHEMA_SQL, GOLD_VIEWS_SQL,
-        INDEX_SQL, METADATA_SCHEMA_SQL,
+        BRONZE_SCHEMA_SQL,
+        GOLD_VIEWS_SQL,
+        INDEX_SQL,
+        METADATA_SCHEMA_SQL,
+        SILVER_SCHEMA_SQL,
     )
     # Remove FOREIGN KEY clauses, PRIMARY KEY, and NOT NULL from Silver schema
     silver_relaxed = re.sub(r',?\s*FOREIGN KEY\s*\([^)]*\)\s*REFERENCES\s*\w+\([^)]*\)', '', SILVER_SCHEMA_SQL)

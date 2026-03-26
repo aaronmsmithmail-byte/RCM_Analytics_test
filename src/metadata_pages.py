@@ -14,10 +14,9 @@ This module contains five supplemental pages accessible from the sidebar:
 Each render_*() function is called from app.py based on st.session_state["active_page"].
 """
 
-import streamlit as st
-import pandas as pd
 import graphviz
-
+import pandas as pd
+import streamlit as st
 
 # ---------------------------------------------------------------------------
 # Shared DB helper
@@ -626,7 +625,7 @@ def render_knowledge_graph():
     neo4j_nodes = None
     neo4j_edges = None
     try:
-        from src.neo4j_client import get_kg_nodes, get_kg_edges, is_neo4j_available
+        from src.neo4j_client import get_kg_edges, get_kg_nodes
         neo4j_nodes = get_kg_nodes()
         neo4j_edges = get_kg_edges()
         _using_neo4j = neo4j_nodes is not None
@@ -761,7 +760,7 @@ def render_semantic_layer():
     # ── Check Cube connectivity ──────────────────────────────────────
     _using_cube = False
     try:
-        from src.cube_client import is_cube_available, get_semantic_mappings
+        from src.cube_client import get_semantic_mappings, is_cube_available
         _using_cube = is_cube_available()
     except Exception:
         pass

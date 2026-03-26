@@ -74,14 +74,12 @@ that app.py chart code needs minimal changes:
                                              total_payments,collection_rate,avg_payment_per_encounter]
 """
 
-from dataclasses import dataclass, field
-from typing import Optional
+from dataclasses import dataclass
 
 import numpy as np
 import pandas as pd
 
-from src.database import build_filter_cte, get_connection, query_to_dataframe
-
+from src.database import build_filter_cte, query_to_dataframe
 
 # ===========================================================================
 # Filter parameter container
@@ -100,9 +98,9 @@ class FilterParams:
     """
     start_date: str
     end_date: str
-    payer_id: Optional[str] = None
-    department: Optional[str] = None
-    encounter_type: Optional[str] = None
+    payer_id: str | None = None
+    department: str | None = None
+    encounter_type: str | None = None
 
 
 # ===========================================================================
@@ -127,7 +125,7 @@ def _try_cube_query(measures, dimensions=None, p: FilterParams = None):
     (so the caller falls back to raw SQL).
     """
     try:
-        from src.cube_client import query_cube, build_cube_filters, is_cube_available
+        from src.cube_client import build_cube_filters, is_cube_available, query_cube
         if not is_cube_available():
             return None
         filters, time_dims = build_cube_filters(

@@ -6,16 +6,15 @@ Since Cube isn't running in the test environment, these tests verify:
 - build_cube_filters produces correct filter structures
 """
 
-import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 from src.cube_client import (
-    is_cube_available,
+    _health_cache,
+    build_cube_filters,
     get_cube_meta,
     get_semantic_mappings,
+    is_cube_available,
     query_cube,
-    build_cube_filters,
-    _health_cache,
 )
 
 

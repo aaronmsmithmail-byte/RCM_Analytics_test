@@ -6,10 +6,10 @@ implementations that are defined in app.py.
 """
 
 import io
-import pytest
-import pandas as pd
-import numpy as np
 
+import numpy as np
+import pandas as pd
+import pytest
 
 # ---------------------------------------------------------------------------
 # Reimplementations of the pure functions from app.py for testability.

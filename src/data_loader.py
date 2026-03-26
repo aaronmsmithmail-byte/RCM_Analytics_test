@@ -35,9 +35,9 @@ Usage:
     gold = load_gold_data()     # Gold layer  → dict of pre-aggregated DataFrames
 """
 
-import os
 import pandas as pd
-from src.database import DB_PATH, query_to_dataframe, initialize_database, has_medallion_schema
+
+from src.database import DB_PATH, has_medallion_schema, initialize_database, query_to_dataframe  # noqa: F401
 
 
 def _parse_dates(df, date_columns):

@@ -4,16 +4,14 @@ Covers CSV→Bronze loading, Bronze→Silver type casting, boolean conversion,
 NULL/empty PK filtering, duplicate handling, and missing file behaviour.
 """
 
-import os
 import duckdb
 import pytest
 
 from src.database import (
+    _etl_bronze_to_silver,
     create_tables,
     load_csv_to_bronze,
-    _etl_bronze_to_silver,
 )
-
 
 # ===========================================================================
 # Shared fixtures

@@ -136,7 +136,7 @@ def seed_knowledge_graph():
                 driver.close()
                 return False
 
-            with open(seed_path, "r") as f:
+            with open(seed_path) as f:
                 cypher = f.read()
 
             # Split by semicolons and execute each statement

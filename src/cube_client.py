@@ -15,11 +15,12 @@ Environment variables:
     CUBE_API_SECRET — API secret for authentication (default: rcm_analytics_dev_secret)
 """
 
+import json
 import os
 import time
-import json
-import requests
+
 import pandas as pd
+import requests
 
 CUBE_API_URL = os.environ.get("CUBE_API_URL", "http://localhost:4000/cubejs-api/v1")
 CUBE_API_SECRET = os.environ.get("CUBE_API_SECRET", "rcm_analytics_dev_secret")

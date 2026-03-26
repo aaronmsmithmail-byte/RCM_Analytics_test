@@ -7,13 +7,13 @@ validation, and error paths.
 
 import json
 import os
+from unittest.mock import MagicMock, patch
+
 import duckdb
 import pytest
-from unittest.mock import patch, MagicMock
 
+from src.ai_chat import _MAX_ITERATIONS, run_agentic_turn
 from src.database import create_tables
-from src.ai_chat import run_agentic_turn, _MAX_ITERATIONS
-
 
 # ===========================================================================
 # Helpers to build mock API responses
@@ -158,7 +158,7 @@ class TestRunAgenticTurnToolCalls:
         # First call: model requests a tool call; second call: model returns text
         mock_client.chat.completions.create.side_effect = [
             _make_tool_call_response(
-                query=f"SELECT COUNT(*) AS n FROM silver_claims",
+                query="SELECT COUNT(*) AS n FROM silver_claims",
                 description="Count claims",
             ),
             _make_text_response("There is 1 claim."),

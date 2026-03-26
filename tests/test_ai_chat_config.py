@@ -9,7 +9,6 @@ fallback for non-numeric values.
 import importlib
 import os
 
-import pytest
 import src.ai_chat as ai_chat
 
 

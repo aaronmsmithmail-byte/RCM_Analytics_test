@@ -11,6 +11,7 @@ Each check returns a list of issue dicts with keys:
 """
 
 import sqlite3
+
 from src.database import get_connection
 
 

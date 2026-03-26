@@ -7,9 +7,8 @@ live KPI snapshot injection, and system prompt structure.
 import duckdb
 import pytest
 
+from src.ai_chat import _get_meta_context, build_system_prompt
 from src.database import create_tables, persist_metadata
-from src.ai_chat import build_system_prompt, _get_meta_context
-
 
 # ===========================================================================
 # Shared fixtures

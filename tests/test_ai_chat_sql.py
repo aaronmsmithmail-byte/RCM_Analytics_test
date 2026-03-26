@@ -4,13 +4,12 @@ Covers SQL validation (read-only enforcement), row truncation, NaN handling,
 error paths, and the LLM result formatter.
 """
 
+
 import duckdb
-import math
 import pytest
 
+from src.ai_chat import _format_result_for_llm, execute_sql_tool
 from src.database import create_tables
-from src.ai_chat import execute_sql_tool, _format_result_for_llm
-
 
 # ===========================================================================
 # Shared fixtures

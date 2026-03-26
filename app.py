@@ -52,13 +52,13 @@ Running the Dashboard:
 import io
 
 import numpy as np
-import streamlit as st
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import plotly.io as pio
-from plotly.subplots import make_subplots
+import streamlit as st
 import streamlit_shadcn_ui as ui
+from plotly.subplots import make_subplots
 from streamlit_extras.metric_cards import style_metric_cards
 
 # ── Design System ─────────────────────────────────────────────────────
@@ -80,50 +80,50 @@ RCM_COLORS = [
 ]
 
 # Import our custom modules
-from src.data_loader import load_all_data       # Loads all tables from SQLite
-from src.validators import validate_all         # Data integrity checks
-from src.metadata_pages import (               # Five supplemental metadata pages
-    render_data_lineage,
-    render_data_catalog,
-    render_knowledge_graph,
-    render_semantic_layer,
-    render_ai_architecture,
-)
-from src.ai_chat import (                        # AI Assistant tab backend
-    build_system_prompt,
-    run_agentic_turn,
+from src.ai_chat import (  # AI Assistant tab backend
     AVAILABLE_MODELS,
     DEFAULT_MODEL,
+    build_system_prompt,
+    run_agentic_turn,
 )
-from src.metrics import (                        # 17 SQL-based KPI query functions
+from src.data_loader import load_all_data  # Loads all tables from SQLite
+from src.metadata_pages import (  # Five supplemental metadata pages
+    render_ai_architecture,
+    render_data_catalog,
+    render_data_lineage,
+    render_knowledge_graph,
+    render_semantic_layer,
+)
+from src.metrics import (  # 17 SQL-based KPI query functions
     FilterParams,
-    query_days_in_ar,
-    query_net_collection_rate,
-    query_gross_collection_rate,
-    query_clean_claim_rate,
-    query_denial_rate,
-    query_denial_reasons,
-    query_first_pass_rate,
-    query_charge_lag,
-    query_cost_to_collect,
-    query_ar_aging,
-    query_payment_accuracy,
-    query_bad_debt_rate,
     query_appeal_success_rate,
+    query_ar_aging,
     query_avg_reimbursement,
-    query_payer_mix,
-    query_denial_rate_by_payer,
-    query_department_performance,
-    query_provider_performance,
+    query_bad_debt_rate,
+    query_charge_lag,
+    query_clean_claim_breakdown,
+    query_clean_claim_rate,
+    query_cost_to_collect,
     query_cpt_analysis,
+    query_data_freshness,
+    query_days_in_ar,
+    query_denial_rate,
+    query_denial_rate_by_payer,
+    query_denial_reasons,
+    query_department_performance,
+    query_first_pass_rate,
+    query_gross_collection_rate,
+    query_net_collection_rate,
+    query_patient_responsibility_by_dept,
+    query_patient_responsibility_by_payer,
+    query_patient_responsibility_trend,
+    query_payer_mix,
+    query_payment_accuracy,
+    query_provider_performance,
     query_underpayment_analysis,
     query_underpayment_trend,
-    query_clean_claim_breakdown,
-    query_patient_responsibility_by_payer,
-    query_patient_responsibility_by_dept,
-    query_patient_responsibility_trend,
-    query_data_freshness,
 )
+from src.validators import validate_all  # Data integrity checks
 
 # ── Page Config ──────────────────────────────────────────────────────
 # set_page_config() MUST be the first Streamlit command in the script.
@@ -1940,75 +1940,72 @@ with tab10:
 
     col_s1, col_s2, col_s3 = st.columns(3)
 
-    with col_s1:
-        with st.container(border=True):
-            st.markdown("#### Reduce Denial Rate")
-            st.caption(f"Baseline: **{denial_val:.1f}%** denial rate across **{int(_avg_monthly_cls):,}** claims/month")
-            denial_improve = st.slider(
-                "Reduce denial rate by (percentage points)",
-                min_value=0.0, max_value=min(float(denial_val), 10.0),
-                value=min(2.0, float(denial_val)), step=0.5,
-                key="scenario_denial",
+    with col_s1, st.container(border=True):
+        st.markdown("#### Reduce Denial Rate")
+        st.caption(f"Baseline: **{denial_val:.1f}%** denial rate across **{int(_avg_monthly_cls):,}** claims/month")
+        denial_improve = st.slider(
+            "Reduce denial rate by (percentage points)",
+            min_value=0.0, max_value=min(float(denial_val), 10.0),
+            value=min(2.0, float(denial_val)), step=0.5,
+            key="scenario_denial",
+        )
+        monthly_recovered_claims = (_avg_monthly_cls * denial_improve / 100)
+        monthly_recovery         = monthly_recovered_claims * _avg_payment_per_claim
+        annual_recovery          = monthly_recovery * 12
+
+        st.metric("Monthly Revenue Recovery",  f"${monthly_recovery:,.0f}")
+        st.metric("Annual Revenue Recovery",   f"${annual_recovery:,.0f}")
+        st.metric("Claims Recovered / Month",  f"{monthly_recovered_claims:.0f}")
+        if denial_improve > 0 and _avg_payment_per_claim > 0:
+            st.success(
+                f"Reducing denial rate from **{denial_val:.1f}%** to "
+                f"**{denial_val - denial_improve:.1f}%** recovers "
+                f"**${annual_recovery:,.0f}/year**."
             )
-            monthly_recovered_claims = (_avg_monthly_cls * denial_improve / 100)
-            monthly_recovery         = monthly_recovered_claims * _avg_payment_per_claim
-            annual_recovery          = monthly_recovery * 12
 
-            st.metric("Monthly Revenue Recovery",  f"${monthly_recovery:,.0f}")
-            st.metric("Annual Revenue Recovery",   f"${annual_recovery:,.0f}")
-            st.metric("Claims Recovered / Month",  f"{monthly_recovered_claims:.0f}")
-            if denial_improve > 0 and _avg_payment_per_claim > 0:
-                st.success(
-                    f"Reducing denial rate from **{denial_val:.1f}%** to "
-                    f"**{denial_val - denial_improve:.1f}%** recovers "
-                    f"**${annual_recovery:,.0f}/year**."
-                )
+    with col_s2, st.container(border=True):
+        st.markdown("#### Reduce Days in A/R")
+        st.caption(f"Baseline: **{dar_val:.1f} days** A/R | Avg daily charges: **${_avg_daily_charges:,.0f}**")
+        dar_improve = st.slider(
+            "Reduce DAR by (days)",
+            min_value=0, max_value=30,
+            value=5, step=1,
+            key="scenario_dar",
+        )
+        cash_unlocked = dar_improve * _avg_daily_charges
 
-    with col_s2:
-        with st.container(border=True):
-            st.markdown("#### Reduce Days in A/R")
-            st.caption(f"Baseline: **{dar_val:.1f} days** A/R | Avg daily charges: **${_avg_daily_charges:,.0f}**")
-            dar_improve = st.slider(
-                "Reduce DAR by (days)",
-                min_value=0, max_value=30,
-                value=5, step=1,
-                key="scenario_dar",
+        st.metric("One-Time Cash Acceleration", f"${cash_unlocked:,.0f}")
+        st.metric("New Projected DAR",           f"{max(dar_val - dar_improve, 0):.1f} days")
+        benchmark_gap = max(dar_val - 35, 0)
+        st.metric("Remaining Gap to Benchmark",  f"{max(benchmark_gap - dar_improve, 0):.1f} days")
+        if dar_improve > 0 and _avg_daily_charges > 0:
+            st.success(
+                f"Cutting DAR by **{dar_improve} days** releases "
+                f"**${cash_unlocked:,.0f}** in working capital."
             )
-            cash_unlocked = dar_improve * _avg_daily_charges
 
-            st.metric("One-Time Cash Acceleration", f"${cash_unlocked:,.0f}")
-            st.metric("New Projected DAR",           f"{max(dar_val - dar_improve, 0):.1f} days")
-            benchmark_gap = max(dar_val - 35, 0)
-            st.metric("Remaining Gap to Benchmark",  f"{max(benchmark_gap - dar_improve, 0):.1f} days")
-            if dar_improve > 0 and _avg_daily_charges > 0:
-                st.success(
-                    f"Cutting DAR by **{dar_improve} days** releases "
-                    f"**${cash_unlocked:,.0f}** in working capital."
-                )
+    with col_s3, st.container(border=True):
+        st.markdown("#### Improve Clean Claim Rate")
+        st.caption(f"Baseline: **{ccr_val:.1f}%** CCR | Rework cost: **${_rework_cost:.0f}/claim**")
+        ccr_improve = st.slider(
+            "Improve clean claim rate by (percentage points)",
+            min_value=0.0, max_value=min(100.0 - float(ccr_val), 10.0),
+            value=min(3.0, max(0.0, 100.0 - float(ccr_val))), step=0.5,
+            key="scenario_ccr",
+        )
+        extra_clean_monthly  = _avg_monthly_cls * ccr_improve / 100
+        monthly_rework_saved = extra_clean_monthly * _rework_cost
+        annual_rework_saved  = monthly_rework_saved * 12
+        implied_denial_drop  = ccr_improve * 0.4  # empirical: ~40% of dirty claims become denials
 
-    with col_s3:
-        with st.container(border=True):
-            st.markdown("#### Improve Clean Claim Rate")
-            st.caption(f"Baseline: **{ccr_val:.1f}%** CCR | Rework cost: **${_rework_cost:.0f}/claim**")
-            ccr_improve = st.slider(
-                "Improve clean claim rate by (percentage points)",
-                min_value=0.0, max_value=min(100.0 - float(ccr_val), 10.0),
-                value=min(3.0, max(0.0, 100.0 - float(ccr_val))), step=0.5,
-                key="scenario_ccr",
+        st.metric("Monthly Rework Savings",    f"${monthly_rework_saved:,.0f}")
+        st.metric("Annual Rework Savings",     f"${annual_rework_saved:,.0f}")
+        st.metric("Implied Denial Rate Drop",  f"~{implied_denial_drop:.1f} pp")
+        if ccr_improve > 0:
+            st.success(
+                f"Raising CCR from **{ccr_val:.1f}%** to **{ccr_val + ccr_improve:.1f}%** "
+                f"saves **${annual_rework_saved:,.0f}/year** in rework costs."
             )
-            extra_clean_monthly  = _avg_monthly_cls * ccr_improve / 100
-            monthly_rework_saved = extra_clean_monthly * _rework_cost
-            annual_rework_saved  = monthly_rework_saved * 12
-            implied_denial_drop  = ccr_improve * 0.4  # empirical: ~40% of dirty claims become denials
-
-            st.metric("Monthly Rework Savings",    f"${monthly_rework_saved:,.0f}")
-            st.metric("Annual Rework Savings",     f"${annual_rework_saved:,.0f}")
-            st.metric("Implied Denial Rate Drop",  f"~{implied_denial_drop:.1f} pp")
-            if ccr_improve > 0:
-                st.success(
-                    f"Raising CCR from **{ccr_val:.1f}%** to **{ccr_val + ccr_improve:.1f}%** "
-                    f"saves **${annual_rework_saved:,.0f}/year** in rework costs."
-                )
 
     # ── Combined Impact Summary ───────────────────────────────────────
     st.divider()

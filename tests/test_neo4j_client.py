@@ -6,15 +6,14 @@ Since Neo4j isn't running in the test environment, these tests verify:
 - Seed function handles missing server gracefully
 """
 
-import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 from src.neo4j_client import (
-    is_neo4j_available,
-    get_kg_nodes,
-    get_kg_edges,
-    seed_knowledge_graph,
     _health_cache,
+    get_kg_edges,
+    get_kg_nodes,
+    is_neo4j_available,
+    seed_knowledge_graph,
 )
 
 
