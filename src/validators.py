@@ -10,9 +10,11 @@ Each check returns a list of issue dicts with keys:
     message - human-readable description
 """
 
+import os
+
 import duckdb
 
-from src.database import get_connection
+from src.database import DB_PATH, get_connection
 
 
 def validate_all(db_path=None) -> list[dict]:
@@ -25,6 +27,9 @@ def validate_all(db_path=None) -> list[dict]:
     Returns:
         list of issue dicts (empty if all checks pass).
     """
+    path = db_path or DB_PATH
+    if not os.path.exists(path):
+        return []  # Database not yet created — nothing to validate
     issues = []
     issues.extend(_check_negative_amounts(db_path))
     issues.extend(_check_orphaned_keys(db_path))
