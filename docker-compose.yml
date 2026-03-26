@@ -1,5 +1,3 @@
-version: "3.9"
-
 services:
   # ── Cube — Semantic Layer ──────────────────────────────────
   # Provides REST API at http://localhost:4000 for metric queries
@@ -17,12 +15,15 @@ services:
       CUBEJS_API_SECRET: "rcm_analytics_dev_secret"
       CUBEJS_EXTERNAL_DEFAULT: "true"
       CUBEJS_SCHEDULED_REFRESH_DEFAULT: "false"
+      CUBEJS_DB_TYPE: "duckdb"
+      CUBEJS_DB_DUCKDB_DATABASE_PATH: "/cube/data/rcm_analytics.db"
+      CUBEJS_SCHEMA_PATH: "/cube/conf/model"
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://localhost:4000/readyz"]
       interval: 10s
       timeout: 5s
-      retries: 5
-      start_period: 20s
+      retries: 10
+      start_period: 30s
 
   # ── Neo4j — Knowledge Graph ────────────────────────────────
   # Stores the entity-relationship model (10 nodes, 9 FK edges).
