@@ -167,6 +167,26 @@ def query_days_in_ar(p: FilterParams, db_path=None):
             trend_dataframe: DataFrame indexed by year_month with columns
                 [charges, payments, ar_balance, days_in_ar].
     """
+    # ── Try Cube semantic layer ──────────────────────────────────────
+    cube_df = _try_cube_query(
+        measures=["claims.total_charges", "payments.total_payments"],
+        dimensions=["claims.period"],
+        p=p,
+    )
+    if cube_df is not None and not cube_df.empty:
+        cube_df.columns = ["period", "charges", "payments"]
+        cube_df["ar_balance"] = cube_df["charges"].cumsum() - cube_df["payments"].cumsum()
+        cube_df["avg_daily_charges"] = cube_df["charges"] / 30
+        cube_df["days_in_ar"] = np.where(
+            cube_df["avg_daily_charges"] > 0,
+            cube_df["ar_balance"] / cube_df["avg_daily_charges"],
+            0,
+        )
+        cube_df = _set_period_index(cube_df)
+        overall_dar = cube_df["days_in_ar"].iloc[-1] if len(cube_df) > 0 else 0.0
+        return round(float(overall_dar), 1), cube_df[["charges", "payments", "ar_balance", "days_in_ar"]]
+
+    # ── Fallback: raw SQL via DuckDB ─────────────────────────────────
     cte, params = _cte(p)
     # Charges and payments are aggregated in separate CTEs to avoid
     # row duplication when a claim has multiple payments (a LEFT JOIN
@@ -218,6 +238,28 @@ def query_net_collection_rate(p: FilterParams, db_path=None):
     Returns:
         tuple: (ncr_percentage, trend_dataframe)
     """
+    # ── Try Cube semantic layer ──────────────────────────────────────
+    cube_df = _try_cube_query(
+        measures=["claims.total_charges", "payments.total_payments", "adjustments.contractual_total"],
+        dimensions=["claims.period"],
+        p=p,
+    )
+    if cube_df is not None and not cube_df.empty:
+        cube_df.columns = ["period", "charges", "payments", "contractual_adj"]
+        total_charges = cube_df["charges"].sum()
+        total_payments = cube_df["payments"].sum()
+        total_contractual = cube_df["contractual_adj"].sum()
+        denominator = total_charges - total_contractual
+        ncr = (total_payments / denominator * 100) if denominator > 0 else 0.0
+        cube_df["ncr"] = np.where(
+            (cube_df["charges"] - cube_df["contractual_adj"]) > 0,
+            cube_df["payments"] / (cube_df["charges"] - cube_df["contractual_adj"]) * 100,
+            0,
+        )
+        cube_df = _set_period_index(cube_df)
+        return round(float(ncr), 2), cube_df
+
+    # ── Fallback: raw SQL via DuckDB ─────────────────────────────────
     cte, params = _cte(p)
     # Use three separate monthly CTEs to prevent charge duplication when a
     # claim has multiple payments or multiple adjustments.
@@ -281,6 +323,22 @@ def query_gross_collection_rate(p: FilterParams, db_path=None):
     Returns:
         tuple: (gcr_percentage, trend_dataframe)
     """
+    # ── Try Cube semantic layer ──────────────────────────────────────
+    cube_df = _try_cube_query(
+        measures=["claims.total_charges", "payments.total_payments"],
+        dimensions=["claims.period"],
+        p=p,
+    )
+    if cube_df is not None and not cube_df.empty:
+        cube_df.columns = ["period", "charges", "payments"]
+        total_charges = cube_df["charges"].sum()
+        total_payments = cube_df["payments"].sum()
+        gcr = (total_payments / total_charges * 100) if total_charges > 0 else 0.0
+        cube_df["gcr"] = np.where(cube_df["charges"] > 0, cube_df["payments"] / cube_df["charges"] * 100, 0)
+        cube_df = _set_period_index(cube_df)
+        return round(float(gcr), 2), cube_df
+
+    # ── Fallback: raw SQL via DuckDB ─────────────────────────────────
     cte, params = _cte(p)
     sql = cte + """
 , monthly_charges AS (
@@ -325,6 +383,22 @@ def query_clean_claim_rate(p: FilterParams, db_path=None):
     Returns:
         tuple: (ccr_percentage, trend_dataframe)
     """
+    # ── Try Cube semantic layer ──────────────────────────────────────
+    cube_df = _try_cube_query(
+        measures=["claims.count", "claims.clean_count"],
+        dimensions=["claims.period"],
+        p=p,
+    )
+    if cube_df is not None and not cube_df.empty:
+        cube_df.columns = ["period", "total_claims", "clean_claims"]
+        total = cube_df["total_claims"].sum()
+        clean = cube_df["clean_claims"].sum()
+        ccr = (clean / total * 100) if total > 0 else 0.0
+        cube_df["ccr"] = np.where(cube_df["total_claims"] > 0, cube_df["clean_claims"] / cube_df["total_claims"] * 100, 0)
+        cube_df = _set_period_index(cube_df)
+        return round(float(ccr), 2), cube_df
+
+    # ── Fallback: raw SQL via DuckDB ─────────────────────────────────
     cte, params = _cte(p)
     sql = cte + """
 SELECT strftime(CAST(submission_date AS DATE), '%Y-%m')       AS period,
@@ -416,6 +490,10 @@ def query_denial_reasons(p: FilterParams, db_path=None):
         count, total_denied_amount, total_recovered, recovery_rate],
         sorted by count descending.
     """
+    # Cube integration: complex multi-table query with denial reason
+    # dimensions not available in Cube — falls through to SQL
+
+    # ── Fallback: raw SQL via DuckDB ─────────────────────────────────
     cte, params = _cte(p)
     sql = cte + """
 SELECT d.denial_reason_code,
@@ -455,6 +533,13 @@ def query_first_pass_rate(p: FilterParams, db_path=None):
     Returns:
         tuple: (fpr_percentage, trend_dataframe)
     """
+    # ── Try Cube semantic layer ──────────────────────────────────────
+    # First-pass rate uses claim_status='Paid' count vs total — approximate
+    # with claims.count (total) and a separate query is not straightforward
+    # since there is no dedicated "paid_count" measure. Falls through to SQL.
+    # Cube integration: no dedicated first-pass paid measure — falls through to SQL
+
+    # ── Fallback: raw SQL via DuckDB ─────────────────────────────────
     cte, params = _cte(p)
     sql = cte + """
 SELECT strftime(CAST(submission_date AS DATE), '%Y-%m') AS period,
@@ -489,6 +574,21 @@ def query_charge_lag(p: FilterParams, db_path=None):
     Returns:
         tuple: (avg_lag_days, monthly_trend_series, lag_distribution_series)
     """
+    # ── Try Cube semantic layer ──────────────────────────────────────
+    cube_df = _try_cube_query(
+        measures=["charges.avg_charge_lag"],
+        dimensions=["charges.period"],
+        p=p,
+    )
+    if cube_df is not None and not cube_df.empty:
+        cube_df.columns = ["period", "avg_lag"]
+        avg_lag = cube_df["avg_lag"].mean()
+        trend = cube_df.set_index("period")["avg_lag"]
+        trend.index.name = "year_month"
+        # Distribution not available from Cube; return empty Series
+        return round(float(avg_lag), 1), trend, pd.Series(dtype=float)
+
+    # ── Fallback: raw SQL via DuckDB ─────────────────────────────────
     cte, params = _cte(p)
     # Charges for encounters that appear in filtered claims
     sql = cte + """
@@ -525,6 +625,26 @@ def query_cost_to_collect(p: FilterParams, db_path=None):
     Returns:
         tuple: (ctc_percentage, trend_dataframe)
     """
+    # ── Try Cube semantic layer ──────────────────────────────────────
+    cube_df = _try_cube_query(
+        measures=["payments.total_payments", "operating_costs.total_rcm_cost"],
+        dimensions=["payments.period"],
+        p=p,
+    )
+    if cube_df is not None and not cube_df.empty:
+        cube_df.columns = ["period", "collections", "rcm_cost"]
+        total_cost = cube_df["rcm_cost"].sum()
+        total_collected = cube_df["collections"].sum()
+        ctc = (total_cost / total_collected * 100) if total_collected > 0 else 0.0
+        cube_df["cost_to_collect_pct"] = np.where(
+            cube_df["collections"] > 0,
+            cube_df["rcm_cost"] / cube_df["collections"] * 100,
+            0,
+        )
+        cube_df = _set_period_index(cube_df)
+        return round(float(ctc), 2), cube_df[["rcm_cost", "collections", "cost_to_collect_pct"]]
+
+    # ── Fallback: raw SQL via DuckDB ─────────────────────────────────
     cte, params = _cte(p)
     # Monthly collections from filtered claims
     sql = cte + """
@@ -576,6 +696,10 @@ def query_ar_aging(p: FilterParams, db_path=None):
         index=["0-30", "31-60", "61-90", "91-120", "120+"],
     )
 
+    # Cube integration: complex per-claim aging bucket logic with HAVING
+    # and date_diff not expressible as Cube measures — falls through to SQL
+
+    # ── Fallback: raw SQL via DuckDB ─────────────────────────────────
     cte, params = _cte(p)
     sql = cte + """
 SELECT fc.claim_id,
@@ -623,6 +747,19 @@ def query_payment_accuracy(p: FilterParams, db_path=None):
     Returns:
         float: Accuracy rate as a percentage.
     """
+    # ── Try Cube semantic layer ──────────────────────────────────────
+    cube_df = _try_cube_query(
+        measures=["payments.count", "payments.accurate_count"],
+        p=p,
+    )
+    if cube_df is not None and not cube_df.empty:
+        total = cube_df.iloc[0, 0]
+        accurate = cube_df.iloc[0, 1] or 0
+        if total and total > 0:
+            return round(float(accurate / total * 100), 2)
+        return 0.0
+
+    # ── Fallback: raw SQL via DuckDB ─────────────────────────────────
     cte, params = _cte(p)
     sql = cte + """
 SELECT COUNT(*)                     AS total,
@@ -650,6 +787,18 @@ def query_bad_debt_rate(p: FilterParams, db_path=None):
     Returns:
         tuple: (bad_debt_rate, bad_debt_amount, total_charges)
     """
+    # ── Try Cube semantic layer ──────────────────────────────────────
+    cube_df = _try_cube_query(
+        measures=["claims.total_charges", "adjustments.bad_debt_total"],
+        p=p,
+    )
+    if cube_df is not None and not cube_df.empty:
+        total_charges = float(cube_df.iloc[0, 0] or 0)
+        bad_debt = float(cube_df.iloc[0, 1] or 0)
+        rate = (bad_debt / total_charges * 100) if total_charges > 0 else 0.0
+        return round(float(rate), 2), bad_debt, total_charges
+
+    # ── Fallback: raw SQL via DuckDB ─────────────────────────────────
     cte, params = _cte(p)
     # Compute charges and write-offs separately to avoid row duplication.
     sql = cte + """
@@ -681,6 +830,18 @@ def query_appeal_success_rate(p: FilterParams, db_path=None):
     Returns:
         tuple: (success_rate_pct, total_appeals_filed, appeals_won_count)
     """
+    # ── Try Cube semantic layer ──────────────────────────────────────
+    cube_df = _try_cube_query(
+        measures=["denials.appealed_count", "denials.won_count"],
+        p=p,
+    )
+    if cube_df is not None and not cube_df.empty:
+        total_appealed = int(cube_df.iloc[0, 0] or 0)
+        won = int(cube_df.iloc[0, 1] or 0)
+        rate = (won / total_appealed * 100) if total_appealed > 0 else 0.0
+        return round(float(rate), 2), total_appealed, won
+
+    # ── Fallback: raw SQL via DuckDB ─────────────────────────────────
     cte, params = _cte(p)
     sql = cte + """
 SELECT d.appeal_status,
@@ -711,6 +872,23 @@ def query_avg_reimbursement(p: FilterParams, db_path=None):
             monthly_trend_series: Series indexed by year_month with
             column name 'payment_amount'.
     """
+    # ── Try Cube semantic layer ──────────────────────────────────────
+    cube_df = _try_cube_query(
+        measures=["payments.total_payments", "encounters.count"],
+        dimensions=["claims.period"],
+        p=p,
+    )
+    if cube_df is not None and not cube_df.empty:
+        cube_df.columns = ["period", "total_payments", "encounter_count"]
+        total_pay = cube_df["total_payments"].sum()
+        total_enc = cube_df["encounter_count"].sum()
+        avg = (total_pay / total_enc) if total_enc > 0 else 0.0
+        trend = cube_df.set_index("period")["total_payments"] / cube_df.set_index("period")["encounter_count"].replace(0, np.nan)
+        trend = trend.fillna(0)
+        trend.index.name = "year_month"
+        return round(float(avg), 2), trend
+
+    # ── Fallback: raw SQL via DuckDB ─────────────────────────────────
     cte, params = _cte(p)
     sql = cte + """
 SELECT strftime(CAST(fc.date_of_service AS DATE), '%Y-%m') AS period,
@@ -742,6 +920,10 @@ def query_payer_mix(p: FilterParams, db_path=None):
         claim_count, total_charges, total_payments, collection_rate],
         sorted by total_payments descending.
     """
+    # Cube integration: complex multi-table JOIN with payer dimensions
+    # not directly expressible as single Cube query — falls through to SQL
+
+    # ── Fallback: raw SQL via DuckDB ─────────────────────────────────
     cte, params = _cte(p)
     sql = cte + """
 SELECT fc.payer_id,
@@ -781,6 +963,10 @@ def query_denial_rate_by_payer(p: FilterParams, db_path=None):
         DataFrame with [payer_id, payer_name, total_claims, denied, denial_rate],
         sorted by denial_rate descending.
     """
+    # Cube integration: complex multi-table JOIN with payer dimensions
+    # and denial status filtering — falls through to SQL
+
+    # ── Fallback: raw SQL via DuckDB ─────────────────────────────────
     cte, params = _cte(p)
     sql = cte + """
 SELECT fc.payer_id,
@@ -816,6 +1002,10 @@ def query_department_performance(p: FilterParams, db_path=None):
         total_payments, collection_rate, avg_payment_per_encounter],
         sorted by total_payments descending.
     """
+    # Cube integration: complex multi-table JOIN with encounter/department
+    # dimensions and distinct encounter counts — falls through to SQL
+
+    # ── Fallback: raw SQL via DuckDB ─────────────────────────────────
     cte, params = _cte(p)
     sql = cte + """
 SELECT e.department,
@@ -865,6 +1055,10 @@ def query_provider_performance(p: FilterParams, db_path=None):
         collection_rate, denial_rate, clean_claim_rate, avg_payment_per_encounter],
         sorted by total_payments descending.
     """
+    # Cube integration: complex multi-table query with provider dimensions,
+    # multiple CTEs, and computed rates — falls through to SQL
+
+    # ── Fallback: raw SQL via DuckDB ─────────────────────────────────
     cte, params = _cte(p)
     sql = cte + """
 , provider_claims AS (
@@ -942,6 +1136,10 @@ def query_cpt_analysis(p: FilterParams, db_path=None):
         total_units, total_charges, avg_charge_per_unit, claim_count,
         denied_claims, denial_rate], sorted by total_charges descending.
     """
+    # Cube integration: complex multi-CTE query with CPT-level charge
+    # stats and claim-level denial joins — falls through to SQL
+
+    # ── Fallback: raw SQL via DuckDB ─────────────────────────────────
     cte, params = _cte(p)
     sql = cte + """
 , encounter_ids AS (
@@ -1013,6 +1211,10 @@ def query_underpayment_analysis(p: FilterParams, db_path=None):
                 sorted by total_underpaid descending.
             total_recovery_opportunity: scalar sum of all underpayments (float).
     """
+    # Cube integration: complex multi-table JOIN with payer dimensions
+    # and conditional underpayment logic — falls through to SQL
+
+    # ── Fallback: raw SQL via DuckDB ─────────────────────────────────
     cte, params = _cte(p)
     sql = cte + """
 SELECT fc.payer_id,
@@ -1054,6 +1256,23 @@ def query_underpayment_trend(p: FilterParams, db_path=None):
         DataFrame indexed by year_month with columns
         [total_allowed, total_paid, total_underpaid, underpayment_rate].
     """
+    # ── Try Cube semantic layer ──────────────────────────────────────
+    cube_df = _try_cube_query(
+        measures=["payments.total_allowed", "payments.total_payments", "payments.total_underpaid"],
+        dimensions=["payments.period"],
+        p=p,
+    )
+    if cube_df is not None and not cube_df.empty:
+        cube_df.columns = ["period", "total_allowed", "total_paid", "total_underpaid"]
+        cube_df["underpayment_rate"] = np.where(
+            cube_df["total_allowed"] > 0,
+            cube_df["total_underpaid"] / cube_df["total_allowed"] * 100, 0,
+        )
+        cube_df = cube_df.set_index("period")
+        cube_df.index.name = "year_month"
+        return cube_df
+
+    # ── Fallback: raw SQL via DuckDB ─────────────────────────────────
     cte, params = _cte(p)
     sql = cte + """
 SELECT strftime(CAST(p.payment_date AS DATE), '%Y-%m')                              AS period,
@@ -1109,6 +1328,10 @@ def query_clean_claim_breakdown(p: FilterParams, db_path=None):
         DataFrame with columns [fail_reason, label, count, total_charges,
         pct_of_dirty, guidance], sorted by count descending.
     """
+    # Cube integration: fail_reason dimension with dirty-claim filter
+    # not available as Cube dimension — falls through to SQL
+
+    # ── Fallback: raw SQL via DuckDB ─────────────────────────────────
     cte, params = _cte(p)
     sql = cte + """
 SELECT fail_reason,
@@ -1148,6 +1371,10 @@ def query_patient_responsibility_by_payer(p: FilterParams, db_path=None):
         total_patient_resp, avg_patient_resp, pct_of_allowed],
         sorted by total_patient_resp descending.
     """
+    # Cube integration: complex multi-table JOIN with payer dimensions
+    # and conditional patient responsibility logic — falls through to SQL
+
+    # ── Fallback: raw SQL via DuckDB ─────────────────────────────────
     cte, params = _cte(p)
     sql = cte + """
 SELECT py.payer_name,
@@ -1184,6 +1411,10 @@ def query_patient_responsibility_by_dept(p: FilterParams, db_path=None):
         DataFrame with columns [department, encounter_type, claim_count,
         total_patient_resp, avg_patient_resp], sorted by total_patient_resp desc.
     """
+    # Cube integration: complex multi-table JOIN with department/encounter
+    # dimensions and conditional patient responsibility — falls through to SQL
+
+    # ── Fallback: raw SQL via DuckDB ─────────────────────────────────
     cte, params = _cte(p)
     sql = cte + """
 SELECT e.department,
@@ -1215,6 +1446,11 @@ def query_patient_responsibility_trend(p: FilterParams, db_path=None):
         DataFrame indexed by year_month with columns
         [total_patient_resp, total_allowed, patient_resp_rate].
     """
+    # Cube integration: conditional patient responsibility logic
+    # (allowed - payment when underpaid) not available as Cube measure —
+    # falls through to SQL
+
+    # ── Fallback: raw SQL via DuckDB ─────────────────────────────────
     cte, params = _cte(p)
     sql = cte + """
 SELECT strftime(CAST(fc.date_of_service AS DATE), '%Y-%m')                                  AS period,

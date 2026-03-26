@@ -10,7 +10,7 @@ Architecture:
                                 live KPI snapshot from the active dashboard
                                 filters to produce the LLM system prompt.
     2. execute_sql_tool()     — safely runs a SELECT/WITH query against the
-                                SQLite database and returns structured results.
+                                DuckDB database and returns structured results.
     3. run_agentic_turn()     — drives the tool-calling loop:
                                   a. call OpenRouter with TOOL_SCHEMA
                                   b. if the model calls run_sql, execute it
@@ -71,7 +71,7 @@ TOOL_SCHEMA = [
         "function": {
             "name": "run_sql",
             "description": (
-                "Execute a read-only SELECT query against the RCM SQLite database "
+                "Execute a read-only SELECT query against the RCM DuckDB database "
                 "and return the results as a table. "
                 "Use this to answer specific questions about the data, drill into "
                 "breakdowns by payer/department/provider, compute custom metrics, "
@@ -357,7 +357,7 @@ def build_system_prompt(live_kpis: dict | None = None, db_path=None) -> str:
     Args:
         live_kpis: Optional dict of current KPI values from the active
                    dashboard filters, e.g. ``{"Days in A/R": "32.5 days"}``.
-        db_path:   Optional SQLite path override.
+        db_path:   Optional DuckDB path override.
 
     Returns:
         System prompt string ready to be the first message in the list.

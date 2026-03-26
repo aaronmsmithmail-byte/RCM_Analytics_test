@@ -108,6 +108,30 @@ streamlit run app.py
 
 The app opens at `http://localhost:8501`. The first launch initializes the database (a few seconds); subsequent launches use the cached database.
 
+### Full Stack with Docker Compose (Cube + Neo4j)
+
+For the enterprise experience with Cube semantic layer and Neo4j knowledge graph:
+
+```bash
+# Generate data first (if not already done)
+python generate_sample_data.py
+
+# Start Cube + Neo4j + Streamlit
+docker compose up -d
+
+# Open the dashboard
+open http://localhost:8501
+```
+
+Services:
+| Service | URL | Purpose |
+|---------|-----|---------|
+| Streamlit | http://localhost:8501 | Dashboard |
+| Cube | http://localhost:4000 | Semantic layer REST API + Playground |
+| Neo4j | http://localhost:7474 | Knowledge graph browser |
+
+The app auto-detects available services and shows connection status on the metadata pages. When Cube/Neo4j are unavailable, it falls back to DuckDB seamlessly.
+
 ---
 
 ## Data Architecture — Medallion Layers

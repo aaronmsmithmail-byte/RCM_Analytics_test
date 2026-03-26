@@ -760,7 +760,7 @@ def persist_metadata(conn):
         meta_kg_edges        — FK relationships between entities
 
     Args:
-        conn: An active SQLite connection.
+        conn: An active DuckDB connection.
     """
     from src.metadata_pages import (
         _KPI_CATALOG,
@@ -860,7 +860,7 @@ def initialize_database(db_path=None):
     Full medallion-architecture database initialisation.
 
     Steps:
-        1. Open / create the SQLite database file.
+        1. Open / create the DuckDB database file.
         2. Drop any legacy un-prefixed tables (migration from old schema).
         3. Create Bronze tables, Silver tables, and Gold views.
         4. Load each CSV into its Bronze table (raw TEXT ingestion).
@@ -970,6 +970,22 @@ def initialize_database(db_path=None):
     print("Step 4b: Persisting metadata layer...")
     persist_metadata(conn)
     print()
+
+    # ------------------------------------------------------------------
+    # Step 4c: Seed Neo4j knowledge graph (if available)
+    # ------------------------------------------------------------------
+    try:
+        from src.neo4j_client import seed_knowledge_graph, is_neo4j_available
+        if is_neo4j_available():
+            print("Step 4c: Seeding Neo4j knowledge graph...")
+            if seed_knowledge_graph():
+                print("  [OK] Neo4j knowledge graph seeded.\n")
+            else:
+                print("  [WARN] Neo4j seeding failed — using DuckDB fallback.\n")
+        else:
+            print("Step 4c: Neo4j not available — skipping (DuckDB fallback active).\n")
+    except ImportError:
+        print("Step 4c: Neo4j driver not installed — skipping.\n")
 
     # ------------------------------------------------------------------
     # Step 5: Verify row counts across all layers

@@ -9,16 +9,21 @@ Follow these rules whenever modifying this project.
 
 ```
 CSV files → Bronze (raw TEXT) → Silver (typed + FK) → Gold (aggregated views) → Dashboard
-                                        ↓
-                                  meta_* tables  ←→  AI Assistant (system prompt + run_sql tool)
+                                        ↓                        ↓
+                                  Cube Semantic Layer    Neo4j Knowledge Graph
+                                  (measures/dims/joins)  (10 entities, 9 FKs)
+                                        ↓                        ↓
+                                  meta_* tables (DuckDB fallback) ←→ AI Assistant
 ```
 
 **Key modules:**
 | File | Responsibility |
 |------|----------------|
-| `src/database.py` | Schema definitions, ETL pipeline, `build_filter_cte()`, schema migration |
-| `src/metrics.py` | All 23 `query_*` KPI functions + `FilterParams` dataclass |
-| `src/metadata_pages.py` | Five sidebar metadata pages — rendered dynamically from meta_* tables |
+| `src/database.py` | DuckDB schema definitions, ETL pipeline, `build_filter_cte()`, schema migration |
+| `src/metrics.py` | All 26 `query_*` KPI functions + `FilterParams` dataclass (Cube → DuckDB fallback) |
+| `src/cube_client.py` | Cube REST API client — semantic metadata + metric queries |
+| `src/neo4j_client.py` | Neo4j Cypher client — knowledge graph nodes + edges |
+| `src/metadata_pages.py` | Five sidebar metadata pages — sourced from Cube/Neo4j with DuckDB fallback |
 | `src/ai_chat.py` | AI tab backend: `build_system_prompt()`, `execute_sql_tool()`, `run_agentic_turn()` |
 | `src/validators.py` | SQL COUNT-based data quality assertions |
 | `app.py` | Streamlit app: 12 tabs + sidebar + metadata page router |
@@ -33,9 +38,9 @@ Follow this table strictly. Never duplicate data across two locations.
 | Information | Single source | Do NOT also edit |
 |-------------|---------------|-----------------|
 | KPI definitions, formulas, categories, benchmarks | `meta_kpi_catalog` table (populated in `generate_sample_data.py`) | `README.md` Metrics Reference (update the count only) |
-| Business concept → KPI → column mappings | `meta_semantic_layer` table | — |
-| Silver-layer entity descriptions | `meta_kg_nodes` table | `_KG_NODES` hover text in `metadata_pages.py` (auto-derived from DB) |
-| Entity relationships / foreign keys | `meta_kg_edges` table | — |
+| Business concept → KPI → column mappings | Cube model YAML files (`cube/model/`) → DuckDB `meta_semantic_layer` fallback | — |
+| Silver-layer entity descriptions | Neo4j Entity nodes → DuckDB `meta_kg_nodes` fallback | `_KG_NODES` in `metadata_pages.py` (static fallback) |
+| Entity relationships / foreign keys | Neo4j HAS_FK relationships → DuckDB `meta_kg_edges` fallback | — |
 | Knowledge graph node **positions** (x, y) | `_KG_NODES` list in `metadata_pages.py` | — (layout only, not in DB) |
 | Table catalog (Bronze / Silver / Gold) | `_TABLE_CATALOG` list in `metadata_pages.py` | — |
 | Dashboard tab list and descriptions | `README.md` | — |

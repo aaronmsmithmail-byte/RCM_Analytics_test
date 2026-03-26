@@ -1,6 +1,6 @@
 """Data integrity validation for RCM Silver-layer tables.
 
-All checks execute directly against the Silver tables in SQLite — no
+All checks execute directly against the Silver tables in DuckDB — no
 DataFrames need to be loaded.  This aligns with the medallion architecture:
 validators assert the quality of the authoritative Silver layer.
 
@@ -18,7 +18,7 @@ def validate_all(db_path=None) -> list[dict]:
     """Run all validation checks against the Silver layer.
 
     Args:
-        db_path: Optional path override for the SQLite database.
+        db_path: Optional path override for the DuckDB database.
                  Defaults to the configured DB_PATH.
 
     Returns:

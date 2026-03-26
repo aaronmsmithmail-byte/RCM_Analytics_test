@@ -25,7 +25,7 @@ import graphviz
 
 def _query_meta(sql: str) -> pd.DataFrame:
     """
-    Run a SELECT against the SQLite DB and return a DataFrame.
+    Run a SELECT against the DuckDB database and return a DataFrame.
 
     Returns an empty DataFrame on any error so the page degrades gracefully
     if the database hasn't been initialised yet.
@@ -42,7 +42,7 @@ def _query_meta(sql: str) -> pd.DataFrame:
 
 # ── KPI catalog data ──────────────────────────────────────────────────
 # NOTE: This dict is the FALLBACK only.  render_data_catalog() queries
-# meta_kpi_catalog from SQLite at render time; this list is used only
+# meta_kpi_catalog from DuckDB at render time; this list is used only
 # if the database isn't available yet (e.g. first-run before ETL).
 
 _KPI_CATALOG_FALLBACK = [
@@ -296,7 +296,7 @@ _KG_RELATIONSHIPS = [
 
 
 # ── Semantic Layer data ───────────────────────────────────────────────
-# NOTE: render_semantic_layer() queries meta_semantic_layer from SQLite.
+# NOTE: render_semantic_layer() queries meta_semantic_layer from DuckDB.
 # This fallback list is used only when the DB is unavailable.
 
 _SEMANTIC_LAYER_FALLBACK = [
@@ -466,6 +466,16 @@ def render_data_lineage():
                    shape="diamond", fillcolor="#fff3c4", color="#DAA520",
                    style="filled")
 
+    # ── Enterprise Services cluster ──────────────────────────────────
+    with dot.subgraph(name="cluster_services") as c:
+        c.attr(label="ENTERPRISE SERVICES", style="rounded",
+               color="#9561e2", fontcolor="#5b21b6", fontsize="11",
+               bgcolor="#f5f3ff", penwidth="1.5")
+        c.node("cube_svc", "Cube\nSemantic Layer",
+               shape="box3d", fillcolor="#ede9fe", color="#9561e2")
+        c.node("neo4j_svc", "Neo4j\nKnowledge Graph",
+               shape="cylinder", fillcolor="#dcfce7", color="#38c172")
+
     # ── Dashboard cluster ────────────────────────────────────────────
     with dot.subgraph(name="cluster_dash") as c:
         c.attr(label="DASHBOARD TABS", style="rounded",
@@ -487,11 +497,23 @@ def render_data_lineage():
         for src in silver_sources:
             dot.edge(f"silver_{src}", gid, color="#DAA52088")
 
+    # ── Edges: Silver → Enterprise Services ────────────────────────
+    dot.edge("silver_claims", "cube_svc", label="  measures", color="#9561e288")
+    dot.edge("silver_payments", "cube_svc", color="#9561e288")
+    dot.edge("silver_claims", "neo4j_svc", label="  schema", color="#38c17288",
+             style="dashed")
+
     # ── Edges: Gold → Dashboard ──────────────────────────────────────
     for tab_label, gold_sources in DASH_TABS.items():
         safe_id = "tab_" + tab_label.replace(" ", "_").replace("&", "and")
         for gid in gold_sources:
             dot.edge(gid, safe_id, color="#f66d9b88")
+
+    # ── Edges: Enterprise Services → Dashboard ──────────────────────
+    dot.edge("cube_svc", "tab_Executive_Summary", label="  KPIs",
+             color="#9561e288")
+    dot.edge("neo4j_svc", "tab_Executive_Summary", label="  context",
+             color="#38c17288", style="dashed")
 
     st.graphviz_chart(dot, use_container_width=True)
 
@@ -886,7 +908,7 @@ Every AI response follows a **three-stage pipeline**:
 |-------|-------------|
 | **1 · Context assembly** | A system prompt is built fresh each turn from the four `meta_*` tables (KPI definitions, semantic mappings, entity descriptions, relationships) plus the current live KPI values and active sidebar filters. |
 | **2 · LLM reasoning** | The prompt + conversation history is sent to the selected model via OpenRouter.  The model decides whether to answer directly or call the `run_sql` tool. |
-| **3 · Tool-calling loop** | If data is needed, the model issues a `run_sql` call with a SELECT query.  The query executes against SQLite, results are fed back, and the loop repeats until the model produces a final text answer. |
+| **3 · Tool-calling loop** | If data is needed, the model issues a `run_sql` call with a SELECT query.  The query executes against DuckDB, results are fed back, and the loop repeats until the model produces a final text answer. |
 """)
 
     # ── Process flow diagram ──────────────────────────────────────────
@@ -1015,7 +1037,7 @@ queries (e.g. fetch payer list → then query denial rates per payer).
 - Accepts the query string from the model's tool call
 - Validates that it is a `SELECT` or `WITH` (CTE) statement — all other
   statement types return an error without touching the database
-- Executes against the local SQLite database
+- Executes against the local DuckDB database
 - Caps results at **100 rows** to stay within LLM context limits
 - Returns structured `{columns, rows, row_count, total_rows, truncated}`
 

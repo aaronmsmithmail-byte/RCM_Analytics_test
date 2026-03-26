@@ -2,7 +2,7 @@
 Data Loader for Healthcare RCM Analytics Dashboard
 ===================================================
 
-This module is the bridge between the Silver layer of the SQLite Medallion
+This module is the bridge between the Silver layer of the DuckDB Medallion
 Architecture and the Streamlit dashboard.  It loads all 10 Silver tables into
 pandas DataFrames, handling date parsing and type conversions so that the
 metrics engine can work with clean, typed data.
@@ -44,7 +44,7 @@ def _parse_dates(df, date_columns):
     """
     Convert string date columns to pandas Timestamp objects.
 
-    SQLite stores dates as TEXT strings (e.g., "2024-06-15"). We need to
+    DuckDB stores dates as TEXT strings (e.g., "2024-06-15"). We need to
     convert them to pandas datetime objects so that:
     - Date range filtering works with comparison operators (>=, <=).
     - We can extract year/month for trend analysis (dt.to_period("M")).
@@ -70,7 +70,7 @@ def _parse_dates(df, date_columns):
 
 def _parse_booleans(df, bool_columns):
     """
-    Convert integer boolean columns from SQLite (0/1) to Python booleans.
+    Convert integer boolean columns from DuckDB (0/1) to Python booleans.
 
     The Silver ETL casts 'True'/'False' strings to INTEGER (1/0).
     The metrics engine expects Python booleans so that .sum() counts
@@ -119,7 +119,7 @@ def _validate_columns(df, key, path):
 
 def load_all_data():
     """
-    Load all 10 Silver-layer tables from SQLite into a dict of DataFrames.
+    Load all 10 Silver-layer tables from DuckDB into a dict of DataFrames.
 
     This is the primary function called by the Streamlit dashboard at startup.
     It reads from the silver_* tables (cleaned, typed, FK-validated data),
@@ -240,7 +240,7 @@ def load_all_data():
 
 def load_gold_data():
     """
-    Load all five Gold-layer views from SQLite into a dict of DataFrames.
+    Load all five Gold-layer views from DuckDB into a dict of DataFrames.
 
     Gold views are pre-aggregated and business-ready.  They are useful for
     displaying summary KPIs directly from SQL without applying pandas filters.
