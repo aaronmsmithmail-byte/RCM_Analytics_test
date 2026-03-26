@@ -91,6 +91,7 @@ from src.metadata_pages import (  # Five supplemental metadata pages
     render_ai_architecture,
     render_data_catalog,
     render_data_lineage,
+    render_data_validation,
     render_knowledge_graph,
     render_semantic_layer,
 )
@@ -536,6 +537,8 @@ if st.sidebar.button("Semantic Layer", width="stretch"):
     st.session_state["active_page"] = "semantic_layer"
 if st.sidebar.button("AI Architecture", width="stretch"):
     st.session_state["active_page"] = "ai_architecture"
+if st.sidebar.button("Data Validation", width="stretch"):
+    st.session_state["active_page"] = "data_validation"
 if st.session_state["active_page"] != "dashboard":
     if st.sidebar.button("Back to Dashboard", type="primary", width="stretch"):
         st.session_state["active_page"] = "dashboard"
@@ -556,6 +559,9 @@ elif _active == "semantic_layer":
     st.stop()
 elif _active == "ai_architecture":
     render_ai_architecture()
+    st.stop()
+elif _active == "data_validation":
+    render_data_validation(_validation_issues)
     st.stop()
 
 # ── Header ───────────────────────────────────────────────────────────

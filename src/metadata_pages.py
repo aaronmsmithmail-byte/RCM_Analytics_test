@@ -1087,3 +1087,122 @@ For rendering the chat UI                     For sending to the OpenRouter API
 The system prompt is **rebuilt on every turn** so new dashboard filter
 selections are automatically reflected in the AI's context.
 """)
+
+
+# ── Page 6: Data Validation ───────────────────────────────────────────
+
+def render_data_validation(issues: list[dict]):
+    """Data validation results page — displays output from the 6 Silver-layer checks."""
+    st.title("Data Validation")
+    st.caption(
+        "Results from 6 automated quality checks run against the Silver layer on every app startup."
+    )
+
+    # ── Summary scorecards ────────────────────────────────────────────
+    total_checks = 6
+    issue_count = len(issues)
+    error_count = sum(1 for i in issues if i.get("level") == "error")
+    warning_count = sum(1 for i in issues if i.get("level") == "warning")
+
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        st.metric("Checks Run", total_checks)
+    with col2:
+        st.metric("Issues Found", issue_count)
+    with col3:
+        st.metric("Errors", error_count, delta=None if error_count == 0 else f"{error_count} critical",
+                   delta_color="off" if error_count == 0 else "inverse")
+    with col4:
+        st.metric("Warnings", warning_count)
+
+    if issue_count == 0:
+        st.success("✅ All 6 validation checks passed — no data quality issues detected.")
+    else:
+        st.warning(f"⚠️ {issue_count} issue(s) detected across the Silver layer.")
+
+    st.divider()
+
+    # ── Issues table ──────────────────────────────────────────────────
+    if issues:
+        st.subheader("Issues Detail")
+
+        # Build DataFrame
+        issues_df = pd.DataFrame(issues)
+        issues_df["Level"] = issues_df["level"].map(
+            {"error": "🔴 Error", "warning": "🟡 Warning"}
+        ).fillna(issues_df["level"])
+        issues_df = issues_df.rename(columns={
+            "table": "Table", "message": "Message",
+        })[["Level", "Table", "Message"]]
+
+        # Filters
+        col_f1, col_f2 = st.columns(2)
+        with col_f1:
+            level_filter = st.selectbox(
+                "Filter by level", ["All", "🔴 Error", "🟡 Warning"],
+                key="dv_level_filter",
+            )
+        with col_f2:
+            tables = ["All"] + sorted(issues_df["Table"].unique().tolist())
+            table_filter = st.selectbox(
+                "Filter by table", tables,
+                key="dv_table_filter",
+            )
+
+        filtered = issues_df.copy()
+        if level_filter != "All":
+            filtered = filtered[filtered["Level"] == level_filter]
+        if table_filter != "All":
+            filtered = filtered[filtered["Table"] == table_filter]
+
+        st.dataframe(filtered, use_container_width=True, hide_index=True)
+        st.caption(f"Showing {len(filtered)} of {len(issues_df)} issue(s)")
+    else:
+        st.info("No issues to display — all checks passed.")
+
+    st.divider()
+
+    # ── Checks reference ──────────────────────────────────────────────
+    st.subheader("Validation Checks Reference")
+    st.caption("These 6 checks run automatically against Silver-layer tables on every app startup.")
+
+    checks_ref = pd.DataFrame([
+        {
+            "Check": "Negative Amounts",
+            "Level": "Warning",
+            "Tables Checked": "silver_claims, silver_payments, silver_denials, silver_adjustments, silver_operating_costs",
+            "Description": "Flags monetary columns (charges, payments, denied amounts, adjustments, RCM costs) that contain negative values.",
+        },
+        {
+            "Check": "Orphaned Foreign Keys",
+            "Level": "Warning",
+            "Tables Checked": "silver_payments, silver_denials, silver_adjustments, silver_claims, silver_encounters",
+            "Description": "Detects rows where a foreign-key column references an ID that does not exist in the parent table.",
+        },
+        {
+            "Check": "Required Nulls",
+            "Level": "Error",
+            "Tables Checked": "silver_claims, silver_payments, silver_denials, silver_adjustments, silver_encounters, silver_payers",
+            "Description": "Flags NULL values in columns that are required for business logic (primary keys, amounts, statuses).",
+        },
+        {
+            "Check": "Date Ranges",
+            "Level": "Warning",
+            "Tables Checked": "silver_claims, silver_payments, silver_denials, silver_encounters, silver_charges",
+            "Description": "Flags date columns with values outside the plausible range (2020-01-01 to 2030-12-31).",
+        },
+        {
+            "Check": "Claim Status Values",
+            "Level": "Warning",
+            "Tables Checked": "silver_claims",
+            "Description": "Flags claim_status values not in the expected set: Paid, Denied, Appealed, Pending, Partially Paid.",
+        },
+        {
+            "Check": "Boolean Columns",
+            "Level": "Warning",
+            "Tables Checked": "silver_claims, silver_payments",
+            "Description": "Flags boolean columns (is_clean_claim, is_accurate_payment) containing NULL instead of 0 or 1.",
+        },
+    ])
+    st.dataframe(checks_ref, use_container_width=True, hide_index=True)
+
