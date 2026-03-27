@@ -10,9 +10,9 @@ Connects to a Cube REST API to query the semantic layer for:
 Gracefully returns None when Cube is unavailable so the app falls back
 to DuckDB meta_semantic_layer and raw SQL queries.
 
-Environment variables:
+Environment variables (set in .env — never hard-code values here):
     CUBE_API_URL    — REST API base URL (default: http://localhost:4000/cubejs-api/v1)
-    CUBE_API_SECRET — API secret for authentication (default: rcm_analytics_dev_secret)
+    CUBE_API_SECRET — API secret for authentication (required; no default — set in .env)
 """
 
 import json
@@ -23,7 +23,7 @@ import pandas as pd
 import requests
 
 CUBE_API_URL = os.environ.get("CUBE_API_URL", "http://localhost:4000/cubejs-api/v1")
-CUBE_API_SECRET = os.environ.get("CUBE_API_SECRET", "rcm_analytics_dev_secret")
+CUBE_API_SECRET = os.environ.get("CUBE_API_SECRET", "")
 
 # TTL-cached health check
 _health_cache = {"available": None, "checked_at": 0}

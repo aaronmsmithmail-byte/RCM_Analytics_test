@@ -8,10 +8,10 @@ knowledge graph (10 entities, 9 FK relationships).
 Gracefully returns None when Neo4j is unavailable so the app falls back
 to DuckDB meta_kg_* tables.
 
-Environment variables:
+Environment variables (set in .env — never hard-code values here):
     NEO4J_URI      — Bolt URI (default: bolt://localhost:7687)
     NEO4J_USER     — Username (default: neo4j)
-    NEO4J_PASSWORD — Password (default: rcm_analytics)
+    NEO4J_PASSWORD — Password (required; no default — set in .env)
 """
 
 import os
@@ -25,7 +25,7 @@ except ImportError:
 
 NEO4J_URI = os.environ.get("NEO4J_URI", "bolt://localhost:7687")
 NEO4J_USER = os.environ.get("NEO4J_USER", "neo4j")
-NEO4J_PASSWORD = os.environ.get("NEO4J_PASSWORD", "rcm_analytics")
+NEO4J_PASSWORD = os.environ.get("NEO4J_PASSWORD", "")
 
 # TTL-cached health check (avoids retrying on every request)
 _health_cache = {"available": None, "checked_at": 0}

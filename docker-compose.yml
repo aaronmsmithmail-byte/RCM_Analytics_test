@@ -12,7 +12,7 @@ services:
       - ./data:/cube/data
     environment:
       CUBEJS_DEV_MODE: "true"
-      CUBEJS_API_SECRET: "rcm_analytics_dev_secret"
+      CUBEJS_API_SECRET: "${CUBE_API_SECRET}"
       CUBEJS_EXTERNAL_DEFAULT: "true"
       CUBEJS_SCHEDULED_REFRESH_DEFAULT: "false"
       CUBEJS_DB_TYPE: "duckdb"
@@ -34,7 +34,7 @@ services:
       - "7474:7474"   # Browser UI
       - "7687:7687"   # Bolt protocol
     environment:
-      NEO4J_AUTH: neo4j/rcm_analytics
+      NEO4J_AUTH: "neo4j/${NEO4J_PASSWORD}"
       NEO4J_PLUGINS: '[]'
       NEO4J_server_memory_heap_initial__size: "256m"
       NEO4J_server_memory_heap_max__size: "512m"
@@ -42,7 +42,7 @@ services:
       - neo4j_data:/data
       - ./neo4j:/var/lib/neo4j/import
     healthcheck:
-      test: ["CMD-SHELL", "cypher-shell -u neo4j -p rcm_analytics 'RETURN 1' || exit 1"]
+      test: ["CMD-SHELL", "cypher-shell -u neo4j -p $${NEO4J_PASSWORD} 'RETURN 1' || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -60,10 +60,10 @@ services:
         condition: service_healthy
     environment:
       CUBE_API_URL: "http://cube:4000/cubejs-api/v1"
-      CUBE_API_SECRET: "rcm_analytics_dev_secret"
+      CUBE_API_SECRET: "${CUBE_API_SECRET}"
       NEO4J_URI: "bolt://neo4j:7687"
       NEO4J_USER: "neo4j"
-      NEO4J_PASSWORD: "rcm_analytics"
+      NEO4J_PASSWORD: "${NEO4J_PASSWORD}"
     volumes:
       - ./data:/app/data
 
