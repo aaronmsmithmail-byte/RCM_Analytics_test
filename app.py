@@ -164,25 +164,88 @@ st.markdown("""
         background: #ffffff;
         border: 1px solid #e2e8f0;
         border-left: 4px solid #1E6FBF;
-        border-radius: 8px;
+        border-radius: 10px;
         padding: 18px 20px;
         box-shadow: 0 1px 3px rgba(0,0,0,0.07), 0 1px 2px rgba(0,0,0,0.05);
         margin-bottom: 10px;
+        transition: transform 0.15s ease, box-shadow 0.15s ease;
+        cursor: default;
+    }
+    .metric-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 14px rgba(0,0,0,0.10), 0 2px 4px rgba(0,0,0,0.06);
     }
     .metric-card h2 {
         margin: 0 0 4px 0;
-        font-size: 2rem;
+        font-size: 2.2rem;
         font-weight: 800;
         color: #1A2332;
         letter-spacing: -0.03em;
         font-family: 'Plus Jakarta Sans', sans-serif;
     }
     .metric-card p { margin: 0; font-size: 0.875rem; color: #64748b; font-weight: 500; }
-    /* Status variants — only the left border changes */
-    .metric-good { border-left-color: #10B981; }
-    .metric-warn { border-left-color: #F59E0B; }
-    .metric-bad  { border-left-color: #EF4444; }
+    /* Status variants — tinted gradient background + colored left border */
+    .metric-good { border-left-color: #10B981; background: linear-gradient(135deg, #f0fdf4 0%, #ffffff 60%); }
+    .metric-warn { border-left-color: #F59E0B; background: linear-gradient(135deg, #fffbeb 0%, #ffffff 60%); }
+    .metric-bad  { border-left-color: #EF4444; background: linear-gradient(135deg, #fef2f2 0%, #ffffff 60%); }
     .benchmark-text { font-size: 0.75rem; color: #94a3b8; margin-top: 6px; }
+
+    /* ── Alert cards ── */
+    .alert-card {
+        background: linear-gradient(135deg, #fef2f2 0%, #fff5f5 100%);
+        border: 1px solid #fecaca;
+        border-left: 4px solid #EF4444;
+        border-radius: 10px;
+        padding: 14px 16px;
+        margin-bottom: 6px;
+        transition: transform 0.15s ease, box-shadow 0.15s ease;
+    }
+    .alert-card:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 4px 12px rgba(239,68,68,0.12);
+    }
+    .alert-card-title { font-size: 0.75rem; font-weight: 700; color: #991b1b; margin: 0 0 4px 0; text-transform: uppercase; letter-spacing: 0.05em; }
+    .alert-card-value { font-size: 1.5rem; font-weight: 800; color: #DC2626; margin: 0 0 3px 0; letter-spacing: -0.02em; line-height: 1.1; }
+    .alert-card-thresh { font-size: 0.72rem; color: #b91c1c; margin: 0; }
+
+    /* ── Page header accent bar ── */
+    .page-header-accent {
+        height: 3px;
+        background: linear-gradient(90deg, #1E6FBF 0%, #6366F1 50%, #14B8A6 100%);
+        border-radius: 2px;
+        margin: -6px 0 18px 0;
+    }
+
+    /* ── Tab bar — modern pill-style tabs ── */
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 2px;
+        background-color: #f1f5f9;
+        padding: 4px 5px;
+        border-radius: 10px;
+        border: 1px solid #e2e8f0;
+    }
+    .stTabs [data-baseweb="tab"] {
+        border-radius: 7px;
+        padding: 6px 13px;
+        font-size: 0.82rem;
+        font-weight: 600;
+        color: #64748b;
+        background: transparent;
+        border: none !important;
+        outline: none !important;
+        transition: color 0.15s ease, background 0.15s ease;
+    }
+    .stTabs [data-baseweb="tab"]:hover {
+        color: #1E6FBF;
+        background: rgba(255,255,255,0.7);
+    }
+    .stTabs [aria-selected="true"] {
+        background: #ffffff !important;
+        color: #1E6FBF !important;
+        box-shadow: 0 1px 4px rgba(0,0,0,0.09), 0 0 0 1px rgba(30,111,191,0.08);
+    }
+    /* Remove the default tab underline indicator */
+    .stTabs [data-baseweb="tab-highlight"] { display: none; }
 
     /* ── Sidebar brand header ── */
     .sidebar-brand {
@@ -214,6 +277,12 @@ st.markdown("""
         text-transform: uppercase;
         margin: 14px 0 6px 0;
     }
+
+    /* ── Container border refinement ── */
+    [data-testid="stVerticalBlockBorderWrapper"] > div {
+        border-radius: 10px !important;
+        border-color: #e2e8f0 !important;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -234,8 +303,22 @@ def metric_card(label, value, benchmark="", status="neutral"):
         "bad": "metric-card metric-bad",
     }.get(status, "metric-card")
     bench_html = f'<p class="benchmark-text">{benchmark}</p>' if benchmark else ""
+    _icons = {"good": "✓", "warn": "!", "bad": "✗"}
+    _icon_colors = {"good": "#10B981", "warn": "#F59E0B", "bad": "#EF4444"}
+    icon = _icons.get(status, "")
+    icon_color = _icon_colors.get(status, "#1E6FBF")
+    icon_html = (
+        f'<span style="font-size:0.7rem;font-weight:800;color:{icon_color};'
+        f'background:{icon_color}1a;border-radius:50%;width:18px;height:18px;'
+        f'display:inline-flex;align-items:center;justify-content:center;'
+        f'margin-right:8px;flex-shrink:0;vertical-align:middle">{icon}</span>'
+        if icon else ""
+    )
     st.markdown(
-        f'<div class="{css_class}"><h2>{value}</h2><p>{label}</p>{bench_html}</div>',
+        f'<div class="{css_class}">'
+        f'<div style="display:flex;align-items:center;gap:0">'
+        f'{icon_html}<h2 style="margin:0">{value}</h2></div>'
+        f'<p style="margin-top:4px">{label}</p>{bench_html}</div>',
         unsafe_allow_html=True,
     )
 
@@ -578,6 +661,7 @@ elif _active == "feature_backlog":
 # ── Header ───────────────────────────────────────────────────────────
 st.title("Healthcare RCM Analytics Dashboard")
 st.caption(f"Analyzing {len(f_claims):,} claims | {len(f_encounters):,} encounters | Date range: {start_dt.strftime('%b %Y')} to {end_dt.strftime('%b %Y')}")
+st.markdown('<div class="page-header-accent"></div>', unsafe_allow_html=True)
 
 if f_claims.empty:
     st.warning("No claims match the selected filters. Adjust the sidebar filters to see data.")
@@ -627,7 +711,14 @@ with tab1:
             cols_alert = st.columns(min(len(_active_alerts), 4))
             for i, (_kpi, _val, _thresh) in enumerate(_active_alerts):
                 with cols_alert[i % len(cols_alert)]:
-                    st.error(f"**{_kpi}**\n\n{_val}\n\nThreshold: {_thresh}")
+                    st.markdown(
+                        f'<div class="alert-card">'
+                        f'<p class="alert-card-title">⚠ {_kpi}</p>'
+                        f'<p class="alert-card-value">{_val}</p>'
+                        f'<p class="alert-card-thresh">Threshold: {_thresh}</p>'
+                        f'</div>',
+                        unsafe_allow_html=True,
+                    )
 
     # Top-level KPI cards — shadcn ui.metric_card for polished design
     col1, col2, col3, col4 = st.columns(4)
@@ -666,16 +757,20 @@ with tab1:
         st.subheader("Days in A/R Trend")
         fig = px.line(dar_trend.reset_index(), x="year_month", y="days_in_ar",
                       labels={"year_month": "Month", "days_in_ar": "Days in A/R"})
-        fig.add_hline(y=35, line_dash="dash", line_color="green", annotation_text="Benchmark: 35 days")
-        fig.update_layout(height=350, margin=dict(t=30, b=30))
+        fig.update_traces(fill="tozeroy", fillcolor="rgba(30,111,191,0.07)", line_width=2.5, line_color="#1E6FBF")
+        fig.add_hline(y=35, line_dash="dash", line_color="#10B981", annotation_text="Benchmark: 35 days",
+                      annotation_font_color="#10B981")
+        fig.update_layout(height=350, margin=dict(t=30, b=30), plot_bgcolor="rgba(248,250,252,0.5)")
         st.plotly_chart(fig, theme="streamlit", width="stretch")
 
     with col_right:
         st.subheader("Net Collection Rate Trend")
         fig = px.line(ncr_trend.reset_index(), x="year_month", y="ncr",
                       labels={"year_month": "Month", "ncr": "NCR (%)"})
-        fig.add_hline(y=95, line_dash="dash", line_color="green", annotation_text="Benchmark: 95%")
-        fig.update_layout(height=350, margin=dict(t=30, b=30))
+        fig.update_traces(fill="tozeroy", fillcolor="rgba(16,185,129,0.07)", line_width=2.5, line_color="#10B981")
+        fig.add_hline(y=95, line_dash="dash", line_color="#10B981", annotation_text="Benchmark: 95%",
+                      annotation_font_color="#10B981")
+        fig.update_layout(height=350, margin=dict(t=30, b=30), plot_bgcolor="rgba(248,250,252,0.5)")
         st.plotly_chart(fig, theme="streamlit", width="stretch")
 
     # Volume summary
@@ -692,10 +787,13 @@ with tab1:
     vol = vol.merge(claims_vol, on="year_month", how="outer").fillna(0)
 
     fig = go.Figure()
-    fig.add_trace(go.Bar(x=vol["year_month"], y=vol["encounters"], name="Encounters", marker_color=RCM_COLORS[0]))
-    fig.add_trace(go.Bar(x=vol["year_month"], y=vol["claims"], name="Claims", marker_color=RCM_COLORS[5]))
+    fig.add_trace(go.Bar(x=vol["year_month"], y=vol["encounters"], name="Encounters",
+                         marker_color=RCM_COLORS[0], marker_line_width=0, opacity=0.9))
+    fig.add_trace(go.Bar(x=vol["year_month"], y=vol["claims"], name="Claims",
+                         marker_color=RCM_COLORS[5], marker_line_width=0, opacity=0.9))
     fig.update_layout(barmode="group", height=350, margin=dict(t=30, b=30),
-                      xaxis_title="Month", yaxis_title="Count")
+                      xaxis_title="Month", yaxis_title="Count",
+                      plot_bgcolor="rgba(248,250,252,0.5)")
     st.plotly_chart(fig, theme="streamlit", width="stretch")
 
 
@@ -759,23 +857,31 @@ with tab2:
         st.subheader("Collection Rates Over Time")
         combined_trend = gcr_trend[["gcr"]].join(ncr_trend[["ncr"]], how="outer").fillna(0).reset_index()
         combined_trend.columns = ["Month", "Gross Collection Rate", "Net Collection Rate"]
-        fig = px.line(combined_trend, x="Month", y=["Gross Collection Rate", "Net Collection Rate"])
-        fig.update_layout(height=350, margin=dict(t=30, b=30), yaxis_title="%")
+        fig = px.line(combined_trend, x="Month", y=["Gross Collection Rate", "Net Collection Rate"],
+                      color_discrete_sequence=[RCM_COLORS[0], RCM_COLORS[3]])
+        fig.update_traces(line_width=2.5)
+        fig.update_layout(height=350, margin=dict(t=30, b=30), yaxis_title="%",
+                          plot_bgcolor="rgba(248,250,252,0.5)")
         st.plotly_chart(fig, theme="streamlit", width="stretch")
 
     with col_right:
         st.subheader("Cost to Collect Trend")
         fig = px.area(ctc_trend.reset_index(), x="year_month", y="cost_to_collect_pct",
-                      labels={"year_month": "Month", "cost_to_collect_pct": "Cost to Collect (%)"})
-        fig.add_hline(y=5, line_dash="dash", line_color="green", annotation_text="Target: 5%")
-        fig.update_layout(height=350, margin=dict(t=30, b=30))
+                      labels={"year_month": "Month", "cost_to_collect_pct": "Cost to Collect (%)"},
+                      color_discrete_sequence=[RCM_COLORS[7]])
+        fig.update_traces(line_width=2)
+        fig.add_hline(y=5, line_dash="dash", line_color="#10B981", annotation_text="Target: 5%",
+                      annotation_font_color="#10B981")
+        fig.update_layout(height=350, margin=dict(t=30, b=30), plot_bgcolor="rgba(248,250,252,0.5)")
         st.plotly_chart(fig, theme="streamlit", width="stretch")
 
     # Avg reimbursement trend
     st.subheader("Average Reimbursement per Claim")
     fig = px.bar(reimb_trend.reset_index(), x="year_month", y="payment_amount",
-                 labels={"year_month": "Month", "payment_amount": "Avg Reimbursement ($)"})
-    fig.update_layout(height=300, margin=dict(t=30, b=30))
+                 labels={"year_month": "Month", "payment_amount": "Avg Reimbursement ($)"},
+                 color_discrete_sequence=[RCM_COLORS[0]])
+    fig.update_traces(marker_line_width=0, opacity=0.9)
+    fig.update_layout(height=300, margin=dict(t=30, b=30), plot_bgcolor="rgba(248,250,252,0.5)")
     st.plotly_chart(fig, theme="streamlit", width="stretch")
 
     # Financial summary
@@ -861,17 +967,23 @@ with tab3:
     with col_left2:
         st.subheader("Denial Rate Trend")
         fig = px.line(denial_trend.reset_index(), x="year_month", y="denial_rate",
-                      labels={"year_month": "Month", "denial_rate": "Denial Rate (%)"})
-        fig.add_hline(y=10, line_dash="dash", line_color="green", annotation_text="Target: 10%")
-        fig.update_layout(height=300, margin=dict(t=30, b=30))
+                      labels={"year_month": "Month", "denial_rate": "Denial Rate (%)"},
+                      color_discrete_sequence=[RCM_COLORS[3]])
+        fig.update_traces(fill="tozeroy", fillcolor="rgba(239,68,68,0.07)", line_width=2.5)
+        fig.add_hline(y=10, line_dash="dash", line_color="#10B981", annotation_text="Target: 10%",
+                      annotation_font_color="#10B981")
+        fig.update_layout(height=300, margin=dict(t=30, b=30), plot_bgcolor="rgba(248,250,252,0.5)")
         st.plotly_chart(fig, theme="streamlit", width="stretch")
 
     with col_right2:
         st.subheader("Clean Claim Rate Trend")
         fig = px.line(ccr_trend.reset_index(), x="year_month", y="ccr",
-                      labels={"year_month": "Month", "ccr": "Clean Claim Rate (%)"})
-        fig.add_hline(y=90, line_dash="dash", line_color="green", annotation_text="Target: 90%")
-        fig.update_layout(height=300, margin=dict(t=30, b=30))
+                      labels={"year_month": "Month", "ccr": "Clean Claim Rate (%)"},
+                      color_discrete_sequence=[RCM_COLORS[1]])
+        fig.update_traces(fill="tozeroy", fillcolor="rgba(16,185,129,0.07)", line_width=2.5)
+        fig.add_hline(y=90, line_dash="dash", line_color="#10B981", annotation_text="Target: 90%",
+                      annotation_font_color="#10B981")
+        fig.update_layout(height=300, margin=dict(t=30, b=30), plot_bgcolor="rgba(248,250,252,0.5)")
         st.plotly_chart(fig, theme="streamlit", width="stretch")
 
     # Charge lag
@@ -882,16 +994,21 @@ with tab3:
         lag_df.columns = ["Days", "Count"]
         lag_df = lag_df[lag_df["Days"] <= 30]
         fig = px.bar(lag_df, x="Days", y="Count",
-                     labels={"Days": "Lag (Days)", "Count": "# of Charges"})
-        fig.update_layout(height=300, margin=dict(t=30, b=30))
+                     labels={"Days": "Lag (Days)", "Count": "# of Charges"},
+                     color_discrete_sequence=[RCM_COLORS[4]])
+        fig.update_traces(marker_line_width=0, opacity=0.9)
+        fig.update_layout(height=300, margin=dict(t=30, b=30), plot_bgcolor="rgba(248,250,252,0.5)")
         st.plotly_chart(fig, theme="streamlit", width="stretch")
 
     with col_right3:
         st.subheader("First-Pass Rate Trend")
         fig = px.line(fpr_trend.reset_index(), x="year_month", y="fpr",
-                      labels={"year_month": "Month", "fpr": "First-Pass Rate (%)"})
-        fig.add_hline(y=85, line_dash="dash", line_color="green", annotation_text="Target: 85%")
-        fig.update_layout(height=300, margin=dict(t=30, b=30))
+                      labels={"year_month": "Month", "fpr": "First-Pass Rate (%)"},
+                      color_discrete_sequence=[RCM_COLORS[5]])
+        fig.update_traces(fill="tozeroy", fillcolor="rgba(14,165,233,0.07)", line_width=2.5)
+        fig.add_hline(y=85, line_dash="dash", line_color="#10B981", annotation_text="Target: 85%",
+                      annotation_font_color="#10B981")
+        fig.update_layout(height=300, margin=dict(t=30, b=30), plot_bgcolor="rgba(248,250,252,0.5)")
         st.plotly_chart(fig, theme="streamlit", width="stretch")
 
     # Denial details table
@@ -999,8 +1116,10 @@ with tab4:
                      text="% of Total",
                      color="Bucket",
                      color_discrete_sequence=["#10B981","#F59E0B","#F97316","#EF4444","#991B1B"])
-        fig.update_traces(texttemplate="%{text:.1f}%", textposition="outside")
-        fig.update_layout(height=400, margin=dict(t=30, b=30), showlegend=False)
+        fig.update_traces(texttemplate="%{text:.1f}%", textposition="outside",
+                          marker_line_width=0, opacity=0.92)
+        fig.update_layout(height=400, margin=dict(t=30, b=30), showlegend=False,
+                          plot_bgcolor="rgba(248,250,252,0.5)")
         st.plotly_chart(fig, theme="streamlit", width="stretch")
 
     with col_right:
@@ -1023,9 +1142,9 @@ with tab4:
                    name="Days in A/R", line=dict(color=RCM_COLORS[3], width=3)),
         secondary_y=True,
     )
-    fig.add_hline(y=35, line_dash="dash", line_color="green", secondary_y=True,
-                  annotation_text="Target: 35 days")
-    fig.update_layout(height=400, margin=dict(t=30, b=30))
+    fig.add_hline(y=35, line_dash="dash", line_color="#10B981", secondary_y=True,
+                  annotation_text="Target: 35 days", annotation_font_color="#10B981")
+    fig.update_layout(height=400, margin=dict(t=30, b=30), plot_bgcolor="rgba(248,250,252,0.5)")
     fig.update_yaxes(title_text="A/R Balance ($)", secondary_y=False)
     fig.update_yaxes(title_text="Days in A/R", secondary_y=True)
     st.plotly_chart(fig, theme="streamlit", width="stretch")
@@ -1044,12 +1163,14 @@ with tab4:
     cf["Net Cash Flow"] = cf["Payments"] - cf["Charges"]
 
     fig = go.Figure()
-    fig.add_trace(go.Bar(x=cf["Month"], y=cf["Charges"], name="Charges", marker_color=RCM_COLORS[0]))
-    fig.add_trace(go.Bar(x=cf["Month"], y=cf["Payments"], name="Payments", marker_color=RCM_COLORS[1]))
+    fig.add_trace(go.Bar(x=cf["Month"], y=cf["Charges"], name="Charges",
+                         marker_color=RCM_COLORS[0], marker_line_width=0, opacity=0.85))
+    fig.add_trace(go.Bar(x=cf["Month"], y=cf["Payments"], name="Payments",
+                         marker_color=RCM_COLORS[1], marker_line_width=0, opacity=0.85))
     fig.add_trace(go.Scatter(x=cf["Month"], y=cf["Net Cash Flow"], name="Net Cash Flow",
-                             line=dict(color=RCM_COLORS[3], width=2, dash="dot")))
+                             line=dict(color=RCM_COLORS[3], width=2.5, dash="dot")))
     fig.update_layout(barmode="group", height=400, margin=dict(t=30, b=30),
-                      yaxis_title="Amount ($)")
+                      yaxis_title="Amount ($)", plot_bgcolor="rgba(248,250,252,0.5)")
     st.plotly_chart(fig, theme="streamlit", width="stretch")
 
     # A/R aging table
