@@ -704,22 +704,6 @@ with tab1:
     # KPIs are pre-computed above the tabs so the sidebar alert system
     # can reference them without issuing duplicate database queries.
 
-    # ── Alert Banner ─────────────────────────────────────────────────
-    if _active_alerts:
-        with st.container(border=True):
-            st.markdown(f"### 🔔 {len(_active_alerts)} Active KPI Alert{'s' if len(_active_alerts) > 1 else ''}")
-            cols_alert = st.columns(min(len(_active_alerts), 4))
-            for i, (_kpi, _val, _thresh) in enumerate(_active_alerts):
-                with cols_alert[i % len(cols_alert)]:
-                    st.markdown(
-                        f'<div class="alert-card">'
-                        f'<p class="alert-card-title">⚠ {_kpi}</p>'
-                        f'<p class="alert-card-value">{_val}</p>'
-                        f'<p class="alert-card-thresh">Threshold: {_thresh}</p>'
-                        f'</div>',
-                        unsafe_allow_html=True,
-                    )
-
     # Top-level KPI cards — shadcn ui.metric_card for polished design
     col1, col2, col3, col4 = st.columns(4)
     with col1:
