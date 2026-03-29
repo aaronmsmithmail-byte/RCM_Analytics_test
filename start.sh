@@ -34,14 +34,13 @@ pip install -q -r requirements.txt
 # ── Generate sample data and initialize DB (BEFORE Docker) ───
 # The DuckDB file must be fully built before Cube starts, because
 # Cube will hold a write lock on the database file.
-if [ ! -f "data/rcm_analytics.db" ]; then
-    echo "🗄️  Generating sample data..."
-    python generate_sample_data.py
-    echo "🗄️  Initializing DuckDB database (medallion architecture)..."
-    python -m src.database
-else
-    echo "🗄️  Database already exists — skipping data generation"
-fi
+# Always regenerate so pipeline_runs timestamps stay fresh and the
+# Data Pipeline sidebar panel shows 🟢 instead of 🟡/🔴.
+echo "🗄️  Generating sample data..."
+rm -f data/rcm_analytics.db
+python generate_sample_data.py
+echo "🗄️  Initializing DuckDB database (medallion architecture)..."
+python -m src.database
 
 # ── Launch Docker services (unless --local flag) ─────────────
 if [ "$1" != "--local" ]; then
