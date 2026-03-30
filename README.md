@@ -230,6 +230,11 @@ All configuration is handled through environment variables loaded from a `.env` 
 | `OPENROUTER_MODEL` | `openai/gpt-4o-mini` | No | LLM model for the AI Assistant tab. Any model on [openrouter.ai/models](https://openrouter.ai/models) works. |
 | `AI_MAX_ROWS` | `100` | No | Maximum rows the AI tool returns per SQL query. Lower to reduce token cost; raise for wider result sets (min 10). |
 | `AI_MAX_ITERATIONS` | `8` | No | Maximum tool-call loop iterations per AI turn — one iteration = one SQL query + one LLM round-trip (min 1). |
+| `CUBE_API_URL` | `http://localhost:4000/cubejs-api/v1` | No | REST API URL for the Cube semantic layer. Metrics route through Cube when available; falls back to raw DuckDB SQL otherwise. |
+| `CUBE_API_SECRET` | `change_me_before_deploying` | No | Shared secret used to sign Cube JWT tokens. Use a strong random value in production (`openssl rand -hex 32`). |
+| `NEO4J_URI` | `bolt://localhost:7687` | No | Bolt connection URI for the Neo4j knowledge graph. Falls back to DuckDB `meta_kg_*` tables when unavailable. |
+| `NEO4J_USER` | `neo4j` | No | Neo4j username. |
+| `NEO4J_PASSWORD` | `change_me_before_deploying` | No | Neo4j password. Use a strong value in production. |
 | `RCM_DB_PATH` | `./data/rcm_analytics.db` | No | Path to the DuckDB database file. Override for Docker volume mounts or shared network paths. |
 | `RCM_DATA_DIR` | `./data/` | No | Directory containing the CSV source files. Used by `generate_sample_data.py` and the ETL pipeline. |
 | `STREAMLIT_SERVER_PORT` | `8501` | No | Port the Streamlit server listens on. Standard Streamlit env var. |
