@@ -385,7 +385,9 @@ def render_data_lineage():
     """Medallion Architecture data lineage from CSV sources to the dashboard."""
     st.title("Data Lineage — Medallion Architecture")
     st.caption(
-        "Three-layer medallion pipeline: "
+        "End-to-end data pipeline: "
+        "**Source Systems** (EHR, Clearinghouse, Payer Master …) → "
+        "**CSV files** (raw export) → "
         "**Bronze** (raw ingestion) → **Silver** (clean & typed) → "
         "**Gold** (pre-aggregated KPI views) → Dashboard."
     )
@@ -418,12 +420,34 @@ def render_data_lineage():
     )
     _csv_source = {} if _ss_df.empty else dict(zip(_ss_df["entity_id"], _ss_df["source_system"]))
 
+    def _sanitize_ss_id(name: str) -> str:
+        return "ss_" + name.replace(" ", "_").replace("/", "_").replace("&", "and")
+
+    _unique_ss: dict[str, str] = {}   # display_name → node_id
+    for _t in TABLE_ORDER:
+        _sname = _csv_source.get(_t, "")
+        if _sname and _sname not in _unique_ss:
+            _unique_ss[_sname] = _sanitize_ss_id(_sname)
+
+    _ss_fallback = not bool(_unique_ss)
+    if _ss_fallback:
+        _unique_ss = {"Source Systems": "ss_Source_Systems"}
+
     dot = graphviz.Digraph("lineage", format="svg")
     dot.attr(rankdir="LR", bgcolor="white", fontname="Helvetica",
              nodesep="0.25", ranksep="1.2", splines="polyline")
     dot.attr("node", fontname="Helvetica", fontsize="10", style="filled",
              penwidth="1.5")
     dot.attr("edge", arrowsize="0.7", color="#888888")
+
+    # ── Source Systems cluster ───────────────────────────────────────
+    with dot.subgraph(name="cluster_source_systems") as c:
+        c.attr(label="SOURCE SYSTEMS", style="rounded",
+               color="#2d6a4f", fontcolor="#1b4332", fontsize="11",
+               bgcolor="#f0faf4", penwidth="1.5")
+        for _sname, _nid in _unique_ss.items():
+            c.node(_nid, label=_sname,
+                   shape="component", fillcolor="#d8f3dc", color="#2d6a4f")
 
     # ── CSV Source cluster ───────────────────────────────────────────
     with dot.subgraph(name="cluster_csv") as c:
@@ -485,6 +509,14 @@ def render_data_lineage():
             c.node(safe_id, label=tab_label,
                    shape="tab", fillcolor="#fce4ec", color="#f66d9b")
 
+    # ── Edges: Source Systems → CSV ─────────────────────────────────
+    if not _ss_fallback:
+        for t in TABLE_ORDER:
+            sname = _csv_source.get(t, "")
+            if sname and sname in _unique_ss:
+                dot.edge(_unique_ss[sname], f"csv_{t}",
+                         color="#2d6a4f88", style="dashed")
+
     # ── Edges: CSV → Bronze → Silver ────────────────────────────────
     for t in TABLE_ORDER:
         dot.edge(f"csv_{t}", f"bronze_{t}", color="#5b8dee88", style="dashed")
@@ -538,6 +570,16 @@ def render_data_lineage():
     # ── Medallion pipeline stages table ───────────────────────────────
     st.subheader("Medallion Pipeline Stages")
     pipeline_table = [
+        {
+            "Layer":       "Source",
+            "Stage":       "0. Source Systems",
+            "Component":   "EHR, Clearinghouse, Payer Master, Billing System, ERP/Finance",
+            "Input":       "—",
+            "Output":      "Raw data exports → CSV files",
+            "Description": "Operational systems that originate patient, payer, charge, and "
+                           "payment data. Each exports one or more CSV files into the "
+                           "data/ directory.",
+        },
         {
             "Layer":       "Source",
             "Stage":       "1. CSV Ingest",
