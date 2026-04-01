@@ -1,12 +1,12 @@
 ---
-description: "Comprehensive PR review using specialized agents"
+description: "PR review using specialized agents — the single PR review command"
 argument-hint: "[review-aspects]"
 allowed-tools: ["Bash", "Glob", "Grep", "Read", "Task"]
 ---
 
-# Comprehensive PR Review
+# PR Review
 
-Run a comprehensive pull request review using multiple specialized agents, each focusing on a different aspect of code quality.
+Run a pull request review using multiple specialized agents, each focusing on a different aspect of code quality. This is the only PR review command — use it after pushing to a branch.
 
 **Review Aspects (optional):** "$ARGUMENTS"
 
