@@ -2,7 +2,7 @@
 Metadata Pages for Healthcare RCM Analytics Dashboard
 ======================================================
 
-This module contains five supplemental pages accessible from the sidebar:
+This module contains six supplemental pages accessible from the sidebar:
   - Data Catalog        : Searchable table of all 23 KPIs + 10 data tables
   - Data Lineage        : DAG showing the full pipeline from CSV to dashboard
   - Knowledge Graph     : Entity-relationship diagram of the 10 data entities
@@ -10,6 +10,8 @@ This module contains five supplemental pages accessible from the sidebar:
   - AI Architecture     : Process diagram — how the AI chat tab uses the
                           semantic layer, knowledge graph, and SQL tool loop
                           to answer natural-language RCM questions
+  - Business Processes  : Revenue cycle process map with decision points
+                          and live KPI annotations at each step
 
 Each render_*() function is called from app.py based on st.session_state["active_page"].
 """
@@ -1248,4 +1250,469 @@ def render_data_validation(issues: list[dict]):
         },
     ])
     st.dataframe(checks_ref, use_container_width=True, hide_index=True)
+
+
+# ===========================================================================
+# BUSINESS PROCESSES — Revenue Cycle Process Map
+# ===========================================================================
+
+def _fetch_process_kpis() -> dict:
+    """Fetch live KPI values for each revenue cycle process step.
+
+    Returns a dict of metric_name → value (or None if unavailable).
+    Each query is wrapped individually so one failure doesn't block the rest.
+    """
+    def _val(sql):
+        df = _query_meta(sql)
+        if df.empty:
+            return None
+        v = df.iloc[0, 0]
+        if v is None:
+            return None
+        if isinstance(v, float) and (v != v):  # NaN
+            return None
+        return v
+
+    return {
+        "encounter_count": _val(
+            "SELECT COUNT(*) FROM silver_encounters"
+        ),
+        "patient_count": _val(
+            "SELECT COUNT(DISTINCT patient_id) FROM silver_encounters"
+        ),
+        "charge_lag_days": _val(
+            "SELECT ROUND(AVG(date_diff('day', CAST(service_date AS DATE), "
+            "CAST(post_date AS DATE))), 1) "
+            "FROM silver_charges "
+            "WHERE service_date IS NOT NULL AND post_date IS NOT NULL"
+        ),
+        "clean_claim_rate": _val(
+            "SELECT ROUND(100.0 "
+            "* SUM(CASE WHEN is_clean_claim = 1 THEN 1 ELSE 0 END) "
+            "/ NULLIF(COUNT(*), 0), 1) FROM silver_claims"
+        ),
+        "total_claims": _val(
+            "SELECT COUNT(*) FROM silver_claims"
+        ),
+        "first_pass_rate": _val(
+            "SELECT ROUND(100.0 "
+            "* SUM(CASE WHEN claim_status = 'Paid' THEN 1 ELSE 0 END) "
+            "/ NULLIF(COUNT(*), 0), 1) FROM silver_claims"
+        ),
+        "gcr": _val(
+            "SELECT ROUND(100.0 * SUM(payment_amount) "
+            "/ NULLIF((SELECT SUM(charge_amount) FROM silver_charges), 0), 1) "
+            "FROM silver_payments"
+        ),
+        "payment_accuracy": _val(
+            "SELECT ROUND(100.0 "
+            "* SUM(CASE WHEN is_accurate_payment = 1 THEN 1 ELSE 0 END) "
+            "/ NULLIF(COUNT(*), 0), 1) FROM silver_payments"
+        ),
+        "denial_rate": _val(
+            "SELECT ROUND(100.0 "
+            "* SUM(CASE WHEN claim_status IN ('Denied', 'Appealed') "
+            "THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0), 1) FROM silver_claims"
+        ),
+        "appeal_success_rate": _val(
+            "SELECT ROUND(100.0 "
+            "* SUM(CASE WHEN appeal_status = 'Won' THEN 1 ELSE 0 END) "
+            "/ NULLIF(COUNT(*), 0), 1) "
+            "FROM silver_denials "
+            "WHERE appeal_status IS NOT NULL AND TRIM(appeal_status) != '' "
+            "AND appeal_status != 'Not Appealed'"
+        ),
+        "days_in_ar": _val(
+            "WITH ar AS ( "
+            "  SELECT SUM(c.charge_amount) AS total_charges, "
+            "    COALESCE((SELECT SUM(payment_amount) FROM silver_payments), 0) AS total_pay, "
+            "    COALESCE((SELECT SUM(adjustment_amount) FROM silver_adjustments), 0) AS total_adj, "
+            "    date_diff('day', MIN(CAST(c.service_date AS DATE)), "
+            "                     MAX(CAST(c.service_date AS DATE))) + 1 AS period_days "
+            "  FROM silver_charges c "
+            ") "
+            "SELECT ROUND((total_charges - total_pay - total_adj) "
+            "  / NULLIF(total_charges / GREATEST(period_days, 1), 0), 0) "
+            "FROM ar"
+        ),
+        "patient_resp_rate": _val(
+            "SELECT ROUND(100.0 "
+            "* SUM(CASE WHEN allowed_amount > payment_amount AND allowed_amount > 0 "
+            "    THEN allowed_amount - payment_amount ELSE 0 END) "
+            "/ NULLIF(SUM(CASE WHEN allowed_amount > 0 "
+            "    THEN allowed_amount END), 0), 1) "
+            "FROM silver_payments"
+        ),
+        "underpayment_rate": _val(
+            "SELECT ROUND(100.0 "
+            "* SUM(CASE WHEN allowed_amount > payment_amount AND allowed_amount > 0 "
+            "    THEN 1 ELSE 0 END) "
+            "/ NULLIF(COUNT(*), 0), 1) "
+            "FROM silver_payments WHERE allowed_amount > 0"
+        ),
+    }
+
+
+def _kpi_str(val, suffix=""):
+    """Format a single KPI value for display in a diagram node."""
+    if val is None:
+        return "\u2014"  # em-dash
+    if isinstance(val, float):
+        if abs(val) >= 1_000_000:
+            return f"${val / 1_000_000:,.1f}M{suffix}"
+        if val == int(val) and abs(val) < 100_000:
+            return f"{int(val):,}{suffix}"
+        return f"{val:,.1f}{suffix}"
+    if isinstance(val, int):
+        return f"{val:,}{suffix}"
+    return str(val)
+
+
+# ── Process step reference data ──────────────────────────────────────
+_PROCESS_STEPS = [
+    {
+        "Step": "1. Patient Access",
+        "Description": "Patient scheduling, registration, insurance verification, and eligibility checks",
+        "Key Metrics": "Encounter Volume, Payer Mix",
+        "Dashboard Tab(s)": "Payer Analysis, Patient Responsibility",
+    },
+    {
+        "Step": "2. Charge Capture & Coding",
+        "Description": "Clinical documentation, CPT/ICD-10 coding, and charge entry",
+        "Key Metrics": "Charge Lag, Avg Charge per Encounter",
+        "Dashboard Tab(s)": "CPT Code Analysis",
+    },
+    {
+        "Step": "3. Claim Scrubbing",
+        "Description": "Automated edit checks, compliance validation, and clean claim verification",
+        "Key Metrics": "Clean Claim Rate, Scrubbing Fail Reasons",
+        "Dashboard Tab(s)": "Claims & Denials",
+    },
+    {
+        "Step": "4. Claims Submission",
+        "Description": "Electronic transmission to payers via clearinghouse",
+        "Key Metrics": "Total Claims, First-Pass Resolution Rate",
+        "Dashboard Tab(s)": "Claims & Denials",
+    },
+    {
+        "Step": "5. Payment Posting",
+        "Description": "ERA/EOB processing, payment matching, and remittance reconciliation",
+        "Key Metrics": "Gross Collection Rate, Payment Accuracy Rate",
+        "Dashboard Tab(s)": "Collections & Revenue",
+    },
+    {
+        "Step": "6. Denial Management",
+        "Description": "Denial root cause analysis, appeal preparation, and claim resubmission",
+        "Key Metrics": "Denial Rate, Appeal Success Rate",
+        "Dashboard Tab(s)": "Claims & Denials",
+    },
+    {
+        "Step": "7. A/R Follow-Up",
+        "Description": "Aging workqueue management, payer follow-up, and outstanding balance resolution",
+        "Key Metrics": "Days in A/R, A/R Aging Buckets",
+        "Dashboard Tab(s)": "A/R Aging & Cash Flow",
+    },
+    {
+        "Step": "8. Patient Collections",
+        "Description": "Patient statements, payment plans, and self-pay management",
+        "Key Metrics": "Patient Responsibility Rate",
+        "Dashboard Tab(s)": "Patient Responsibility",
+    },
+    {
+        "Step": "9. Underpayment Recovery",
+        "Description": "Contract variance analysis and payer underpayment identification",
+        "Key Metrics": "Underpayment Rate, Recovery Opportunity $",
+        "Dashboard Tab(s)": "Underpayment Analysis",
+    },
+    {
+        "Step": "10. Reporting & Analytics",
+        "Description": "KPI monitoring, trend analysis, forecasting, and operational optimization",
+        "Key Metrics": "All KPIs, Forecast Projections",
+        "Dashboard Tab(s)": "Executive Summary, Forecasting",
+    },
+]
+
+
+def render_business_processes():
+    """Revenue Cycle business process map with live KPI annotations."""
+    st.title("Business Processes")
+    st.caption(
+        "Revenue cycle management process map \u2014 each step shows live "
+        "performance metrics and links to the dashboard tabs that measure it"
+    )
+
+    # ── Fetch live KPIs ─────────────────────────────────────────────
+    kpis = _fetch_process_kpis()
+
+    # ── Process Map Diagram ─────────────────────────────────────────
+    st.subheader("Revenue Cycle Process Map")
+
+    # -- Colour palette --
+    _BLUE = "#bbdefb"       # Front-end (patient access, charge capture)
+    _GREEN = "#c8e6c9"      # Mid-cycle (scrubbing, submission)
+    _ORANGE = "#ffe0b2"     # Back-end (payment, denial, A/R)
+    _PURPLE = "#e1bee7"     # Patient-facing (collections)
+    _YELLOW = "#fff9c4"     # Decision diamonds
+    _RED_LIGHT = "#ffcdd2"  # Rework / exception
+    _GRAY = "#e0e0e0"       # Terminal / write-off
+    _TEAL = "#b2dfdb"       # Reporting / analytics
+
+    dot = graphviz.Digraph("rcm_process", format="svg")
+    dot.attr(
+        rankdir="TB",
+        bgcolor="white",
+        fontname="Helvetica",
+        nodesep="0.5",
+        ranksep="0.7",
+        pad="0.4",
+    )
+    dot.attr("node", fontname="Helvetica", fontsize="10", margin="0.15,0.08")
+    dot.attr("edge", fontname="Helvetica", fontsize="9", color="#555555")
+
+    # -- Helper to build a process node with KPI annotation --
+    def _proc(node_id, label, kpi_text, color, **kwargs):
+        full_label = f"{label}\\n\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\\n{kpi_text}"
+        dot.node(
+            node_id, full_label,
+            shape="box", style="filled,rounded", fillcolor=color,
+            width="2.4", **kwargs,
+        )
+
+    def _decision(node_id, label):
+        dot.node(
+            node_id, label,
+            shape="diamond", style="filled", fillcolor=_YELLOW,
+            width="1.3", height="0.9", fontsize="9",
+        )
+
+    # ── Process Nodes ───────────────────────────────────────────────
+
+    # Front-end
+    _proc(
+        "patient_access", "Patient Access",
+        f"{_kpi_str(kpis.get('encounter_count'))} encounters  |  "
+        f"{_kpi_str(kpis.get('patient_count'))} patients",
+        _BLUE,
+    )
+    _proc(
+        "charge_capture", "Charge Capture & Coding",
+        f"Charge Lag: {_kpi_str(kpis.get('charge_lag_days'))} days",
+        _BLUE,
+    )
+
+    # Mid-cycle
+    _proc(
+        "claim_scrubbing", "Claim Scrubbing",
+        f"Clean Claim Rate: {_kpi_str(kpis.get('clean_claim_rate'))}%",
+        _GREEN,
+    )
+    _proc(
+        "claims_submission", "Claims Submission",
+        f"{_kpi_str(kpis.get('total_claims'))} claims  |  "
+        f"First-Pass: {_kpi_str(kpis.get('first_pass_rate'))}%",
+        _GREEN,
+    )
+    dot.node(
+        "payer_adjudication", "Payer Adjudication\\n(Insurance Review & Pricing)",
+        shape="box", style="filled,rounded", fillcolor=_GREEN, width="2.4",
+    )
+
+    # Back-end
+    _proc(
+        "payment_posting", "Payment Posting",
+        f"GCR: {_kpi_str(kpis.get('gcr'))}%  |  "
+        f"Accuracy: {_kpi_str(kpis.get('payment_accuracy'))}%",
+        _ORANGE,
+    )
+    _proc(
+        "denial_mgmt", "Denial Management",
+        f"Denial Rate: {_kpi_str(kpis.get('denial_rate'))}%  |  "
+        f"Appeal Win: {_kpi_str(kpis.get('appeal_success_rate'))}%",
+        _ORANGE,
+    )
+    _proc(
+        "ar_followup", "A/R Follow-Up",
+        f"Days in A/R: {_kpi_str(kpis.get('days_in_ar'))}",
+        _ORANGE,
+    )
+    _proc(
+        "underpayment_recovery", "Underpayment Recovery",
+        f"Underpayment Rate: {_kpi_str(kpis.get('underpayment_rate'))}%",
+        _ORANGE,
+    )
+
+    # Patient-facing
+    _proc(
+        "patient_collections", "Patient Collections",
+        f"Patient Resp: {_kpi_str(kpis.get('patient_resp_rate'))}%",
+        _PURPLE,
+    )
+
+    # Rework & terminal
+    dot.node(
+        "rework", "Rework & Correct\\n(Fix Errors)",
+        shape="box", style="filled,rounded", fillcolor=_RED_LIGHT, width="1.8",
+    )
+    dot.node(
+        "write_off", "Write-Off",
+        shape="box", style="filled,rounded", fillcolor=_GRAY, width="1.4",
+    )
+    dot.node(
+        "revenue_complete", "Revenue\\nRecognized",
+        shape="doubleoctagon", style="filled", fillcolor="#a5d6a7",
+        width="1.6", fontsize="11",
+    )
+    _proc(
+        "reporting", "Reporting & Analytics",
+        "Executive Summary  |  Forecasting",
+        _TEAL,
+    )
+
+    # ── Decision Points ─────────────────────────────────────────────
+    _decision("d_clean", "Clean\\nClaim?")
+    _decision("d_result", "Payer\\nDecision?")
+    _decision("d_accuracy", "Paid\\nCorrectly?")
+    _decision("d_balance", "Patient\\nBalance?")
+    _decision("d_appeal", "Appeal?")
+
+    # ── Rank Constraints (horizontal alignment) ─────────────────────
+    with dot.subgraph() as s:
+        s.attr(rank="same")
+        s.node("payment_posting")
+        s.node("denial_mgmt")
+
+    with dot.subgraph() as s:
+        s.attr(rank="same")
+        s.node("d_accuracy")
+        s.node("d_appeal")
+
+    with dot.subgraph() as s:
+        s.attr(rank="same")
+        s.node("underpayment_recovery")
+        s.node("patient_collections")
+        s.node("write_off")
+
+    with dot.subgraph() as s:
+        s.attr(rank="same")
+        s.node("claim_scrubbing")
+        s.node("rework")
+
+    # ── Edges: Happy Path (solid, bold) ─────────────────────────────
+    _happy = {"color": "#2e7d32", "penwidth": "2"}
+    dot.edge("patient_access", "charge_capture", **_happy)
+    dot.edge("charge_capture", "claim_scrubbing", **_happy)
+    dot.edge("claim_scrubbing", "d_clean", **_happy)
+    dot.edge("d_clean", "claims_submission", label="  Yes  ", **_happy)
+    dot.edge("claims_submission", "payer_adjudication", **_happy)
+    dot.edge("payer_adjudication", "d_result", **_happy)
+    dot.edge("d_result", "payment_posting", label="  Paid  ", **_happy)
+    dot.edge("payment_posting", "d_accuracy", **_happy)
+    dot.edge("d_accuracy", "d_balance", label="  Yes  ", **_happy)
+    dot.edge("d_balance", "revenue_complete", label="  No  ", **_happy)
+
+    # ── Edges: Exception / Branch Paths ─────────────────────────────
+    _exc = {"color": "#c62828", "penwidth": "1.5", "style": "dashed"}
+    _branch = {"color": "#e65100", "penwidth": "1.5"}
+
+    # Dirty claim → rework → back to scrubbing
+    dot.edge("d_clean", "rework", label="  No  ", **_exc)
+    dot.edge(
+        "rework", "claim_scrubbing",
+        label="  Correct & Resubmit  ", style="dashed", color="#c62828",
+        constraint="false",
+    )
+
+    # Denied → denial management
+    dot.edge("d_result", "denial_mgmt", label="  Denied  ", **_branch)
+    dot.edge("denial_mgmt", "d_appeal", **_branch)
+    dot.edge(
+        "d_appeal", "claims_submission",
+        label="  Yes  ", style="dashed", color="#e65100",
+        constraint="false",
+    )
+    dot.edge("d_appeal", "write_off", label="  No  ", color="#757575")
+    dot.edge("write_off", "revenue_complete", color="#757575")
+
+    # Underpaid → underpayment recovery → A/R follow-up
+    dot.edge("d_accuracy", "underpayment_recovery", label="  Underpaid  ", **_branch)
+    dot.edge("underpayment_recovery", "ar_followup", **_branch)
+    dot.edge("ar_followup", "revenue_complete", **_branch)
+
+    # Patient balance → patient collections
+    dot.edge("d_balance", "patient_collections", label="  Yes  ", **_branch)
+    dot.edge("patient_collections", "revenue_complete", **_branch)
+
+    # Reporting (connected from revenue complete)
+    dot.edge("revenue_complete", "reporting", style="dotted", color="#00695c", penwidth="1.5")
+
+    st.graphviz_chart(dot, use_container_width=True)
+
+    # ── Diagram Legend ──────────────────────────────────────────────
+    with st.expander("Diagram Legend"):
+        legend_cols = st.columns(4)
+        with legend_cols[0]:
+            st.markdown(
+                "**Node Colours**\n"
+                "- :blue[Blue] \u2014 Front-end (access, coding)\n"
+                "- :green[Green] \u2014 Claims processing\n"
+                "- :orange[Orange] \u2014 Back-end (payment, A/R)\n"
+                "- :violet[Purple] \u2014 Patient-facing"
+            )
+        with legend_cols[1]:
+            st.markdown(
+                "**Shapes**\n"
+                "- Rounded box \u2014 Process step\n"
+                "- Diamond \u2014 Decision point\n"
+                "- Double octagon \u2014 Terminal state"
+            )
+        with legend_cols[2]:
+            st.markdown(
+                "**Edge Styles**\n"
+                "- Solid green \u2014 Happy path\n"
+                "- Dashed red \u2014 Rework loop\n"
+                "- Solid orange \u2014 Exception branch"
+            )
+        with legend_cols[3]:
+            st.markdown(
+                "**KPI Values**\n"
+                "- Shown below each step name\n"
+                "- Pulled live from Silver layer\n"
+                "- \u2014 = data unavailable"
+            )
+
+    # ── Current Performance by Process Step ─────────────────────────
+    st.divider()
+    st.subheader("Current Performance by Process Step")
+
+    perf_cols = st.columns(4)
+    with perf_cols[0]:
+        st.metric("Encounters", _kpi_str(kpis.get("encounter_count")))
+        st.metric("Clean Claim Rate", f"{_kpi_str(kpis.get('clean_claim_rate'))}%")
+        st.metric("Charge Lag", f"{_kpi_str(kpis.get('charge_lag_days'))} days")
+    with perf_cols[1]:
+        st.metric("Total Claims", _kpi_str(kpis.get("total_claims")))
+        st.metric("First-Pass Rate", f"{_kpi_str(kpis.get('first_pass_rate'))}%")
+        st.metric("Denial Rate", f"{_kpi_str(kpis.get('denial_rate'))}%")
+    with perf_cols[2]:
+        st.metric("Gross Collection Rate", f"{_kpi_str(kpis.get('gcr'))}%")
+        st.metric("Payment Accuracy", f"{_kpi_str(kpis.get('payment_accuracy'))}%")
+        st.metric("Appeal Success Rate", f"{_kpi_str(kpis.get('appeal_success_rate'))}%")
+    with perf_cols[3]:
+        st.metric("Days in A/R", _kpi_str(kpis.get("days_in_ar")))
+        st.metric("Patient Resp. Rate", f"{_kpi_str(kpis.get('patient_resp_rate'))}%")
+        st.metric("Underpayment Rate", f"{_kpi_str(kpis.get('underpayment_rate'))}%")
+
+    # ── Process Step Reference Table ────────────────────────────────
+    st.divider()
+    st.subheader("Process Step Reference")
+    st.markdown(
+        "Each step in the revenue cycle maps to specific dashboard tabs and "
+        "KPI metrics. Use this table to navigate from a business process "
+        "question to the right analytics view."
+    )
+    st.dataframe(
+        pd.DataFrame(_PROCESS_STEPS),
+        use_container_width=True,
+        hide_index=True,
+    )
 

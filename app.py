@@ -88,8 +88,9 @@ from src.ai_chat import (  # AI Assistant tab backend
 )
 from src.backlog_page import render_feature_backlog
 from src.data_loader import load_all_data  # Loads all tables from DuckDB
-from src.metadata_pages import (  # Five supplemental metadata pages
+from src.metadata_pages import (  # Six supplemental metadata pages
     render_ai_architecture,
+    render_business_processes,
     render_data_catalog,
     render_data_lineage,
     render_data_validation,
@@ -627,6 +628,8 @@ if st.sidebar.button("Semantic Layer", width="stretch"):
     st.session_state["active_page"] = "semantic_layer"
 if st.sidebar.button("AI Architecture", width="stretch"):
     st.session_state["active_page"] = "ai_architecture"
+if st.sidebar.button("Business Processes", width="stretch"):
+    st.session_state["active_page"] = "business_processes"
 if st.sidebar.button("Data Validation", width="stretch"):
     st.session_state["active_page"] = "data_validation"
 
@@ -650,6 +653,9 @@ elif _active == "semantic_layer":
     st.stop()
 elif _active == "ai_architecture":
     render_ai_architecture()
+    st.stop()
+elif _active == "business_processes":
+    render_business_processes()
     st.stop()
 elif _active == "data_validation":
     render_data_validation(_validation_issues)

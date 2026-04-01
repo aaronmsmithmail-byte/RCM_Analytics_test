@@ -56,10 +56,12 @@ Implement against the approved plan:
 2. **Follow standards** from `.claude/skills/standards.md` — naming, types, patterns
 3. **Update TodoWrite** — mark each task as in_progress → completed
 4. **Write tests** alongside the code (not as an afterthought)
-5. **Update documentation** as you go:
-   - CLAUDE.md test counts
-   - README if dependencies/setup/architecture changed
+5. **Update documentation and metadata** as you go:
+   - CLAUDE.md test counts and module descriptions
+   - README: tab count, metadata page count, test count, dependencies, setup
    - .env.example if new env vars added
+   - Metadata pages in `src/metadata_pages.py` if the change affects data lineage, knowledge graph, semantic layer, or business process flow
+   - `_TABLE_CATALOG` and `_KG_NODES` in `metadata_pages.py` if new tables/entities added
 
 ---
 
@@ -93,11 +95,14 @@ Pass criteria: Zero violations. Run `ruff check --fix` for auto-fixable issues.
 3. New `query_*` functions need at least 2 tests (per CLAUDE.md)
 4. New public functions need at least 1 test
 
-### Gate 4: Documentation Current
+### Gate 4: Documentation & Metadata Current
 
 1. CLAUDE.md test count matches actual `pytest tests/ -q | tail -1`
-2. If `requirements.txt` changed, README Dependencies table is updated
-3. If new `os.environ.get()` calls added, they're in `.env.example`
+2. README test count, tab count, and metadata page count are all current
+3. If `requirements.txt` changed, README Dependencies table is updated
+4. If new `os.environ.get()` calls added, they're in `.env.example`
+5. If new tables/entities added: `_TABLE_CATALOG`, `_KG_NODES`, and lineage diagram in `metadata_pages.py` are updated
+6. If new KPIs/tabs added: Business Processes page reference table and Data Catalog are consistent
 
 ### Gate 5: Standards Compliance
 

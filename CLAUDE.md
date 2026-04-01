@@ -23,7 +23,7 @@ CSV files → Bronze (raw TEXT) → Silver (typed + FK) → Gold (aggregated vie
 | `src/metrics.py` | All 26 `query_*` KPI functions + `FilterParams` dataclass (Cube → DuckDB fallback) |
 | `src/cube_client.py` | Cube REST API client — semantic metadata + metric queries |
 | `src/neo4j_client.py` | Neo4j Cypher client — knowledge graph nodes + edges |
-| `src/metadata_pages.py` | Five sidebar metadata pages — sourced from Cube/Neo4j with DuckDB fallback |
+| `src/metadata_pages.py` | Six sidebar metadata pages — sourced from Cube/Neo4j with DuckDB fallback |
 | `src/ai_chat.py` | AI tab backend: `build_system_prompt()`, `execute_sql_tool()`, `run_agentic_turn()` |
 | `src/validators.py` | SQL COUNT-based data quality assertions |
 | `app.py` | Streamlit app: 12 tabs + sidebar + metadata page router |
@@ -115,6 +115,16 @@ When you modify any of these, the listed pages/features update on the next page 
 - If you add a new model option, add it to `AVAILABLE_MODELS` in `ai_chat.py`
 - The system prompt is built dynamically — no manual updates needed when the meta_* tables change
 
+### Adding a New Metadata Page
+
+1. Add `render_*()` function to `src/metadata_pages.py`
+2. Import it in `app.py`
+3. Add a sidebar button in `app.py` (Metadata section)
+4. Add routing in the page router in `app.py`
+5. Update `README.md`: change metadata page count in Overview paragraph, add description to Metadata Pages section
+6. Update `CLAUDE.md`: change metadata page count in Key modules table
+7. Update module docstring at top of `metadata_pages.py`
+
 ### Updating the README
 
 Update `README.md` whenever:
@@ -123,6 +133,7 @@ Update `README.md` whenever:
 - Test count changes (Running Tests section — verify with `pytest tests/ -q | tail -1`)
 - A new dependency is added (`requirements.txt` → Dependencies table in README)
 - Setup steps change
+- KPI count changes (Metrics Reference intro + table)
 
 ---
 
