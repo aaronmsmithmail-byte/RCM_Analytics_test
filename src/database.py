@@ -56,6 +56,7 @@ import pandas as pd
 # overrides are picked up even when database.py is the first module imported.
 try:
     from dotenv import load_dotenv
+
     load_dotenv()
 except ImportError:
     pass
@@ -67,12 +68,12 @@ except ImportError:
 # self-contained and portable.  Override via environment variables when
 # the database or data files live outside the project directory (e.g.
 # Docker volume mounts).  See .env.example for full documentation.
-_BASE_DIR         = os.path.dirname(os.path.dirname(__file__))
+_BASE_DIR = os.path.dirname(os.path.dirname(__file__))
 _DEFAULT_DATA_DIR = os.path.join(_BASE_DIR, "data")
-_DEFAULT_DB_PATH  = os.path.join(_DEFAULT_DATA_DIR, "rcm_analytics.db")
+_DEFAULT_DB_PATH = os.path.join(_DEFAULT_DATA_DIR, "rcm_analytics.db")
 
 DATA_DIR = os.environ.get("RCM_DATA_DIR", _DEFAULT_DATA_DIR)
-DB_PATH  = os.environ.get("RCM_DB_PATH",  _DEFAULT_DB_PATH)
+DB_PATH = os.environ.get("RCM_DB_PATH", _DEFAULT_DB_PATH)
 
 
 # ===========================================================================
@@ -664,8 +665,16 @@ CREATE TABLE IF NOT EXISTS feature_backlog (
 # existing databases migrate cleanly without manual intervention.
 # ---------------------------------------------------------------------------
 _LEGACY_TABLES = [
-    "adjustments", "denials", "payments", "claims", "charges",
-    "encounters", "patients", "providers", "operating_costs", "payers",
+    "adjustments",
+    "denials",
+    "payments",
+    "claims",
+    "charges",
+    "encounters",
+    "patients",
+    "providers",
+    "operating_costs",
+    "payers",
 ]
 
 
@@ -794,15 +803,16 @@ def persist_metadata(conn):
     conn.execute("DELETE FROM meta_kpi_catalog;")
     # Build a benchmark lookup from the README benchmarks encoded per metric
     _BENCHMARKS = {
-        "Days in A/R (DAR)":              "≤ 35 days",
-        "Net Collection Rate (NCR)":      "≥ 95%",
-        "Gross Collection Rate (GCR)":    "≥ 70%",
-        "Clean Claim Rate":               "≥ 90%",
-        "Denial Rate":                    "≤ 10%",
-        "First-Pass Resolution Rate":     "≥ 85%",
-        "Payment Accuracy Rate":          "≥ 95%",
-        "Bad Debt Rate":                  "≤ 3%",
-        "Cost to Collect":                "≤ 3%",
+        "Days in A/R (DAR)": "≤ 35 days",
+        "Net Collection Rate (NCR)": "≥ 95%",
+        "Gross Collection Rate (GCR)": "≥ 70%",
+        "Clean Claim Rate": "≥ 90%",
+        "Denial Rate": "≤ 10%",
+        "First-Pass Resolution Rate": "≥ 85%",
+        "Payment Accuracy Rate": "≥ 95%",
+        "Bad Debt Rate": "≤ 3%",
+        "Cost to Collect": "≤ 3%",
+        "Underpayment Rate": "≤ 5%",
     }
     for kpi in _KPI_CATALOG:
         conn.execute(
@@ -1007,22 +1017,29 @@ def initialize_database(db_path=None):
     # always safe to keep — they are truncated and reloaded from CSV.
     # ------------------------------------------------------------------
     _silver_tables = [
-        "silver_claims", "silver_payments", "silver_denials", "silver_adjustments",
-        "silver_encounters", "silver_charges", "silver_payers", "silver_patients",
-        "silver_providers", "silver_operating_costs",
+        "silver_claims",
+        "silver_payments",
+        "silver_denials",
+        "silver_adjustments",
+        "silver_encounters",
+        "silver_charges",
+        "silver_payers",
+        "silver_patients",
+        "silver_providers",
+        "silver_operating_costs",
     ]
     _gold_views = [
-        "gold_monthly_kpis", "gold_payer_performance", "gold_department_performance",
-        "gold_ar_aging", "gold_denial_analysis",
+        "gold_monthly_kpis",
+        "gold_payer_performance",
+        "gold_department_performance",
+        "gold_ar_aging",
+        "gold_denial_analysis",
     ]
     try:
         # Check bronze_claims (not silver) because a previous partial run may
         # have already rebuilt silver_claims with the new schema while leaving
         # bronze_claims on the old schema (missing fail_reason).
-        cur = conn.execute(
-            "SELECT column_name FROM information_schema.columns "
-            "WHERE table_name = 'bronze_claims'"
-        )
+        cur = conn.execute("SELECT column_name FROM information_schema.columns WHERE table_name = 'bronze_claims'")
         existing_cols = {row[0] for row in cur.fetchall()}
         if existing_cols and "fail_reason" not in existing_cols:
             print("Step 1b: Schema migration — removing outdated Bronze/Silver/Gold objects...")
@@ -1051,15 +1068,15 @@ def initialize_database(db_path=None):
     # ------------------------------------------------------------------
     print("Step 3: Loading CSV files into Bronze layer...")
     bronze_csv_map = [
-        ("bronze_payers",          "payers.csv"),
-        ("bronze_patients",        "patients.csv"),
-        ("bronze_providers",       "providers.csv"),
-        ("bronze_encounters",      "encounters.csv"),
-        ("bronze_charges",         "charges.csv"),
-        ("bronze_claims",          "claims.csv"),
-        ("bronze_payments",        "payments.csv"),
-        ("bronze_denials",         "denials.csv"),
-        ("bronze_adjustments",     "adjustments.csv"),
+        ("bronze_payers", "payers.csv"),
+        ("bronze_patients", "patients.csv"),
+        ("bronze_providers", "providers.csv"),
+        ("bronze_encounters", "encounters.csv"),
+        ("bronze_charges", "charges.csv"),
+        ("bronze_claims", "claims.csv"),
+        ("bronze_payments", "payments.csv"),
+        ("bronze_denials", "denials.csv"),
+        ("bronze_adjustments", "adjustments.csv"),
         ("bronze_operating_costs", "operating_costs.csv"),
     ]
     for bronze_table, csv_filename in bronze_csv_map:
@@ -1085,6 +1102,7 @@ def initialize_database(db_path=None):
     # ------------------------------------------------------------------
     try:
         from src.neo4j_client import is_neo4j_available, seed_knowledge_graph
+
         if is_neo4j_available():
             print("Step 4c: Seeding Neo4j knowledge graph...")
             if seed_knowledge_graph():
@@ -1101,7 +1119,7 @@ def initialize_database(db_path=None):
     # ------------------------------------------------------------------
     print("Step 5: Row count verification")
     print(f"  {'Table':<35} {'Bronze':>8} {'Silver':>8}")
-    print(f"  {'-'*35} {'-'*8} {'-'*8}")
+    print(f"  {'-' * 35} {'-' * 8} {'-' * 8}")
     table_names = [
         ("payers", "payers"),
         ("patients", "patients"),
@@ -1140,6 +1158,7 @@ def initialize_database(db_path=None):
 # ---------------------------------------------------------------------------
 # Utility helpers (used by data_loader and metadata pages)
 # ---------------------------------------------------------------------------
+
 
 def query_to_dataframe(sql, params=None, db_path=None):
     """
@@ -1182,8 +1201,7 @@ def get_table_info(table_name, db_path=None):
         conn.close()
 
 
-def build_filter_cte(start_date, end_date, payer_id=None,
-                     department=None, encounter_type=None):
+def build_filter_cte(start_date, end_date, payer_id=None, department=None, encounter_type=None):
     """
     Return a (cte_sql, params) pair for the filtered_claims CTE.
 

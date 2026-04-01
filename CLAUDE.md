@@ -11,7 +11,7 @@ Follow these rules whenever modifying this project.
 CSV files → Bronze (raw TEXT) → Silver (typed + FK) → Gold (aggregated views) → Dashboard
                                         ↓                        ↓
                                   Cube Semantic Layer    Neo4j Knowledge Graph
-                                  (measures/dims/joins)  (10 entities, 9 FKs)
+                                  (measures/dims/joins)  (10 entities, 11 FKs)
                                         ↓                        ↓
                                   meta_* tables (DuckDB fallback) ←→ AI Assistant
 ```

@@ -72,8 +72,11 @@ class TestBuildCubeFilters:
 
     def test_with_all_filters(self):
         filters, time_dims = build_cube_filters(
-            "2024-01-01", "2024-12-31",
-            payer_id="PYR001", department="Cardiology", encounter_type="Outpatient",
+            "2024-01-01",
+            "2024-12-31",
+            payer_id="PYR001",
+            department="Cardiology",
+            encounter_type="Outpatient",
         )
         assert len(filters) == 3
         assert len(time_dims) == 1

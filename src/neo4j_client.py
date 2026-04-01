@@ -3,7 +3,7 @@ Neo4j Knowledge Graph Client
 =============================
 
 Connects to a Neo4j instance to read the healthcare RCM entity-relationship
-knowledge graph (10 entities, 9 FK relationships).
+knowledge graph (10 entities, 11 FK relationships).
 
 Gracefully returns None when Neo4j is unavailable so the app falls back
 to DuckDB meta_kg_* tables.
@@ -19,6 +19,7 @@ import time
 
 try:
     from neo4j import GraphDatabase
+
     _HAS_NEO4J = True
 except ImportError:
     _HAS_NEO4J = False

@@ -24,4 +24,5 @@ python-dotenv>=1.0.0 # Loads .env file into environment variables
 
 # Dev / testing
 pytest>=7.0.0
+pytest-cov>=4.0.0    # Coverage measurement (used in CI and `make coverage`)
 ruff>=0.8.0          # Linter + import sorting

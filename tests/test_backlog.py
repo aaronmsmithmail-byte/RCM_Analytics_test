@@ -34,18 +34,21 @@ class TestLoadBacklog:
     def test_returns_dataframe_with_seed_data(self, db, monkeypatch):
         monkeypatch.setattr("src.database.DB_PATH", db)
         from src.backlog_page import _load_backlog
+
         df = _load_backlog()
         assert len(df) == 3  # 3 seed examples
 
     def test_returns_empty_dataframe_when_no_data(self, empty_db, monkeypatch):
         monkeypatch.setattr("src.database.DB_PATH", empty_db)
         from src.backlog_page import _load_backlog
+
         df = _load_backlog()
         assert df.empty
 
     def test_ordered_by_priority(self, db, monkeypatch):
         monkeypatch.setattr("src.database.DB_PATH", db)
         from src.backlog_page import _load_backlog
+
         df = _load_backlog()
         priorities = df["priority"].tolist()
         # Critical/High should come before Medium/Low
@@ -58,6 +61,7 @@ class TestInsertItem:
     def test_inserts_new_item(self, empty_db, monkeypatch):
         monkeypatch.setattr("src.database.DB_PATH", empty_db)
         from src.backlog_page import _insert_item, _load_backlog
+
         _insert_item("Test Feature", "A test description", "High", "Must work", "Better UX")
         df = _load_backlog()
         assert len(df) == 1
@@ -68,6 +72,7 @@ class TestInsertItem:
     def test_inserts_multiple_items(self, empty_db, monkeypatch):
         monkeypatch.setattr("src.database.DB_PATH", empty_db)
         from src.backlog_page import _insert_item, _load_backlog
+
         _insert_item("Feature 1", "Desc 1", "High", "", "")
         _insert_item("Feature 2", "Desc 2", "Low", "", "")
         df = _load_backlog()
@@ -78,6 +83,7 @@ class TestUpdateStatus:
     def test_updates_status(self, db, monkeypatch):
         monkeypatch.setattr("src.database.DB_PATH", db)
         from src.backlog_page import _load_backlog, _update_status
+
         df = _load_backlog()
         first_id = int(df.iloc[0]["id"])
         _update_status(first_id, "In Progress")
@@ -90,6 +96,7 @@ class TestDeleteItem:
     def test_deletes_item(self, db, monkeypatch):
         monkeypatch.setattr("src.database.DB_PATH", db)
         from src.backlog_page import _delete_item, _load_backlog
+
         df = _load_backlog()
         first_id = int(df.iloc[0]["id"])
         original_count = len(df)

@@ -23,6 +23,7 @@ from src.database import _etl_bronze_to_silver, create_tables
 # _parse_dates
 # ===========================================================================
 
+
 class TestParseDates:
     def test_converts_date_strings_to_datetime(self):
         df = pd.DataFrame({"dt": ["2024-01-15", "2024-06-30"]})
@@ -46,10 +47,12 @@ class TestParseDates:
         assert result.empty
 
     def test_multiple_columns(self):
-        df = pd.DataFrame({
-            "start": ["2024-01-01"],
-            "end": ["2024-12-31"],
-        })
+        df = pd.DataFrame(
+            {
+                "start": ["2024-01-01"],
+                "end": ["2024-12-31"],
+            }
+        )
         result = _parse_dates(df, ["start", "end"])
         assert pd.api.types.is_datetime64_any_dtype(result["start"])
         assert pd.api.types.is_datetime64_any_dtype(result["end"])
@@ -58,6 +61,7 @@ class TestParseDates:
 # ===========================================================================
 # _parse_booleans
 # ===========================================================================
+
 
 class TestParseBooleans:
     def test_converts_1_to_true(self):
@@ -82,6 +86,7 @@ class TestParseBooleans:
 # _validate_columns
 # ===========================================================================
 
+
 class TestValidateColumns:
     def test_valid_columns_no_error(self):
         df = pd.DataFrame({"payer_id": [], "payer_name": [], "payer_type": []})
@@ -98,8 +103,16 @@ class TestValidateColumns:
 
     def test_all_required_column_sets_defined(self):
         expected_tables = [
-            "payers", "patients", "providers", "encounters", "charges",
-            "claims", "payments", "denials", "adjustments", "operating_costs",
+            "payers",
+            "patients",
+            "providers",
+            "encounters",
+            "charges",
+            "claims",
+            "payments",
+            "denials",
+            "adjustments",
+            "operating_costs",
         ]
         for t in expected_tables:
             assert t in REQUIRED_COLUMNS, f"Missing REQUIRED_COLUMNS entry for {t}"
@@ -108,6 +121,7 @@ class TestValidateColumns:
 # ===========================================================================
 # load_all_data (integration test)
 # ===========================================================================
+
 
 class TestLoadAllData:
     @pytest.fixture
@@ -147,8 +161,18 @@ class TestLoadAllData:
 
     def test_returns_dict_with_all_tables(self, populated_db):
         data = load_all_data()
-        expected = {"payers", "patients", "providers", "encounters", "charges",
-                    "claims", "payments", "denials", "adjustments", "operating_costs"}
+        expected = {
+            "payers",
+            "patients",
+            "providers",
+            "encounters",
+            "charges",
+            "claims",
+            "payments",
+            "denials",
+            "adjustments",
+            "operating_costs",
+        }
         assert set(data.keys()) == expected
 
     def test_all_values_are_dataframes(self, populated_db):
@@ -174,6 +198,7 @@ class TestLoadAllData:
 # ===========================================================================
 # load_gold_data (integration test)
 # ===========================================================================
+
 
 class TestLoadGoldData:
     @pytest.fixture
@@ -207,8 +232,7 @@ class TestLoadGoldData:
 
     def test_returns_dict_with_all_views(self, populated_db):
         gold = load_gold_data()
-        expected = {"monthly_kpis", "payer_performance", "department_performance",
-                    "ar_aging", "denial_analysis"}
+        expected = {"monthly_kpis", "payer_performance", "department_performance", "ar_aging", "denial_analysis"}
         assert set(gold.keys()) == expected
 
     def test_all_values_are_dataframes(self, populated_db):

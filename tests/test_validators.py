@@ -88,10 +88,11 @@ def _create_tables_no_constraints(conn):
         METADATA_SCHEMA_SQL,
         SILVER_SCHEMA_SQL,
     )
+
     # Remove FOREIGN KEY clauses, PRIMARY KEY, and NOT NULL from Silver schema
-    silver_relaxed = re.sub(r',?\s*FOREIGN KEY\s*\([^)]*\)\s*REFERENCES\s*\w+\([^)]*\)', '', SILVER_SCHEMA_SQL)
-    silver_relaxed = silver_relaxed.replace(' PRIMARY KEY', '')
-    silver_relaxed = silver_relaxed.replace(' NOT NULL', '')
+    silver_relaxed = re.sub(r",?\s*FOREIGN KEY\s*\([^)]*\)\s*REFERENCES\s*\w+\([^)]*\)", "", SILVER_SCHEMA_SQL)
+    silver_relaxed = silver_relaxed.replace(" PRIMARY KEY", "")
+    silver_relaxed = silver_relaxed.replace(" NOT NULL", "")
     conn.execute(BRONZE_SCHEMA_SQL)
     conn.execute(silver_relaxed)
     conn.execute(GOLD_VIEWS_SQL)
@@ -161,7 +162,8 @@ class TestCheckNegativeAmounts:
     def test_warns_on_negative_charge_amount(self, clean_db):
         conn = duckdb.connect(clean_db)
         conn.execute("UPDATE silver_claims SET total_charge_amount = -50 WHERE claim_id = 'CLM001'")
-        conn.commit(); conn.close()
+        conn.commit()
+        conn.close()
         issues = _check_negative_amounts(clean_db)
         assert len(issues) == 1
         assert issues[0]["level"] == "warning"
@@ -171,7 +173,8 @@ class TestCheckNegativeAmounts:
     def test_warns_on_negative_payment_amount(self, clean_db):
         conn = duckdb.connect(clean_db)
         conn.execute("UPDATE silver_payments SET payment_amount = -10 WHERE payment_id = 'PAY001'")
-        conn.commit(); conn.close()
+        conn.commit()
+        conn.close()
         issues = _check_negative_amounts(clean_db)
         tables = [i["table"] for i in issues]
         assert "silver_payments" in tables
@@ -179,14 +182,16 @@ class TestCheckNegativeAmounts:
     def test_warns_on_negative_denied_amount(self, clean_db):
         conn = duckdb.connect(clean_db)
         conn.execute("UPDATE silver_denials SET denied_amount = -200 WHERE denial_id = 'DEN001'")
-        conn.commit(); conn.close()
+        conn.commit()
+        conn.close()
         issues = _check_negative_amounts(clean_db)
         assert any(i["table"] == "silver_denials" for i in issues)
 
     def test_warns_on_negative_rcm_cost(self, clean_db):
         conn = duckdb.connect(clean_db)
         conn.execute("UPDATE silver_operating_costs SET total_rcm_cost = -1000 WHERE period = '2024-06'")
-        conn.commit(); conn.close()
+        conn.commit()
+        conn.close()
         issues = _check_negative_amounts(clean_db)
         assert any(i["table"] == "silver_operating_costs" for i in issues)
 
@@ -197,10 +202,10 @@ class TestCheckNegativeAmounts:
     def test_counts_multiple_negatives(self, clean_db):
         conn = duckdb.connect(clean_db)
         conn.execute("UPDATE silver_payments SET payment_amount = -10")  # all rows
-        conn.commit(); conn.close()
+        conn.commit()
+        conn.close()
         issues = _check_negative_amounts(clean_db)
-        pay_issues = [i for i in issues
-                      if i["table"] == "silver_payments" and "payment_amount" in i["message"]]
+        pay_issues = [i for i in issues if i["table"] == "silver_payments" and "payment_amount" in i["message"]]
         assert len(pay_issues) == 1
         assert "2" in pay_issues[0]["message"]
 
@@ -216,35 +221,40 @@ class TestCheckOrphanedKeys:
     def test_warns_on_payment_with_unknown_claim(self, clean_db):
         conn = duckdb.connect(clean_db)
         conn.execute("UPDATE silver_payments SET claim_id = 'GHOST_CLAIM' WHERE payment_id = 'PAY001'")
-        conn.commit(); conn.close()
+        conn.commit()
+        conn.close()
         issues = _check_orphaned_keys(clean_db)
         assert any("silver_payments" in i["table"] for i in issues)
 
     def test_warns_on_denial_with_unknown_claim(self, clean_db):
         conn = duckdb.connect(clean_db)
         conn.execute("UPDATE silver_denials SET claim_id = 'MISSING' WHERE denial_id = 'DEN001'")
-        conn.commit(); conn.close()
+        conn.commit()
+        conn.close()
         issues = _check_orphaned_keys(clean_db)
         assert any(i["table"] == "silver_denials" for i in issues)
 
     def test_warns_on_claim_with_unknown_payer(self, clean_db):
         conn = duckdb.connect(clean_db)
         conn.execute("UPDATE silver_claims SET payer_id = 'PYR999' WHERE claim_id = 'CLM001'")
-        conn.commit(); conn.close()
+        conn.commit()
+        conn.close()
         issues = _check_orphaned_keys(clean_db)
         assert any(i["table"] == "silver_claims" for i in issues)
 
     def test_warns_on_encounter_with_unknown_patient(self, clean_db):
         conn = duckdb.connect(clean_db)
         conn.execute("UPDATE silver_encounters SET patient_id = 'GHOST_PAT' WHERE encounter_id = 'ENC001'")
-        conn.commit(); conn.close()
+        conn.commit()
+        conn.close()
         issues = _check_orphaned_keys(clean_db)
         assert any(i["table"] == "silver_encounters" for i in issues)
 
     def test_issue_level_is_warning(self, clean_db):
         conn = duckdb.connect(clean_db)
         conn.execute("UPDATE silver_payments SET claim_id = 'GHOST' WHERE payment_id = 'PAY001'")
-        conn.commit(); conn.close()
+        conn.commit()
+        conn.close()
         issues = _check_orphaned_keys(clean_db)
         for i in issues:
             assert i["level"] == "warning"
@@ -308,21 +318,24 @@ class TestCheckDateRanges:
     def test_warns_on_date_before_2020(self, clean_db):
         conn = duckdb.connect(clean_db)
         conn.execute("UPDATE silver_claims SET date_of_service = '2019-12-31' WHERE claim_id = 'CLM001'")
-        conn.commit(); conn.close()
+        conn.commit()
+        conn.close()
         issues = _check_date_ranges(clean_db)
         assert any(i["table"] == "silver_claims" for i in issues)
 
     def test_warns_on_date_after_2030(self, clean_db):
         conn = duckdb.connect(clean_db)
         conn.execute("UPDATE silver_payments SET payment_date = '2031-01-01' WHERE payment_id = 'PAY001'")
-        conn.commit(); conn.close()
+        conn.commit()
+        conn.close()
         issues = _check_date_ranges(clean_db)
         assert any(i["table"] == "silver_payments" for i in issues)
 
     def test_issue_level_is_warning(self, clean_db):
         conn = duckdb.connect(clean_db)
         conn.execute("UPDATE silver_claims SET date_of_service = '2015-01-01' WHERE claim_id = 'CLM001'")
-        conn.commit(); conn.close()
+        conn.commit()
+        conn.close()
         issues = _check_date_ranges(clean_db)
         for i in issues:
             assert i["level"] == "warning"
@@ -333,10 +346,7 @@ class TestCheckDateRanges:
         conn.execute("UPDATE silver_claims SET submission_date = NULL WHERE claim_id = 'CLM001'")
         conn.close()
         issues = _check_date_ranges(clean_db)
-        assert not any(
-            "submission_date" in i["message"] for i in issues
-            if i["table"] == "silver_claims"
-        )
+        assert not any("submission_date" in i["message"] for i in issues if i["table"] == "silver_claims")
 
 
 # ── Tests: _check_claim_status_values ────────────────────────────────────────
@@ -351,7 +361,8 @@ class TestCheckClaimStatusValues:
     def test_warns_on_unknown_status(self, clean_db):
         conn = duckdb.connect(clean_db)
         conn.execute("UPDATE silver_claims SET claim_status = 'Unknown' WHERE claim_id = 'CLM001'")
-        conn.commit(); conn.close()
+        conn.commit()
+        conn.close()
         issues = _check_claim_status_values(clean_db)
         assert len(issues) == 1
         assert issues[0]["level"] == "warning"
@@ -361,7 +372,8 @@ class TestCheckClaimStatusValues:
         conn = duckdb.connect(clean_db)
         conn.execute("UPDATE silver_claims SET claim_status = 'Bad1' WHERE claim_id = 'CLM001'")
         conn.execute("UPDATE silver_claims SET claim_status = 'Bad2' WHERE claim_id = 'CLM002'")
-        conn.commit(); conn.close()
+        conn.commit()
+        conn.close()
         issues = _check_claim_status_values(clean_db)
         assert len(issues) == 1
         msg = issues[0]["message"]
@@ -375,14 +387,16 @@ class TestCheckClaimStatusValues:
         for status in ["Paid", "Denied", "Appealed", "Pending", "Partially Paid"]:
             conn = duckdb.connect(clean_db)
             conn.execute("UPDATE silver_claims SET claim_status = ?", (status,))
-            conn.commit(); conn.close()
+            conn.commit()
+            conn.close()
             issues = _check_claim_status_values(clean_db)
             assert issues == [], f"'{status}' should be valid but got: {issues}"
 
     def test_partially_paid_is_valid(self, clean_db):
         conn = duckdb.connect(clean_db)
         conn.execute("UPDATE silver_claims SET claim_status = 'Partially Paid'")
-        conn.commit(); conn.close()
+        conn.commit()
+        conn.close()
         issues = _check_claim_status_values(clean_db)
         assert issues == []
 
@@ -398,27 +412,24 @@ class TestCheckBooleanColumns:
     def test_warns_on_null_is_clean_claim(self, clean_db):
         conn = duckdb.connect(clean_db)
         conn.execute("UPDATE silver_claims SET is_clean_claim = NULL WHERE claim_id = 'CLM001'")
-        conn.commit(); conn.close()
+        conn.commit()
+        conn.close()
         issues = _check_boolean_columns(clean_db)
-        assert any(
-            i["table"] == "silver_claims" and "is_clean_claim" in i["message"]
-            for i in issues
-        )
+        assert any(i["table"] == "silver_claims" and "is_clean_claim" in i["message"] for i in issues)
 
     def test_warns_on_null_is_accurate_payment(self, clean_db):
         conn = duckdb.connect(clean_db)
         conn.execute("UPDATE silver_payments SET is_accurate_payment = NULL WHERE payment_id = 'PAY001'")
-        conn.commit(); conn.close()
+        conn.commit()
+        conn.close()
         issues = _check_boolean_columns(clean_db)
-        assert any(
-            i["table"] == "silver_payments" and "is_accurate_payment" in i["message"]
-            for i in issues
-        )
+        assert any(i["table"] == "silver_payments" and "is_accurate_payment" in i["message"] for i in issues)
 
     def test_issue_level_is_warning(self, clean_db):
         conn = duckdb.connect(clean_db)
         conn.execute("UPDATE silver_claims SET is_clean_claim = NULL WHERE claim_id = 'CLM001'")
-        conn.commit(); conn.close()
+        conn.commit()
+        conn.close()
         issues = _check_boolean_columns(clean_db)
         for i in issues:
             assert i["level"] == "warning"
@@ -432,7 +443,4 @@ class TestCheckBooleanColumns:
         conn.execute("UPDATE silver_claims SET is_clean_claim = 5 WHERE claim_id = 'CLM001'")
         conn.close()
         issues = _check_boolean_columns(clean_db)
-        assert any(
-            i["table"] == "silver_claims" and "invalid" in i["message"]
-            for i in issues
-        )
+        assert any(i["table"] == "silver_claims" and "invalid" in i["message"] for i in issues)

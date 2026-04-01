@@ -26,7 +26,7 @@ services:
       start_period: 120s
 
   # ── Neo4j — Knowledge Graph ────────────────────────────────
-  # Stores the entity-relationship model (10 nodes, 9 FK edges).
+  # Stores the entity-relationship model (10 nodes, 11 FK edges).
   # Browser at http://localhost:7474, Bolt at bolt://localhost:7687
   neo4j:
     image: neo4j:5-community

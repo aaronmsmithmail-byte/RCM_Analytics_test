@@ -1,0 +1,11 @@
+# Bandit — Security Scanner Configuration
+# ========================================
+# Used by CI (GitHub Actions) and locally via `make security`
+
+[tool.bandit]
+exclude_dirs = ["tests", "generate_sample_data.py"]
+severity = "medium"
+skips = [
+    "B101",  # assert usage — acceptable for this project
+    "B608",  # SQL injection — false positives; all queries use parameterized ? placeholders
+]

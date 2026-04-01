@@ -70,6 +70,8 @@ Implement against the approved plan:
 Run all verification gates. All must pass before proceeding to review.
 
 > **Quick check:** `make verify` runs Gates 1 + 2 (tests + lint).
+> **Full CI check:** `make ci` runs Gates 1 + 2 + security scanning.
+> Gates 1, 2, and part of 5 also run automatically via GitHub Actions on every push/PR.
 > The full 5-gate check below adds coverage, docs, and standards.
 
 ### Gate 1: Tests

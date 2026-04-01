@@ -200,7 +200,7 @@ RCM_Analytics_test/
 │   └── config.toml          # Streamlit server and theme settings
 ├── .github/
 │   └── workflows/
-│       └── test.yml         # CI pipeline (runs pytest on every push/PR)
+│       └── ci.yml           # CI pipeline (lint, test, security — 3 parallel jobs)
 ├── data/                    # CSV data files + rcm_analytics.db (generated)
 ├── src/
 │   ├── __init__.py
@@ -420,13 +420,22 @@ The app will be available at `http://localhost:8501`.
 
 ## CI / Continuous Integration
 
-A GitHub Actions workflow (`.github/workflows/test.yml`) runs automatically on every push and pull request:
+A GitHub Actions workflow (`.github/workflows/ci.yml`) runs automatically on every push and pull request. It contains three parallel jobs:
 
-1. Checks out the code
-2. Sets up Python 3.11 with pip caching
-3. Installs dependencies
-4. Generates sample data
-5. Runs `pytest tests/ -v`
+| Job | What it checks | Key tools |
+|-----|---------------|-----------|
+| **Lint** | Code style + formatting | `ruff check`, `ruff format --check` |
+| **Test** | Full test suite + coverage | `pytest --cov`, coverage PR comment |
+| **Security** | Static analysis + dependency vulnerabilities | `bandit`, `pip-audit` |
+
+### Running CI locally
+
+```bash
+make ci        # runs lint + test + security (mirrors GitHub Actions)
+make verify    # quick gate: lint + test only
+make coverage  # test suite with coverage report
+make security  # bandit + pip-audit
+```
 
 ---
 
@@ -458,3 +467,4 @@ pytest tests/ -v
 | streamlit-extras | latest | Metric card styling |
 | graphviz | ≥ 0.20.0 | Publication-quality diagrams for metadata pages (Data Lineage, Knowledge Graph, Semantic Layer, AI Architecture) |
 | pytest | ≥ 7.0.0 | Unit testing (dev) |
+| pytest-cov | ≥ 4.0.0 | Coverage measurement in CI and locally (dev) |

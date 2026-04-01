@@ -97,11 +97,27 @@ REQUIRED_COLUMNS = {
     "providers": ["provider_id", "department"],
     "encounters": ["encounter_id", "patient_id", "provider_id", "date_of_service", "department", "encounter_type"],
     "charges": ["charge_id", "encounter_id", "charge_amount", "service_date", "post_date"],
-    "claims": ["claim_id", "encounter_id", "patient_id", "payer_id", "date_of_service",
-               "submission_date", "total_charge_amount", "claim_status", "is_clean_claim"],
+    "claims": [
+        "claim_id",
+        "encounter_id",
+        "patient_id",
+        "payer_id",
+        "date_of_service",
+        "submission_date",
+        "total_charge_amount",
+        "claim_status",
+        "is_clean_claim",
+    ],
     "payments": ["payment_id", "claim_id", "payer_id", "payment_amount", "is_accurate_payment"],
-    "denials": ["denial_id", "claim_id", "denial_reason_code", "denial_reason_description",
-                "denied_amount", "appeal_status", "recovered_amount"],
+    "denials": [
+        "denial_id",
+        "claim_id",
+        "denial_reason_code",
+        "denial_reason_description",
+        "denied_amount",
+        "appeal_status",
+        "recovered_amount",
+    ],
     "adjustments": ["adjustment_id", "claim_id", "adjustment_type_code", "adjustment_amount"],
     "operating_costs": ["period", "total_rcm_cost"],
 }
@@ -112,9 +128,7 @@ def _validate_columns(df, key, path):
     required = REQUIRED_COLUMNS.get(key, [])
     missing = [c for c in required if c not in df.columns]
     if missing:
-        raise ValueError(
-            f"Data source '{path}' is missing required columns: {missing}"
-        )
+        raise ValueError(f"Data source '{path}' is missing required columns: {missing}")
 
 
 def load_all_data():
@@ -157,6 +171,7 @@ def load_all_data():
         # Always refresh meta tables so source_system, KG nodes/edges, KPI
         # definitions, and semantic mappings stay in sync with the codebase.
         from src.database import get_connection, persist_metadata
+
         try:
             _conn = get_connection()
             persist_metadata(_conn)

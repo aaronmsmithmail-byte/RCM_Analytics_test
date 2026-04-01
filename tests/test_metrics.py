@@ -42,6 +42,7 @@ from src.metrics import (
 # Shared fixtures
 # ===========================================================================
 
+
 @pytest.fixture
 def db(tmp_path):
     """Temporary DuckDB database pre-loaded with representative Silver data.
@@ -156,9 +157,11 @@ def empty_db(tmp_path):
 # 1. query_days_in_ar
 # ===========================================================================
 
+
 class TestQueryDaysInAr:
     def test_returns_float_and_dataframe(self, db, full_params):
         import pandas as pd
+
         dar, trend = query_days_in_ar(full_params, db_path=db)
         assert isinstance(dar, float)
         assert isinstance(trend, pd.DataFrame)
@@ -199,9 +202,11 @@ class TestQueryDaysInAr:
 # 2. query_net_collection_rate
 # ===========================================================================
 
+
 class TestQueryNetCollectionRate:
     def test_returns_float_and_dataframe(self, db, full_params):
         import pandas as pd
+
         ncr, trend = query_net_collection_rate(full_params, db_path=db)
         assert isinstance(ncr, float)
         assert isinstance(trend, pd.DataFrame)
@@ -235,9 +240,11 @@ class TestQueryNetCollectionRate:
 # 3. query_gross_collection_rate
 # ===========================================================================
 
+
 class TestQueryGrossCollectionRate:
     def test_returns_float_and_dataframe(self, db, full_params):
         import pandas as pd
+
         gcr, trend = query_gross_collection_rate(full_params, db_path=db)
         assert isinstance(gcr, float)
         assert isinstance(trend, pd.DataFrame)
@@ -283,9 +290,11 @@ class TestQueryGrossCollectionRate:
 # 4. query_clean_claim_rate
 # ===========================================================================
 
+
 class TestQueryCleanClaimRate:
     def test_returns_float_and_dataframe(self, db, full_params):
         import pandas as pd
+
         ccr, trend = query_clean_claim_rate(full_params, db_path=db)
         assert isinstance(ccr, float)
         assert isinstance(trend, pd.DataFrame)
@@ -319,9 +328,11 @@ class TestQueryCleanClaimRate:
 # 5. query_denial_rate
 # ===========================================================================
 
+
 class TestQueryDenialRate:
     def test_returns_float_and_dataframe(self, db, full_params):
         import pandas as pd
+
         rate, trend = query_denial_rate(full_params, db_path=db)
         assert isinstance(rate, float)
         assert isinstance(trend, pd.DataFrame)
@@ -355,16 +366,24 @@ class TestQueryDenialRate:
 # 6. query_denial_reasons
 # ===========================================================================
 
+
 class TestQueryDenialReasons:
     def test_returns_dataframe(self, db, full_params):
         import pandas as pd
+
         result = query_denial_reasons(full_params, db_path=db)
         assert isinstance(result, pd.DataFrame)
 
     def test_has_required_columns(self, db, full_params):
         result = query_denial_reasons(full_params, db_path=db)
-        for col in ("denial_reason_code", "denial_reason_description", "count",
-                    "total_denied_amount", "total_recovered", "recovery_rate"):
+        for col in (
+            "denial_reason_code",
+            "denial_reason_description",
+            "count",
+            "total_denied_amount",
+            "total_recovered",
+            "recovery_rate",
+        ):
             assert col in result.columns
 
     def test_co4_is_top_reason(self, db, full_params):
@@ -387,9 +406,11 @@ class TestQueryDenialReasons:
 # 7. query_first_pass_rate
 # ===========================================================================
 
+
 class TestQueryFirstPassRate:
     def test_returns_float_and_dataframe(self, db, full_params):
         import pandas as pd
+
         fpr, trend = query_first_pass_rate(full_params, db_path=db)
         assert isinstance(fpr, float)
         assert isinstance(trend, pd.DataFrame)
@@ -423,9 +444,11 @@ class TestQueryFirstPassRate:
 # 8. query_charge_lag
 # ===========================================================================
 
+
 class TestQueryChargeLag:
     def test_returns_float_and_series(self, db, full_params):
         import pandas as pd
+
         avg_lag, trend, dist = query_charge_lag(full_params, db_path=db)
         assert isinstance(avg_lag, float)
         assert isinstance(trend, pd.Series)
@@ -442,6 +465,7 @@ class TestQueryChargeLag:
 
     def test_empty_db_returns_zero(self, empty_db, full_params):
         import pandas as pd
+
         avg_lag, trend, dist = query_charge_lag(full_params, db_path=empty_db)
         assert avg_lag == 0.0
         assert isinstance(trend, pd.Series)
@@ -462,9 +486,11 @@ class TestQueryChargeLag:
 # 9. query_cost_to_collect
 # ===========================================================================
 
+
 class TestQueryCostToCollect:
     def test_returns_float_and_dataframe(self, db, full_params):
         import pandas as pd
+
         ctc, trend = query_cost_to_collect(full_params, db_path=db)
         assert isinstance(ctc, float)
         assert isinstance(trend, pd.DataFrame)
@@ -493,9 +519,11 @@ class TestQueryCostToCollect:
 # 10. query_ar_aging
 # ===========================================================================
 
+
 class TestQueryArAging:
     def test_returns_dataframe_and_float(self, db, full_params):
         import pandas as pd
+
         summary, total_ar = query_ar_aging(full_params, db_path=db)
         assert isinstance(summary, pd.DataFrame)
         assert isinstance(total_ar, float)
@@ -534,6 +562,7 @@ class TestQueryArAging:
 # 11. query_payment_accuracy
 # ===========================================================================
 
+
 class TestQueryPaymentAccuracy:
     def test_returns_float(self, db, full_params):
         acc = query_payment_accuracy(full_params, db_path=db)
@@ -562,6 +591,7 @@ class TestQueryPaymentAccuracy:
 # ===========================================================================
 # 12. query_bad_debt_rate
 # ===========================================================================
+
 
 class TestQueryBadDebtRate:
     def test_returns_three_values(self, db, full_params):
@@ -596,6 +626,7 @@ class TestQueryBadDebtRate:
 # 13. query_appeal_success_rate
 # ===========================================================================
 
+
 class TestQueryAppealSuccessRate:
     def test_returns_three_values(self, db, full_params):
         result = query_appeal_success_rate(full_params, db_path=db)
@@ -625,9 +656,11 @@ class TestQueryAppealSuccessRate:
 # 14. query_avg_reimbursement
 # ===========================================================================
 
+
 class TestQueryAvgReimbursement:
     def test_returns_float_and_series(self, db, full_params):
         import pandas as pd
+
         avg, trend = query_avg_reimbursement(full_params, db_path=db)
         assert isinstance(avg, float)
         assert isinstance(trend, pd.Series)
@@ -643,6 +676,7 @@ class TestQueryAvgReimbursement:
 
     def test_empty_db_returns_zero(self, empty_db, full_params):
         import pandas as pd
+
         avg, trend = query_avg_reimbursement(full_params, db_path=empty_db)
         assert avg == 0.0
         assert isinstance(trend, pd.Series)
@@ -656,16 +690,25 @@ class TestQueryAvgReimbursement:
 # 15. query_payer_mix
 # ===========================================================================
 
+
 class TestQueryPayerMix:
     def test_returns_dataframe(self, db, full_params):
         import pandas as pd
+
         result = query_payer_mix(full_params, db_path=db)
         assert isinstance(result, pd.DataFrame)
 
     def test_has_required_columns(self, db, full_params):
         result = query_payer_mix(full_params, db_path=db)
-        for col in ("payer_id", "payer_name", "payer_type",
-                    "claim_count", "total_charges", "total_payments", "collection_rate"):
+        for col in (
+            "payer_id",
+            "payer_name",
+            "payer_type",
+            "claim_count",
+            "total_charges",
+            "total_payments",
+            "collection_rate",
+        ):
             assert col in result.columns
 
     def test_two_payers_returned(self, db, full_params):
@@ -707,9 +750,11 @@ class TestQueryPayerMix:
 # 16. query_denial_rate_by_payer
 # ===========================================================================
 
+
 class TestQueryDenialRateByPayer:
     def test_returns_dataframe(self, db, full_params):
         import pandas as pd
+
         result = query_denial_rate_by_payer(full_params, db_path=db)
         assert isinstance(result, pd.DataFrame)
 
@@ -743,16 +788,24 @@ class TestQueryDenialRateByPayer:
 # 17. query_department_performance
 # ===========================================================================
 
+
 class TestQueryDepartmentPerformance:
     def test_returns_dataframe(self, db, full_params):
         import pandas as pd
+
         result = query_department_performance(full_params, db_path=db)
         assert isinstance(result, pd.DataFrame)
 
     def test_has_required_columns(self, db, full_params):
         result = query_department_performance(full_params, db_path=db)
-        for col in ("department", "encounter_count", "total_charges",
-                    "total_payments", "collection_rate", "avg_payment_per_encounter"):
+        for col in (
+            "department",
+            "encounter_count",
+            "total_charges",
+            "total_payments",
+            "collection_rate",
+            "avg_payment_per_encounter",
+        ):
             assert col in result.columns
 
     def test_two_departments_returned(self, db, full_params):
@@ -782,9 +835,7 @@ class TestQueryDepartmentPerformance:
         assert result.empty
 
     def test_dept_filter_returns_one_dept(self, db):
-        params = FilterParams(
-            start_date="2024-01-01", end_date="2024-12-31", department="Cardiology"
-        )
+        params = FilterParams(start_date="2024-01-01", end_date="2024-12-31", department="Cardiology")
         result = query_department_performance(params, db_path=db)
         assert len(result) == 1
         assert result.iloc[0]["department"] == "Cardiology"
@@ -793,6 +844,7 @@ class TestQueryDepartmentPerformance:
 # ===========================================================================
 # FilterParams dataclass tests
 # ===========================================================================
+
 
 class TestFilterParams:
     def test_start_end_required(self):
@@ -834,17 +886,27 @@ class TestFilterParams:
 # 18. PROVIDER PERFORMANCE
 # ===========================================================================
 
+
 class TestQueryProviderPerformance:
     def test_returns_dataframe(self, db, full_params):
         import pandas as pd
+
         df = query_provider_performance(full_params, db_path=db)
         assert isinstance(df, pd.DataFrame)
 
     def test_has_required_columns(self, db, full_params):
         df = query_provider_performance(full_params, db_path=db)
-        for col in ("provider_id", "provider_name", "specialty", "total_charges",
-                     "total_payments", "collection_rate", "denial_rate",
-                     "clean_claim_rate", "avg_payment_per_encounter"):
+        for col in (
+            "provider_id",
+            "provider_name",
+            "specialty",
+            "total_charges",
+            "total_payments",
+            "collection_rate",
+            "denial_rate",
+            "clean_claim_rate",
+            "avg_payment_per_encounter",
+        ):
             assert col in df.columns
 
     def test_returns_both_providers(self, db, full_params):
@@ -864,16 +926,24 @@ class TestQueryProviderPerformance:
 # 19. CPT ANALYSIS
 # ===========================================================================
 
+
 class TestQueryCptAnalysis:
     def test_returns_dataframe(self, db, full_params):
         import pandas as pd
+
         df = query_cpt_analysis(full_params, db_path=db)
         assert isinstance(df, pd.DataFrame)
 
     def test_has_required_columns(self, db, full_params):
         df = query_cpt_analysis(full_params, db_path=db)
-        for col in ("cpt_code", "cpt_description", "charge_count", "total_charges",
-                     "avg_charge_per_unit", "denial_rate"):
+        for col in (
+            "cpt_code",
+            "cpt_description",
+            "charge_count",
+            "total_charges",
+            "avg_charge_per_unit",
+            "denial_rate",
+        ):
             assert col in df.columns
 
     def test_returns_known_cpt_codes(self, db, full_params):
@@ -895,6 +965,7 @@ class TestQueryCptAnalysis:
 # 20. UNDERPAYMENT ANALYSIS
 # ===========================================================================
 
+
 class TestQueryUnderpaymentAnalysis:
     def test_returns_tuple(self, db, full_params):
         result = query_underpayment_analysis(full_params, db_path=db)
@@ -903,8 +974,7 @@ class TestQueryUnderpaymentAnalysis:
 
     def test_dataframe_has_required_columns(self, db, full_params):
         df, _ = query_underpayment_analysis(full_params, db_path=db)
-        for col in ("payer_id", "payer_name", "total_allowed", "total_paid",
-                     "total_underpaid", "underpayment_rate"):
+        for col in ("payer_id", "payer_name", "total_allowed", "total_paid", "total_underpaid", "underpayment_rate"):
             assert col in df.columns
 
     def test_recovery_is_float(self, db, full_params):
@@ -925,9 +995,11 @@ class TestQueryUnderpaymentAnalysis:
 # 21. UNDERPAYMENT TREND
 # ===========================================================================
 
+
 class TestQueryUnderpaymentTrend:
     def test_returns_dataframe(self, db, full_params):
         import pandas as pd
+
         df = query_underpayment_trend(full_params, db_path=db)
         assert isinstance(df, pd.DataFrame)
 
@@ -950,9 +1022,11 @@ class TestQueryUnderpaymentTrend:
 # 22. CLEAN CLAIM BREAKDOWN
 # ===========================================================================
 
+
 class TestQueryCleanClaimBreakdown:
     def test_returns_dataframe(self, db, full_params):
         import pandas as pd
+
         df = query_clean_claim_breakdown(full_params, db_path=db)
         assert isinstance(df, pd.DataFrame)
 
@@ -987,16 +1061,17 @@ class TestQueryCleanClaimBreakdown:
 # 23. PATIENT RESPONSIBILITY BY PAYER
 # ===========================================================================
 
+
 class TestQueryPatientResponsibilityByPayer:
     def test_returns_dataframe(self, db, full_params):
         import pandas as pd
+
         df = query_patient_responsibility_by_payer(full_params, db_path=db)
         assert isinstance(df, pd.DataFrame)
 
     def test_has_required_columns(self, db, full_params):
         df = query_patient_responsibility_by_payer(full_params, db_path=db)
-        for col in ("payer_name", "payer_type", "total_patient_resp",
-                     "avg_patient_resp", "pct_of_allowed"):
+        for col in ("payer_name", "payer_type", "total_patient_resp", "avg_patient_resp", "pct_of_allowed"):
             assert col in df.columns
 
     def test_patient_resp_non_negative(self, db, full_params):
@@ -1013,16 +1088,17 @@ class TestQueryPatientResponsibilityByPayer:
 # 24. PATIENT RESPONSIBILITY BY DEPARTMENT
 # ===========================================================================
 
+
 class TestQueryPatientResponsibilityByDept:
     def test_returns_dataframe(self, db, full_params):
         import pandas as pd
+
         df = query_patient_responsibility_by_dept(full_params, db_path=db)
         assert isinstance(df, pd.DataFrame)
 
     def test_has_required_columns(self, db, full_params):
         df = query_patient_responsibility_by_dept(full_params, db_path=db)
-        for col in ("department", "encounter_type", "claim_count",
-                     "total_patient_resp", "avg_patient_resp"):
+        for col in ("department", "encounter_type", "claim_count", "total_patient_resp", "avg_patient_resp"):
             assert col in df.columns
 
     def test_empty_db_returns_empty(self, empty_db, full_params):
@@ -1034,9 +1110,11 @@ class TestQueryPatientResponsibilityByDept:
 # 25. PATIENT RESPONSIBILITY TREND
 # ===========================================================================
 
+
 class TestQueryPatientResponsibilityTrend:
     def test_returns_dataframe(self, db, full_params):
         import pandas as pd
+
         df = query_patient_responsibility_trend(full_params, db_path=db)
         assert isinstance(df, pd.DataFrame)
 
@@ -1059,11 +1137,13 @@ class TestQueryPatientResponsibilityTrend:
 # 26. DATA FRESHNESS
 # ===========================================================================
 
+
 class TestQueryDataFreshness:
     @pytest.fixture
     def db_with_pipeline(self, tmp_path):
         """Database with pipeline_runs populated."""
         import datetime
+
         db_path = str(tmp_path / "test.db")
         conn = duckdb.connect(db_path)
         create_tables(conn)
@@ -1074,9 +1154,7 @@ class TestQueryDataFreshness:
             ("claims", now, 100, "claims.csv"),
         )
         # Insert a stale pipeline run (72 hours ago)
-        stale = (datetime.datetime.utcnow() - datetime.timedelta(hours=72)).strftime(
-            "%Y-%m-%d %H:%M:%S"
-        )
+        stale = (datetime.datetime.utcnow() - datetime.timedelta(hours=72)).strftime("%Y-%m-%d %H:%M:%S")
         conn.execute(
             "INSERT INTO pipeline_runs VALUES (?, ?, ?, ?)",
             ("payments", stale, 50, "payments.csv"),
@@ -1087,13 +1165,13 @@ class TestQueryDataFreshness:
 
     def test_returns_dataframe(self, db_with_pipeline):
         import pandas as pd
+
         df = query_data_freshness(db_path=db_with_pipeline)
         assert isinstance(df, pd.DataFrame)
 
     def test_has_required_columns(self, db_with_pipeline):
         df = query_data_freshness(db_path=db_with_pipeline)
-        for col in ("domain", "label", "last_loaded_at", "row_count",
-                     "cadence_hours", "age_hours", "status"):
+        for col in ("domain", "label", "last_loaded_at", "row_count", "cadence_hours", "age_hours", "status"):
             assert col in df.columns
 
     def test_fresh_status_for_recent_data(self, db_with_pipeline):

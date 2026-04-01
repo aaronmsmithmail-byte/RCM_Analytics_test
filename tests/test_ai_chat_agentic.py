@@ -19,6 +19,7 @@ from src.database import create_tables
 # Helpers to build mock API responses
 # ===========================================================================
 
+
 def _make_text_response(content="Here is the answer."):
     """Simulate an API response with a final text message (no tool calls)."""
     msg = MagicMock()
@@ -61,6 +62,7 @@ def _make_tool_call_response(query="SELECT 1", description="Test query", tool_ca
 # Fixtures
 # ===========================================================================
 
+
 @pytest.fixture
 def db(tmp_path):
     """Temporary database for tool execution."""
@@ -98,6 +100,7 @@ def base_messages():
 # API key validation
 # ===========================================================================
 
+
 class TestRunAgenticTurnApiKey:
     def test_missing_api_key_yields_error(self, base_messages):
         with patch.dict(os.environ, {"OPENROUTER_API_KEY": ""}, clear=False):
@@ -116,6 +119,7 @@ class TestRunAgenticTurnApiKey:
 # ===========================================================================
 # Text response (no tool calls)
 # ===========================================================================
+
 
 class TestRunAgenticTurnTextResponse:
     @patch("openai.OpenAI")
@@ -149,6 +153,7 @@ class TestRunAgenticTurnTextResponse:
 # Tool call flow
 # ===========================================================================
 
+
 class TestRunAgenticTurnToolCalls:
     @patch("openai.OpenAI")
     def test_tool_call_then_text(self, mock_openai_cls, base_messages, db):
@@ -167,8 +172,11 @@ class TestRunAgenticTurnToolCalls:
         with patch.dict(os.environ, {"OPENROUTER_API_KEY": "test_key_123"}, clear=False):
             with patch("src.ai_chat.execute_sql_tool") as mock_exec:
                 mock_exec.return_value = {
-                    "columns": ["n"], "rows": [[1]],
-                    "row_count": 1, "total_rows": 1, "truncated": False,
+                    "columns": ["n"],
+                    "rows": [[1]],
+                    "row_count": 1,
+                    "total_rows": 1,
+                    "truncated": False,
                 }
                 events = list(run_agentic_turn(base_messages))
 
@@ -190,8 +198,11 @@ class TestRunAgenticTurnToolCalls:
         with patch.dict(os.environ, {"OPENROUTER_API_KEY": "test_key_123"}, clear=False):
             with patch("src.ai_chat.execute_sql_tool") as mock_exec:
                 mock_exec.return_value = {
-                    "columns": ["x"], "rows": [[1]],
-                    "row_count": 1, "total_rows": 1, "truncated": False,
+                    "columns": ["x"],
+                    "rows": [[1]],
+                    "row_count": 1,
+                    "total_rows": 1,
+                    "truncated": False,
                 }
                 events = list(run_agentic_turn(base_messages))
 
@@ -231,8 +242,11 @@ class TestRunAgenticTurnToolCalls:
         with patch.dict(os.environ, {"OPENROUTER_API_KEY": "test_key_123"}, clear=False):
             with patch("src.ai_chat.execute_sql_tool") as mock_exec:
                 mock_exec.return_value = {
-                    "columns": ["1"], "rows": [[1]],
-                    "row_count": 1, "total_rows": 1, "truncated": False,
+                    "columns": ["1"],
+                    "rows": [[1]],
+                    "row_count": 1,
+                    "total_rows": 1,
+                    "truncated": False,
                 }
                 list(run_agentic_turn(base_messages))
 
@@ -245,6 +259,7 @@ class TestRunAgenticTurnToolCalls:
 # ===========================================================================
 # Max iterations
 # ===========================================================================
+
 
 class TestRunAgenticTurnMaxIterations:
     @patch("openai.OpenAI")
@@ -260,8 +275,11 @@ class TestRunAgenticTurnMaxIterations:
         with patch.dict(os.environ, {"OPENROUTER_API_KEY": "test_key_123"}, clear=False):
             with patch("src.ai_chat.execute_sql_tool") as mock_exec:
                 mock_exec.return_value = {
-                    "columns": ["1"], "rows": [[1]],
-                    "row_count": 1, "total_rows": 1, "truncated": False,
+                    "columns": ["1"],
+                    "rows": [[1]],
+                    "row_count": 1,
+                    "total_rows": 1,
+                    "truncated": False,
                 }
                 events = list(run_agentic_turn(base_messages))
 
@@ -281,8 +299,11 @@ class TestRunAgenticTurnMaxIterations:
         with patch.dict(os.environ, {"OPENROUTER_API_KEY": "test_key_123"}, clear=False):
             with patch("src.ai_chat.execute_sql_tool") as mock_exec:
                 mock_exec.return_value = {
-                    "columns": ["1"], "rows": [[1]],
-                    "row_count": 1, "total_rows": 1, "truncated": False,
+                    "columns": ["1"],
+                    "rows": [[1]],
+                    "row_count": 1,
+                    "total_rows": 1,
+                    "truncated": False,
                 }
                 list(run_agentic_turn(base_messages))
 
@@ -292,6 +313,7 @@ class TestRunAgenticTurnMaxIterations:
 # ===========================================================================
 # Model selection
 # ===========================================================================
+
 
 class TestRunAgenticTurnModelSelection:
     @patch("openai.OpenAI")

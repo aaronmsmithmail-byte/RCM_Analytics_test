@@ -31,6 +31,7 @@ from collections.abc import Iterator
 # Load .env file if present — no-op when the file is missing.
 try:
     from dotenv import load_dotenv
+
     load_dotenv()
 except ImportError:
     pass
@@ -40,9 +41,9 @@ except ImportError:
 # Available models for the UI selectbox
 # ---------------------------------------------------------------------------
 AVAILABLE_MODELS = [
-    ("Claude Sonnet 4.6  (Anthropic)",        "anthropic/claude-sonnet-4.6"),
-    ("GPT-5.4  (OpenAI)",                     "openai/gpt-5.4"),
-    ("Kimi K2.5  (Moonshot)",                 "moonshotai/kimi-k2.5"),
+    ("Claude Sonnet 4.6  (Anthropic)", "anthropic/claude-sonnet-4.6"),
+    ("GPT-5.4  (OpenAI)", "openai/gpt-5.4"),
+    ("Kimi K2.5  (Moonshot)", "moonshotai/kimi-k2.5"),
 ]
 
 DEFAULT_MODEL = os.environ.get("OPENROUTER_MODEL", "anthropic/claude-sonnet-4.6")
@@ -107,6 +108,7 @@ TOOL_SCHEMA = [
 # SQL execution
 # ---------------------------------------------------------------------------
 
+
 def execute_sql_tool(query: str, db_path=None) -> dict:
     """
     Safely execute a read-only SQL query and return structured results.
@@ -133,8 +135,9 @@ def execute_sql_tool(query: str, db_path=None) -> dict:
     # Safety check — only allow read queries
     # Strip SQL comments (-- line comments and /* block comments */) before checking
     import re
-    stripped = re.sub(r'--[^\n]*', '', query)        # remove line comments
-    stripped = re.sub(r'/\*.*?\*/', '', stripped, flags=re.DOTALL)  # remove block comments
+
+    stripped = re.sub(r"--[^\n]*", "", query)  # remove line comments
+    stripped = re.sub(r"/\*.*?\*/", "", stripped, flags=re.DOTALL)  # remove block comments
     stripped = stripped.strip().lstrip("(")
     if stripped[:6].upper() not in ("SELECT", "WITH  ", "WITH\n", "WITH\t"):
         first_word = stripped.split()[0].upper() if stripped.split() else ""
@@ -152,12 +155,12 @@ def execute_sql_tool(query: str, db_path=None) -> dict:
 
         # Convert NaN → None for clean JSON serialisation
         rows = [
-            [None if (v != v) else v for v in row]   # NaN check: NaN != NaN
+            [None if (v != v) else v for v in row]  # NaN check: NaN != NaN
             for row in df.values.tolist()
         ]
         return {
-            "columns":   list(df.columns),
-            "rows":      rows,
+            "columns": list(df.columns),
+            "rows": rows,
             "row_count": len(rows),
             "total_rows": total_rows,
             "truncated": truncated,
@@ -182,7 +185,8 @@ def _format_result_for_llm(result: dict) -> str:
     note = (
         f"\n[Showing {result['row_count']} of {result['total_rows']} total rows. "
         "Use GROUP BY / aggregations to summarise larger datasets.]"
-        if result["truncated"] else ""
+        if result["truncated"]
+        else ""
     )
     return "\n".join(lines) + note
 
@@ -190,6 +194,7 @@ def _format_result_for_llm(result: dict) -> str:
 # ---------------------------------------------------------------------------
 # Internal: meta-table context string
 # ---------------------------------------------------------------------------
+
 
 def _get_meta_context(db_path=None) -> str:
     """
@@ -212,6 +217,7 @@ def _get_meta_context(db_path=None) -> str:
     # ── Knowledge Graph: try Neo4j first, fall back to DuckDB ────────
     try:
         from src.neo4j_client import get_kg_edges, get_kg_nodes
+
         neo4j_nodes = get_kg_nodes()
         neo4j_edges = get_kg_edges()
     except Exception:
@@ -221,10 +227,7 @@ def _get_meta_context(db_path=None) -> str:
     conn = get_connection(db_path)
 
     if neo4j_nodes:
-        nodes = [
-            (n["entity_id"], n["entity_group"], n["silver_table"], n["description"])
-            for n in neo4j_nodes
-        ]
+        nodes = [(n["entity_id"], n["entity_group"], n["silver_table"], n["description"]) for n in neo4j_nodes]
     else:
         try:
             nodes = conn.execute(
@@ -236,24 +239,22 @@ def _get_meta_context(db_path=None) -> str:
 
     if not nodes:
         live_tables = [
-            r[0] for r in conn.execute(
-                "SELECT table_name FROM information_schema.tables "
-                "WHERE table_name LIKE 'silver_%' ORDER BY table_name"
+            r[0]
+            for r in conn.execute(
+                "SELECT table_name FROM information_schema.tables WHERE table_name LIKE 'silver_%' ORDER BY table_name"
             ).fetchall()
         ]
         nodes = [(t.replace("silver_", ""), "Unknown", t, "") for t in live_tables]
 
     if neo4j_edges:
         edges = [
-            (e["parent_entity"], e["child_entity"], e["join_column"],
-             e["cardinality"], e["business_meaning"])
+            (e["parent_entity"], e["child_entity"], e["join_column"], e["cardinality"], e["business_meaning"])
             for e in neo4j_edges
         ]
     else:
         try:
             edges = conn.execute(
-                "SELECT parent_entity, child_entity, join_column, cardinality, business_meaning "
-                "FROM meta_kg_edges"
+                "SELECT parent_entity, child_entity, join_column, cardinality, business_meaning FROM meta_kg_edges"
             ).fetchall()
         except Exception:
             edges = []
@@ -261,14 +262,14 @@ def _get_meta_context(db_path=None) -> str:
     # ── Semantic Layer: try Cube first, fall back to DuckDB ──────────
     try:
         from src.cube_client import get_semantic_mappings
+
         cube_mappings = get_semantic_mappings()
     except Exception:
         cube_mappings = None
 
     if cube_mappings:
         semantic = [
-            (m["business_concept"], m["kpi_name"], m["silver_columns"],
-             m["formula"], m["business_rule"])
+            (m["business_concept"], m["kpi_name"], m["silver_columns"], m["formula"], m["business_rule"])
             for m in cube_mappings
         ]
     else:
@@ -306,10 +307,7 @@ def _get_meta_context(db_path=None) -> str:
     # ── 1. Valid table names ─────────────────────────────────────────
     valid_tables = [row[2] for row in nodes if row[2]]
     lines.append("## Valid Table Names")
-    lines.append(
-        "ONLY query tables from this list — never invent or guess a table name:\n"
-        + ", ".join(valid_tables)
-    )
+    lines.append("ONLY query tables from this list — never invent or guess a table name:\n" + ", ".join(valid_tables))
 
     # ── 2. Table schemas ─────────────────────────────────────────────
     lines.append("\n## Table Schemas  (exact column names and types)")
@@ -323,10 +321,7 @@ def _get_meta_context(db_path=None) -> str:
     # ── 3. Join paths ────────────────────────────────────────────────
     lines.append("\n## Join Paths  (how to connect tables)")
     for parent, child, join_col, cardinality, meaning in edges:
-        lines.append(
-            f"- silver_{parent} JOIN silver_{child} ON {join_col} "
-            f"({cardinality}): {meaning}"
-        )
+        lines.append(f"- silver_{parent} JOIN silver_{child} ON {join_col} ({cardinality}): {meaning}")
 
     # ── 4. Semantic mappings ─────────────────────────────────────────
     lines.append("\n## Semantic Mappings  (business concept → KPI → source columns)")
@@ -353,6 +348,7 @@ def _get_meta_context(db_path=None) -> str:
 # ---------------------------------------------------------------------------
 # Public: system prompt builder
 # ---------------------------------------------------------------------------
+
 
 def build_system_prompt(live_kpis: dict | None = None, db_path=None) -> str:
     """
@@ -426,6 +422,7 @@ time period, denial reason codes, etc.
 # Public: agentic turn
 # ---------------------------------------------------------------------------
 
+
 def run_agentic_turn(
     messages: list[dict],
     model: str | None = None,
@@ -469,8 +466,7 @@ def run_agentic_turn(
         yield {
             "type": "error",
             "message": (
-                "OPENROUTER_API_KEY is not configured. "
-                "Add it to the .env file in the project root and restart the app."
+                "OPENROUTER_API_KEY is not configured. Add it to the .env file in the project root and restart the app."
             ),
         }
         return
@@ -502,25 +498,27 @@ def run_agentic_turn(
 
         if finish == "tool_calls" or msg.tool_calls:
             # Append assistant message (with tool_calls) to history
-            messages.append({
-                "role": "assistant",
-                "content": msg.content or "",
-                "tool_calls": [
-                    {
-                        "id":   tc.id,
-                        "type": "function",
-                        "function": {
-                            "name":      tc.function.name,
-                            "arguments": tc.function.arguments,
-                        },
-                    }
-                    for tc in msg.tool_calls
-                ],
-            })
+            messages.append(
+                {
+                    "role": "assistant",
+                    "content": msg.content or "",
+                    "tool_calls": [
+                        {
+                            "id": tc.id,
+                            "type": "function",
+                            "function": {
+                                "name": tc.function.name,
+                                "arguments": tc.function.arguments,
+                            },
+                        }
+                        for tc in msg.tool_calls
+                    ],
+                }
+            )
 
             for tc in msg.tool_calls:
                 args = json.loads(tc.function.arguments)
-                sql  = args.get("query", "")
+                sql = args.get("query", "")
                 desc = args.get("description", "Running query…")
 
                 yield {"type": "tool_call", "description": desc, "sql": sql}
@@ -528,23 +526,25 @@ def run_agentic_turn(
                 result = execute_sql_tool(sql)
 
                 yield {
-                    "type":        "tool_result",
+                    "type": "tool_result",
                     "description": desc,
-                    "sql":         sql,
-                    "columns":     result.get("columns", []),
-                    "rows":        result.get("rows", []),
-                    "row_count":   result.get("row_count", 0),
-                    "total_rows":  result.get("total_rows", 0),
-                    "truncated":   result.get("truncated", False),
-                    "error":       result.get("error"),
+                    "sql": sql,
+                    "columns": result.get("columns", []),
+                    "rows": result.get("rows", []),
+                    "row_count": result.get("row_count", 0),
+                    "total_rows": result.get("total_rows", 0),
+                    "truncated": result.get("truncated", False),
+                    "error": result.get("error"),
                 }
 
                 # Feed result back into conversation history
-                messages.append({
-                    "role":         "tool",
-                    "tool_call_id": tc.id,
-                    "content":      _format_result_for_llm(result),
-                })
+                messages.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": tc.id,
+                        "content": _format_result_for_llm(result),
+                    }
+                )
 
         else:
             # Model returned a final text response — append and yield

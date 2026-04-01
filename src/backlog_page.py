@@ -36,12 +36,12 @@ _STATUS_ICONS = {
 
 def _load_backlog() -> pd.DataFrame:
     """Load all backlog items from DuckDB, ordered by priority then date."""
-    priority_order = "CASE priority WHEN 'Critical' THEN 1 WHEN 'High' THEN 2 WHEN 'Medium' THEN 3 WHEN 'Low' THEN 4 ELSE 5 END"
+    priority_order = (
+        "CASE priority WHEN 'Critical' THEN 1 WHEN 'High' THEN 2 WHEN 'Medium' THEN 3 WHEN 'Low' THEN 4 ELSE 5 END"
+    )
     try:
         conn = get_connection(read_only=False)
-        df = conn.execute(
-            f"SELECT * FROM feature_backlog ORDER BY {priority_order}, created_at DESC"
-        ).fetchdf()
+        df = conn.execute(f"SELECT * FROM feature_backlog ORDER BY {priority_order}, created_at DESC").fetchdf()
         conn.close()
         return df
     except Exception:
@@ -125,11 +125,7 @@ def render_feature_backlog():
                 # Status update row
                 col_status, col_delete = st.columns([3, 1])
                 with col_status:
-                    current_idx = (
-                        _STATUS_OPTIONS.index(row["status"])
-                        if row["status"] in _STATUS_OPTIONS
-                        else 0
-                    )
+                    current_idx = _STATUS_OPTIONS.index(row["status"]) if row["status"] in _STATUS_OPTIONS else 0
                     new_status = st.selectbox(
                         "Status",
                         _STATUS_OPTIONS,
@@ -211,5 +207,5 @@ def render_feature_backlog():
                     acceptance_criteria.strip() or None,
                     benefits.strip() or None,
                 )
-                st.success(f"✅ Feature request \"{title.strip()}\" submitted!")
+                st.success(f'✅ Feature request "{title.strip()}" submitted!')
                 st.rerun()

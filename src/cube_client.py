@@ -93,19 +93,20 @@ def get_semantic_mappings():
 
         for measure in cube.get("measures", []):
             silver_cols = f"{cube_name}.{measure.get('name', '')}"
-            mappings.append({
-                "business_concept": concept,
-                "kpi_name": measure.get("title", measure.get("name", "")),
-                "silver_columns": silver_cols,
-                "formula": measure.get("type", ""),
-                "business_rule": measure.get("description", ""),
-            })
+            mappings.append(
+                {
+                    "business_concept": concept,
+                    "kpi_name": measure.get("title", measure.get("name", "")),
+                    "silver_columns": silver_cols,
+                    "formula": measure.get("type", ""),
+                    "business_rule": measure.get("description", ""),
+                }
+            )
 
     return mappings if mappings else None
 
 
-def query_cube(measures, dimensions=None, filters=None, time_dimensions=None,
-               order=None, limit=None):
+def query_cube(measures, dimensions=None, filters=None, time_dimensions=None, order=None, limit=None):
     """
     Execute a Cube query and return results as a pandas DataFrame.
 
@@ -155,8 +156,7 @@ def query_cube(measures, dimensions=None, filters=None, time_dimensions=None,
         return None
 
 
-def build_cube_filters(start_date, end_date, payer_id=None,
-                       department=None, encounter_type=None):
+def build_cube_filters(start_date, end_date, payer_id=None, department=None, encounter_type=None):
     """
     Convert FilterParams into Cube filter format.
 
@@ -171,28 +171,36 @@ def build_cube_filters(start_date, end_date, payer_id=None,
         tuple: (filters, time_dimensions) for use with query_cube()
     """
     filters = []
-    time_dimensions = [{
-        "dimension": "claims.date_of_service",
-        "dateRange": [start_date, end_date],
-    }]
+    time_dimensions = [
+        {
+            "dimension": "claims.date_of_service",
+            "dateRange": [start_date, end_date],
+        }
+    ]
 
     if payer_id:
-        filters.append({
-            "member": "claims.payer_id",
-            "operator": "equals",
-            "values": [payer_id],
-        })
+        filters.append(
+            {
+                "member": "claims.payer_id",
+                "operator": "equals",
+                "values": [payer_id],
+            }
+        )
     if department:
-        filters.append({
-            "member": "encounters.department",
-            "operator": "equals",
-            "values": [department],
-        })
+        filters.append(
+            {
+                "member": "encounters.department",
+                "operator": "equals",
+                "values": [department],
+            }
+        )
     if encounter_type:
-        filters.append({
-            "member": "encounters.encounter_type",
-            "operator": "equals",
-            "values": [encounter_type],
-        })
+        filters.append(
+            {
+                "member": "encounters.encounter_type",
+                "operator": "equals",
+                "values": [encounter_type],
+            }
+        )
 
     return filters, time_dimensions

@@ -18,6 +18,7 @@ import pytest
 # These mirror the exact logic in app.py lines 242-309.
 # ---------------------------------------------------------------------------
 
+
 def df_to_csv(df: pd.DataFrame) -> bytes:
     """Identical to app.df_to_csv (app.py:242-243)."""
     return df.to_csv(index=False).encode("utf-8")
@@ -49,13 +50,14 @@ def _linear_forecast(series: pd.Series, periods_ahead: int = 3):
         last = pd.Period(series.index[-1], freq="M")
         future_labels = [(last + i + 1).strftime("%Y-%m") for i in range(periods_ahead)]
     except Exception:
-        future_labels = [f"+{i+1}m" for i in range(periods_ahead)]
+        future_labels = [f"+{i + 1}m" for i in range(periods_ahead)]
     return fitted, forecast, resid_std, future_labels
 
 
 # ===========================================================================
 # df_to_csv
 # ===========================================================================
+
 
 class TestDfToCsv:
     def test_returns_bytes(self):
@@ -79,6 +81,7 @@ class TestDfToCsv:
 # ===========================================================================
 # dfs_to_excel
 # ===========================================================================
+
 
 class TestDfsToExcel:
     def test_returns_bytes(self):
@@ -114,11 +117,10 @@ class TestDfsToExcel:
 # _linear_forecast
 # ===========================================================================
 
+
 class TestLinearForecast:
     def test_returns_four_values(self):
-        series = pd.Series([10, 20, 30, 40, 50], index=[
-            "2024-01", "2024-02", "2024-03", "2024-04", "2024-05"
-        ])
+        series = pd.Series([10, 20, 30, 40, 50], index=["2024-01", "2024-02", "2024-03", "2024-04", "2024-05"])
         fitted, forecast, resid_std, labels = _linear_forecast(series)
         assert fitted is not None
         assert forecast is not None
@@ -132,32 +134,24 @@ class TestLinearForecast:
         assert forecast is None
 
     def test_forecast_length_matches_periods(self):
-        series = pd.Series([10, 20, 30, 40], index=[
-            "2024-01", "2024-02", "2024-03", "2024-04"
-        ])
+        series = pd.Series([10, 20, 30, 40], index=["2024-01", "2024-02", "2024-03", "2024-04"])
         _, forecast, _, labels = _linear_forecast(series, periods_ahead=5)
         assert len(forecast) == 5
         assert len(labels) == 5
 
     def test_linear_trend_forecasts_increase(self):
-        series = pd.Series([100, 200, 300, 400, 500], index=[
-            "2024-01", "2024-02", "2024-03", "2024-04", "2024-05"
-        ])
+        series = pd.Series([100, 200, 300, 400, 500], index=["2024-01", "2024-02", "2024-03", "2024-04", "2024-05"])
         _, forecast, resid_std, _ = _linear_forecast(series)
         assert forecast[0] > 500
         assert resid_std == pytest.approx(0.0, abs=1.0)
 
     def test_handles_nan_values(self):
-        series = pd.Series([10, np.nan, 30, 40, 50], index=[
-            "2024-01", "2024-02", "2024-03", "2024-04", "2024-05"
-        ])
+        series = pd.Series([10, np.nan, 30, 40, 50], index=["2024-01", "2024-02", "2024-03", "2024-04", "2024-05"])
         fitted, forecast, _, _ = _linear_forecast(series)
         assert fitted is not None  # 4 non-null values = enough
 
     def test_future_labels_are_yyyy_mm(self):
-        series = pd.Series([10, 20, 30, 40], index=[
-            "2024-01", "2024-02", "2024-03", "2024-04"
-        ])
+        series = pd.Series([10, 20, 30, 40], index=["2024-01", "2024-02", "2024-03", "2024-04"])
         _, _, _, labels = _linear_forecast(series, periods_ahead=2)
         assert labels[0] == "2024-05"
         assert labels[1] == "2024-06"
@@ -166,6 +160,7 @@ class TestLinearForecast:
 # ===========================================================================
 # _forecast_model_stats — reimplemented from app.py
 # ===========================================================================
+
 
 def _forecast_model_stats(values: tuple, test_frac: float = 0.25):
     """Identical to app._forecast_model_stats (without st.cache_data)."""
@@ -202,12 +197,14 @@ def _forecast_model_stats(values: tuple, test_frac: float = 0.25):
     nz_train = y_train != 0
     mape_train = (
         float(np.mean(np.abs((y_train[nz_train] - y_train_pred[nz_train]) / y_train[nz_train]))) * 100
-        if nz_train.any() else None
+        if nz_train.any()
+        else None
     )
     nz_test = y_test != 0
     mape_test = (
         float(np.mean(np.abs((y_test[nz_test] - y_test_pred[nz_test]) / y_test[nz_test]))) * 100
-        if nz_test.any() else None
+        if nz_test.any()
+        else None
     )
 
     return {
@@ -294,6 +291,7 @@ class TestForecastModelStats:
 # _detect_anomalies — reimplemented from app.py
 # ===========================================================================
 
+
 def _detect_anomalies(series: pd.Series) -> dict:
     """Identical to app._detect_anomalies."""
     clean = series.dropna()
@@ -363,6 +361,7 @@ class TestDetectAnomalies:
 # ===========================================================================
 # _detect_seasonality — reimplemented from app.py
 # ===========================================================================
+
 
 def _detect_seasonality(series: pd.Series) -> dict:
     """Identical to app._detect_seasonality."""

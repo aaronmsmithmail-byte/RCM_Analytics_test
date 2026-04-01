@@ -151,7 +151,8 @@ if "active_page" not in st.session_state:
 # It's professional and precise at small data-heavy sizes, has clear numeral
 # rendering for KPI values, and reads distinctively without being showy —
 # appropriate for a clinical analytics context.
-st.markdown("""
+st.markdown(
+    """
 <style>
     /* ── Typography — Plus Jakarta Sans ── */
     @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400&display=swap');
@@ -306,7 +307,9 @@ st.markdown("""
         border-color: #e2e8f0 !important;
     }
 </style>
-""", unsafe_allow_html=True)
+""",
+    unsafe_allow_html=True,
+)
 
 
 def metric_card(label, value, benchmark="", status="neutral"):
@@ -331,16 +334,17 @@ def metric_card(label, value, benchmark="", status="neutral"):
     icon_color = _icon_colors.get(status, "#1E6FBF")
     icon_html = (
         f'<span style="font-size:0.6rem;font-weight:800;color:{icon_color};'
-        f'background:{icon_color}1a;border-radius:50%;width:16px;height:16px;'
-        f'display:inline-flex;align-items:center;justify-content:center;'
+        f"background:{icon_color}1a;border-radius:50%;width:16px;height:16px;"
+        f"display:inline-flex;align-items:center;justify-content:center;"
         f'margin-left:6px;flex-shrink:0;vertical-align:middle">{icon}</span>'
-        if icon else ""
+        if icon
+        else ""
     )
     st.markdown(
         f'<div class="{css_class}">'
         f'<p class="metric-label">{label}{icon_html}</p>'
         f'<h2 style="margin:0">{value}</h2>'
-        f'{bench_html}</div>',
+        f"{bench_html}</div>",
         unsafe_allow_html=True,
     )
 
@@ -515,7 +519,7 @@ def _linear_forecast(series: pd.Series, periods_ahead: int = 3, exclude_mask=Non
         last = pd.Period(series.index[-1], freq="M")
         future_labels = [(last + i + 1).strftime("%Y-%m") for i in range(periods_ahead)]
     except Exception:
-        future_labels = [f"+{i+1}m" for i in range(periods_ahead)]
+        future_labels = [f"+{i + 1}m" for i in range(periods_ahead)]
     return fitted, forecast, resid_std, future_labels
 
 
@@ -576,12 +580,14 @@ def _forecast_model_stats(values: tuple, test_frac: float = 0.25, exclude_indice
     nz_train = y_train != 0
     mape_train = (
         float(np.mean(np.abs((y_train[nz_train] - y_train_pred[nz_train]) / y_train[nz_train]))) * 100
-        if nz_train.any() else None
+        if nz_train.any()
+        else None
     )
     nz_test = y_test != 0
     mape_test = (
         float(np.mean(np.abs((y_test[nz_test] - y_test_pred[nz_test]) / y_test[nz_test]))) * 100
-        if nz_test.any() else None
+        if nz_test.any()
+        else None
     )
 
     return {
@@ -603,9 +609,7 @@ def _render_model_stats(series: pd.Series, metric_label: str, anomaly_info=None,
     # Build exclude_indices from anomaly mask
     exclude_idx = ()
     if anomaly_info and anomaly_info["count"] > 0:
-        exclude_idx = tuple(
-            i for i, val in enumerate(anomaly_info["mask"]) if val
-        )
+        exclude_idx = tuple(i for i, val in enumerate(anomaly_info["mask"]) if val)
     stats = _forecast_model_stats(
         (tuple(series.index), tuple(series.values)),
         exclude_indices=exclude_idx,
@@ -643,11 +647,17 @@ def _render_model_stats(series: pd.Series, metric_label: str, anomaly_info=None,
         # Interpret R² for the user
         r2 = stats["r2_test"]
         if r2 >= 0.8:
-            st.success(f"Test R² = {r2:.3f} — strong fit. The linear trend explains most of the variation in the holdout period.")
+            st.success(
+                f"Test R² = {r2:.3f} — strong fit. The linear trend explains most of the variation in the holdout period."
+            )
         elif r2 >= 0.5:
-            st.info(f"Test R² = {r2:.3f} — moderate fit. The linear trend captures the general direction but not all variation.")
+            st.info(
+                f"Test R² = {r2:.3f} — moderate fit. The linear trend captures the general direction but not all variation."
+            )
         else:
-            st.warning(f"Test R² = {r2:.3f} — weak fit. The data may have non-linear patterns, seasonality, or high volatility that a simple linear model cannot capture.")
+            st.warning(
+                f"Test R² = {r2:.3f} — weak fit. The data may have non-linear patterns, seasonality, or high volatility that a simple linear model cannot capture."
+            )
 
 
 # ── Load Data ────────────────────────────────────────────────────────
@@ -689,7 +699,7 @@ payers = data["payers"]
 operating_costs = data["operating_costs"]
 
 # ── Data Validation ───────────────────────────────────────────────────
-_validation_issues = validate_all()   # reads directly from Silver tables
+_validation_issues = validate_all()  # reads directly from Silver tables
 
 # ── Sidebar Filters ─────────────────────────────────────────────────
 # Sidebar filters allow users to slice data interactively. The filter
@@ -767,10 +777,7 @@ f_charges = charges[charges["encounter_id"].isin(f_encounters["encounter_id"].un
 # ── Build FilterParams for SQL-based metric queries ──────────────────
 # All 17 metric query_* functions accept a FilterParams object that
 # encodes the same four sidebar dimensions as SQL WHERE clause parameters.
-_payer_id = (
-    payers[payers["payer_name"] == selected_payer]["payer_id"].values[0]
-    if selected_payer != "All" else None
-)
+_payer_id = payers[payers["payer_name"] == selected_payer]["payer_id"].values[0] if selected_payer != "All" else None
 params = FilterParams(
     start_date=str(start_dt.date()),
     end_date=str(end_dt.date()),
@@ -783,28 +790,28 @@ params = FilterParams(
 # Computed here (before the tabs) so the alert system in the sidebar
 # can reference live values on every rerun, and so tab1/tab2 can reuse
 # them without issuing duplicate database queries.
-dar_val, dar_trend       = query_days_in_ar(params)
-ncr_val, ncr_trend       = query_net_collection_rate(params)
-gcr_val, gcr_trend       = query_gross_collection_rate(params)
-ccr_val, ccr_trend       = query_clean_claim_rate(params)
+dar_val, dar_trend = query_days_in_ar(params)
+ncr_val, ncr_trend = query_net_collection_rate(params)
+gcr_val, gcr_trend = query_gross_collection_rate(params)
+ccr_val, ccr_trend = query_clean_claim_rate(params)
 denial_val, denial_trend = query_denial_rate(params)
-fpr_val, fpr_trend       = query_first_pass_rate(params)
-accuracy_val             = query_payment_accuracy(params)
+fpr_val, fpr_trend = query_first_pass_rate(params)
+accuracy_val = query_payment_accuracy(params)
 bad_debt_val, bad_debt_amt, total_charges_kpi = query_bad_debt_rate(params)
-ctc_val, ctc_trend       = query_cost_to_collect(params)
+ctc_val, ctc_trend = query_cost_to_collect(params)
 
 # ── Alert Threshold Configuration ────────────────────────────────────
 # Defaults match industry benchmarks.  Users can adjust via the sidebar
 # expander and thresholds persist for the browser session.
 if "alert_thresholds" not in st.session_state:
     st.session_state["alert_thresholds"] = {
-        "dar_max":      35.0,
-        "ncr_min":      95.0,
-        "ccr_min":      90.0,
-        "denial_max":   10.0,
-        "fpr_min":      85.0,
+        "dar_max": 35.0,
+        "ncr_min": 95.0,
+        "ccr_min": 90.0,
+        "denial_max": 10.0,
+        "fpr_min": 85.0,
         "accuracy_min": 95.0,
-        "bad_debt_max":  3.0,
+        "bad_debt_max": 3.0,
     }
 
 _t = st.session_state["alert_thresholds"]
@@ -812,26 +819,59 @@ _t = st.session_state["alert_thresholds"]
 st.sidebar.divider()
 with st.sidebar.expander("⚙️ Alert Thresholds", expanded=False):
     st.caption("Adjust to match your organization's targets.")
-    _t["dar_max"]      = st.number_input("Max Days in A/R",             value=float(_t["dar_max"]),      step=1.0,  min_value=0.0,   key="thr_dar")
-    _t["ncr_min"]      = st.number_input("Min Net Collection Rate (%)",  value=float(_t["ncr_min"]),      step=1.0,  min_value=0.0,   max_value=100.0, key="thr_ncr")
-    _t["ccr_min"]      = st.number_input("Min Clean Claim Rate (%)",     value=float(_t["ccr_min"]),      step=1.0,  min_value=0.0,   max_value=100.0, key="thr_ccr")
-    _t["denial_max"]   = st.number_input("Max Denial Rate (%)",          value=float(_t["denial_max"]),   step=1.0,  min_value=0.0,   max_value=100.0, key="thr_denial")
-    _t["fpr_min"]      = st.number_input("Min First-Pass Rate (%)",      value=float(_t["fpr_min"]),      step=1.0,  min_value=0.0,   max_value=100.0, key="thr_fpr")
-    _t["accuracy_min"] = st.number_input("Min Payment Accuracy (%)",     value=float(_t["accuracy_min"]), step=1.0,  min_value=0.0,   max_value=100.0, key="thr_acc")
-    _t["bad_debt_max"] = st.number_input("Max Bad Debt Rate (%)",        value=float(_t["bad_debt_max"]), step=0.5,  min_value=0.0,   key="thr_bd")
+    _t["dar_max"] = st.number_input(
+        "Max Days in A/R", value=float(_t["dar_max"]), step=1.0, min_value=0.0, key="thr_dar"
+    )
+    _t["ncr_min"] = st.number_input(
+        "Min Net Collection Rate (%)",
+        value=float(_t["ncr_min"]),
+        step=1.0,
+        min_value=0.0,
+        max_value=100.0,
+        key="thr_ncr",
+    )
+    _t["ccr_min"] = st.number_input(
+        "Min Clean Claim Rate (%)", value=float(_t["ccr_min"]), step=1.0, min_value=0.0, max_value=100.0, key="thr_ccr"
+    )
+    _t["denial_max"] = st.number_input(
+        "Max Denial Rate (%)", value=float(_t["denial_max"]), step=1.0, min_value=0.0, max_value=100.0, key="thr_denial"
+    )
+    _t["fpr_min"] = st.number_input(
+        "Min First-Pass Rate (%)", value=float(_t["fpr_min"]), step=1.0, min_value=0.0, max_value=100.0, key="thr_fpr"
+    )
+    _t["accuracy_min"] = st.number_input(
+        "Min Payment Accuracy (%)",
+        value=float(_t["accuracy_min"]),
+        step=1.0,
+        min_value=0.0,
+        max_value=100.0,
+        key="thr_acc",
+    )
+    _t["bad_debt_max"] = st.number_input(
+        "Max Bad Debt Rate (%)", value=float(_t["bad_debt_max"]), step=0.5, min_value=0.0, key="thr_bd"
+    )
 
 # ── Compute Active Alerts ─────────────────────────────────────────────
 _active_alerts = []
-if dar_val      > _t["dar_max"]:      _active_alerts.append(("Days in A/R",          f"{dar_val} days",   f">{_t['dar_max']} days"))
-if ncr_val      < _t["ncr_min"]:      _active_alerts.append(("Net Collection Rate",   f"{ncr_val}%",       f"<{_t['ncr_min']}%"))
-if ccr_val      < _t["ccr_min"]:      _active_alerts.append(("Clean Claim Rate",      f"{ccr_val}%",       f"<{_t['ccr_min']}%"))
-if denial_val   > _t["denial_max"]:   _active_alerts.append(("Denial Rate",           f"{denial_val}%",    f">{_t['denial_max']}%"))
-if fpr_val      < _t["fpr_min"]:      _active_alerts.append(("First-Pass Rate",       f"{fpr_val}%",       f"<{_t['fpr_min']}%"))
-if accuracy_val < _t["accuracy_min"]: _active_alerts.append(("Payment Accuracy",      f"{accuracy_val}%",  f"<{_t['accuracy_min']}%"))
-if bad_debt_val > _t["bad_debt_max"]: _active_alerts.append(("Bad Debt Rate",         f"{bad_debt_val}%",  f">{_t['bad_debt_max']}%"))
+if dar_val > _t["dar_max"]:
+    _active_alerts.append(("Days in A/R", f"{dar_val} days", f">{_t['dar_max']} days"))
+if ncr_val < _t["ncr_min"]:
+    _active_alerts.append(("Net Collection Rate", f"{ncr_val}%", f"<{_t['ncr_min']}%"))
+if ccr_val < _t["ccr_min"]:
+    _active_alerts.append(("Clean Claim Rate", f"{ccr_val}%", f"<{_t['ccr_min']}%"))
+if denial_val > _t["denial_max"]:
+    _active_alerts.append(("Denial Rate", f"{denial_val}%", f">{_t['denial_max']}%"))
+if fpr_val < _t["fpr_min"]:
+    _active_alerts.append(("First-Pass Rate", f"{fpr_val}%", f"<{_t['fpr_min']}%"))
+if accuracy_val < _t["accuracy_min"]:
+    _active_alerts.append(("Payment Accuracy", f"{accuracy_val}%", f"<{_t['accuracy_min']}%"))
+if bad_debt_val > _t["bad_debt_max"]:
+    _active_alerts.append(("Bad Debt Rate", f"{bad_debt_val}%", f">{_t['bad_debt_max']}%"))
 
 if _active_alerts:
-    st.sidebar.error(f"🔔 {len(_active_alerts)} KPI Alert{'s' if len(_active_alerts) > 1 else ''} — review Executive Summary")
+    st.sidebar.error(
+        f"🔔 {len(_active_alerts)} KPI Alert{'s' if len(_active_alerts) > 1 else ''} — review Executive Summary"
+    )
     for _kpi, _val, _thresh in _active_alerts:
         st.sidebar.markdown(f"&nbsp;&nbsp;• **{_kpi}**: {_val} (threshold {_thresh})")
 else:
@@ -841,8 +881,8 @@ else:
 st.sidebar.divider()
 _freshness_df = query_data_freshness()
 if not _freshness_df.empty:
-    _fresh_count    = int((_freshness_df["status"] == "fresh").sum())
-    _stale_count    = int((_freshness_df["status"] == "stale").sum())
+    _fresh_count = int((_freshness_df["status"] == "fresh").sum())
+    _stale_count = int((_freshness_df["status"] == "stale").sum())
     _critical_count = int((_freshness_df["status"] == "critical").sum())
     _panel_icon = "🟢" if _critical_count == 0 and _stale_count == 0 else ("🔴" if _critical_count > 0 else "🟡")
     with st.sidebar.expander(f"{_panel_icon} Data Pipeline ({_fresh_count} fresh)", expanded=False):
@@ -850,7 +890,9 @@ if not _freshness_df.empty:
         _status_icons = {"fresh": "🟢", "stale": "🟡", "critical": "🔴"}
         for _, _row in _freshness_df.iterrows():
             _icon = _status_icons.get(_row["status"], "⚪")
-            _age_str = f"{_row['age_hours']:.1f}h ago" if _row["age_hours"] < 48 else f"{_row['age_hours']/24:.1f}d ago"
+            _age_str = (
+                f"{_row['age_hours']:.1f}h ago" if _row["age_hours"] < 48 else f"{_row['age_hours'] / 24:.1f}d ago"
+            )
             st.markdown(
                 f"{_icon} **{_row['label']}**  \n"
                 f"&nbsp;&nbsp;{int(_row['row_count']):,} rows · {_age_str} · cadence {int(_row['cadence_hours'])}h"
@@ -914,7 +956,8 @@ elif _active == "feature_backlog":
     st.stop()
 
 # ── Header ───────────────────────────────────────────────────────────
-st.markdown("""
+st.markdown(
+    """
 <div class="brand-header">
     <div class="brand-logo">⚕</div>
     <div class="brand-text">
@@ -922,8 +965,12 @@ st.markdown("""
         <p class="brand-tagline">Healthcare Revenue Cycle Analytics</p>
     </div>
 </div>
-""", unsafe_allow_html=True)
-st.caption(f"Analyzing {len(f_claims):,} claims | {len(f_encounters):,} encounters | Date range: {start_dt.strftime('%b %Y')} to {end_dt.strftime('%b %Y')}")
+""",
+    unsafe_allow_html=True,
+)
+st.caption(
+    f"Analyzing {len(f_claims):,} claims | {len(f_encounters):,} encounters | Date range: {start_dt.strftime('%b %Y')} to {end_dt.strftime('%b %Y')}"
+)
 st.markdown('<div class="page-header-accent"></div>', unsafe_allow_html=True)
 
 if f_claims.empty:
@@ -934,20 +981,22 @@ if f_claims.empty:
 style_metric_cards(background_color="#ffffff", border_left_color="#1E6FBF", border_color="#e2e8f0", box_shadow=True)
 
 # ── Tabs ─────────────────────────────────────────────────────────────
-tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10, tab11, tab12 = st.tabs([
-    "Executive Summary",
-    "Collections & Revenue",
-    "Claims & Denials",
-    "A/R Aging & Cash Flow",
-    "Payer Analysis",
-    "Department Performance",
-    "Provider Performance",
-    "CPT Code Analysis",
-    "Underpayment Analysis",
-    "Forecasting",
-    "Patient Responsibility",
-    "AI Assistant",
-])
+tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10, tab11, tab12 = st.tabs(
+    [
+        "Executive Summary",
+        "Collections & Revenue",
+        "Claims & Denials",
+        "A/R Aging & Cash Flow",
+        "Payer Analysis",
+        "Department Performance",
+        "Provider Performance",
+        "CPT Code Analysis",
+        "Underpayment Analysis",
+        "Forecasting",
+        "Patient Responsibility",
+        "AI Assistant",
+    ]
+)
 
 # =====================================================================
 # TAB 1: EXECUTIVE SUMMARY
@@ -1001,21 +1050,36 @@ with tab1:
     col_left, col_right = st.columns(2)
     with col_left:
         st.subheader("Days in A/R Trend")
-        fig = px.line(dar_trend.reset_index(), x="year_month", y="days_in_ar",
-                      labels={"year_month": "Month", "days_in_ar": "Days in A/R"})
+        fig = px.line(
+            dar_trend.reset_index(),
+            x="year_month",
+            y="days_in_ar",
+            labels={"year_month": "Month", "days_in_ar": "Days in A/R"},
+        )
         fig.update_traces(fill="tozeroy", fillcolor="rgba(30,111,191,0.07)", line_width=2.5, line_color="#1E6FBF")
-        fig.add_hline(y=35, line_dash="dash", line_color="#10B981", annotation_text="Benchmark: 35 days",
-                      annotation_font_color="#10B981")
+        fig.add_hline(
+            y=35,
+            line_dash="dash",
+            line_color="#10B981",
+            annotation_text="Benchmark: 35 days",
+            annotation_font_color="#10B981",
+        )
         fig.update_layout(height=350, margin=dict(t=30, b=30), plot_bgcolor="rgba(248,250,252,0.5)")
         st.plotly_chart(fig, theme="streamlit", width="stretch")
 
     with col_right:
         st.subheader("Net Collection Rate Trend")
-        fig = px.line(ncr_trend.reset_index(), x="year_month", y="ncr",
-                      labels={"year_month": "Month", "ncr": "NCR (%)"})
+        fig = px.line(
+            ncr_trend.reset_index(), x="year_month", y="ncr", labels={"year_month": "Month", "ncr": "NCR (%)"}
+        )
         fig.update_traces(fill="tozeroy", fillcolor="rgba(16,185,129,0.07)", line_width=2.5, line_color="#10B981")
-        fig.add_hline(y=95, line_dash="dash", line_color="#10B981", annotation_text="Benchmark: 95%",
-                      annotation_font_color="#10B981")
+        fig.add_hline(
+            y=95,
+            line_dash="dash",
+            line_color="#10B981",
+            annotation_text="Benchmark: 95%",
+            annotation_font_color="#10B981",
+        )
         fig.update_layout(height=350, margin=dict(t=30, b=30), plot_bgcolor="rgba(248,250,252,0.5)")
         st.plotly_chart(fig, theme="streamlit", width="stretch")
 
@@ -1023,9 +1087,7 @@ with tab1:
     st.subheader("Monthly Volume")
     enc_monthly = f_encounters.copy()
     enc_monthly["year_month"] = enc_monthly["date_of_service"].dt.to_period("M").astype(str)
-    vol = enc_monthly.groupby("year_month").agg(
-        encounters=("encounter_id", "count")
-    ).reset_index()
+    vol = enc_monthly.groupby("year_month").agg(encounters=("encounter_id", "count")).reset_index()
     claims_monthly = f_claims.copy()
     claims_monthly["year_month"] = claims_monthly["date_of_service"].dt.to_period("M").astype(str)
     claims_vol = claims_monthly.groupby("year_month")["claim_id"].count().reset_index()
@@ -1033,13 +1095,34 @@ with tab1:
     vol = vol.merge(claims_vol, on="year_month", how="outer").fillna(0)
 
     fig = go.Figure()
-    fig.add_trace(go.Bar(x=vol["year_month"], y=vol["encounters"], name="Encounters",
-                         marker_color=RCM_COLORS[0], marker_line_width=0, opacity=0.9))
-    fig.add_trace(go.Bar(x=vol["year_month"], y=vol["claims"], name="Claims",
-                         marker_color=RCM_COLORS[5], marker_line_width=0, opacity=0.9))
-    fig.update_layout(barmode="group", height=350, margin=dict(t=30, b=30),
-                      xaxis_title="Month", yaxis_title="Count",
-                      plot_bgcolor="rgba(248,250,252,0.5)")
+    fig.add_trace(
+        go.Bar(
+            x=vol["year_month"],
+            y=vol["encounters"],
+            name="Encounters",
+            marker_color=RCM_COLORS[0],
+            marker_line_width=0,
+            opacity=0.9,
+        )
+    )
+    fig.add_trace(
+        go.Bar(
+            x=vol["year_month"],
+            y=vol["claims"],
+            name="Claims",
+            marker_color=RCM_COLORS[5],
+            marker_line_width=0,
+            opacity=0.9,
+        )
+    )
+    fig.update_layout(
+        barmode="group",
+        height=350,
+        margin=dict(t=30, b=30),
+        xaxis_title="Month",
+        yaxis_title="Count",
+        plot_bgcolor="rgba(248,250,252,0.5)",
+    )
     st.plotly_chart(fig, theme="streamlit", width="stretch")
 
 
@@ -1082,20 +1165,33 @@ with tab2:
     total_denials_w = f_denials["denied_amount"].sum()
     net_revenue = total_payments_w
 
-    fig = go.Figure(go.Waterfall(
-        name="Revenue Flow",
-        orientation="v",
-        measure=["absolute", "relative", "relative", "relative", "total"],
-        x=["Total Charges", "Adjustments", "Denials (Lost)", "Collections", "Net Revenue"],
-        y=[total_charges_w, -total_adj_w, -(total_denials_w - f_denials["recovered_amount"].sum()),
-           total_payments_w - total_charges_w + total_adj_w + (total_denials_w - f_denials["recovered_amount"].sum()),
-           0],
-        connector={"line": {"color": "rgb(63, 63, 63)"}},
-        text=[f"${total_charges_w:,.0f}", f"-${total_adj_w:,.0f}",
-              f"-${(total_denials_w - f_denials['recovered_amount'].sum()):,.0f}",
-              "", f"${net_revenue:,.0f}"],
-        textposition="outside",
-    ))
+    fig = go.Figure(
+        go.Waterfall(
+            name="Revenue Flow",
+            orientation="v",
+            measure=["absolute", "relative", "relative", "relative", "total"],
+            x=["Total Charges", "Adjustments", "Denials (Lost)", "Collections", "Net Revenue"],
+            y=[
+                total_charges_w,
+                -total_adj_w,
+                -(total_denials_w - f_denials["recovered_amount"].sum()),
+                total_payments_w
+                - total_charges_w
+                + total_adj_w
+                + (total_denials_w - f_denials["recovered_amount"].sum()),
+                0,
+            ],
+            connector={"line": {"color": "rgb(63, 63, 63)"}},
+            text=[
+                f"${total_charges_w:,.0f}",
+                f"-${total_adj_w:,.0f}",
+                f"-${(total_denials_w - f_denials['recovered_amount'].sum()):,.0f}",
+                "",
+                f"${net_revenue:,.0f}",
+            ],
+            textposition="outside",
+        )
+    )
     fig.update_layout(height=400, margin=dict(t=30, b=30), showlegend=False)
     st.plotly_chart(fig, theme="streamlit", width="stretch")
 
@@ -1105,29 +1201,41 @@ with tab2:
         st.subheader("Collection Rates Over Time")
         combined_trend = gcr_trend[["gcr"]].join(ncr_trend[["ncr"]], how="outer").fillna(0).reset_index()
         combined_trend.columns = ["Month", "Gross Collection Rate", "Net Collection Rate"]
-        fig = px.line(combined_trend, x="Month", y=["Gross Collection Rate", "Net Collection Rate"],
-                      color_discrete_sequence=[RCM_COLORS[0], RCM_COLORS[3]])
+        fig = px.line(
+            combined_trend,
+            x="Month",
+            y=["Gross Collection Rate", "Net Collection Rate"],
+            color_discrete_sequence=[RCM_COLORS[0], RCM_COLORS[3]],
+        )
         fig.update_traces(line_width=2.5)
-        fig.update_layout(height=350, margin=dict(t=30, b=30), yaxis_title="%",
-                          plot_bgcolor="rgba(248,250,252,0.5)")
+        fig.update_layout(height=350, margin=dict(t=30, b=30), yaxis_title="%", plot_bgcolor="rgba(248,250,252,0.5)")
         st.plotly_chart(fig, theme="streamlit", width="stretch")
 
     with col_right:
         st.subheader("Cost to Collect Trend")
-        fig = px.area(ctc_trend.reset_index(), x="year_month", y="cost_to_collect_pct",
-                      labels={"year_month": "Month", "cost_to_collect_pct": "Cost to Collect (%)"},
-                      color_discrete_sequence=[RCM_COLORS[7]])
+        fig = px.area(
+            ctc_trend.reset_index(),
+            x="year_month",
+            y="cost_to_collect_pct",
+            labels={"year_month": "Month", "cost_to_collect_pct": "Cost to Collect (%)"},
+            color_discrete_sequence=[RCM_COLORS[7]],
+        )
         fig.update_traces(line_width=2)
-        fig.add_hline(y=5, line_dash="dash", line_color="#10B981", annotation_text="Target: 5%",
-                      annotation_font_color="#10B981")
+        fig.add_hline(
+            y=5, line_dash="dash", line_color="#10B981", annotation_text="Target: 5%", annotation_font_color="#10B981"
+        )
         fig.update_layout(height=350, margin=dict(t=30, b=30), plot_bgcolor="rgba(248,250,252,0.5)")
         st.plotly_chart(fig, theme="streamlit", width="stretch")
 
     # Avg reimbursement trend
     st.subheader("Average Reimbursement per Claim")
-    fig = px.bar(reimb_trend.reset_index(), x="year_month", y="payment_amount",
-                 labels={"year_month": "Month", "payment_amount": "Avg Reimbursement ($)"},
-                 color_discrete_sequence=[RCM_COLORS[0]])
+    fig = px.bar(
+        reimb_trend.reset_index(),
+        x="year_month",
+        y="payment_amount",
+        labels={"year_month": "Month", "payment_amount": "Avg Reimbursement ($)"},
+        color_discrete_sequence=[RCM_COLORS[0]],
+    )
     fig.update_traces(marker_line_width=0, opacity=0.9)
     fig.update_layout(height=300, margin=dict(t=30, b=30), plot_bgcolor="rgba(248,250,252,0.5)")
     st.plotly_chart(fig, theme="streamlit", width="stretch")
@@ -1135,24 +1243,26 @@ with tab2:
     # Financial summary
     st.subheader("Financial Summary")
     fin_data = {
-        "Metric": ["Total Charges", "Total Payments", "Total Adjustments",
-                    "Bad Debt Write-offs", "Net Revenue"],
+        "Metric": ["Total Charges", "Total Payments", "Total Adjustments", "Bad Debt Write-offs", "Net Revenue"],
         "Amount": [
             f"${total_charges_w:,.2f}",
             f"${total_payments_w:,.2f}",
             f"${total_adj_w:,.2f}",
             f"${bad_debt_amt:,.2f}",
             f"${net_revenue:,.2f}",
-        ]
+        ],
     }
     fin_df = pd.DataFrame(fin_data)
     st.dataframe(fin_df, hide_index=True, width="stretch")
-    export_buttons("collections_revenue", {
-        "Financial Summary": fin_df,
-        "Filtered Claims": f_claims,
-        "Filtered Payments": f_payments,
-        "Filtered Adjustments": f_adjustments,
-    })
+    export_buttons(
+        "collections_revenue",
+        {
+            "Financial Summary": fin_df,
+            "Filtered Claims": f_claims,
+            "Filtered Payments": f_payments,
+            "Filtered Adjustments": f_adjustments,
+        },
+    )
 
 
 # =====================================================================
@@ -1198,18 +1308,21 @@ with tab3:
         st.subheader("Claim Status Distribution")
         status_counts = f_claims["claim_status"].value_counts().reset_index()
         status_counts.columns = ["Status", "Count"]
-        fig = px.pie(status_counts, values="Count", names="Status",
-                     color_discrete_sequence=RCM_COLORS)
+        fig = px.pie(status_counts, values="Count", names="Status", color_discrete_sequence=RCM_COLORS)
         fig.update_layout(height=350, margin=dict(t=30, b=30))
         st.plotly_chart(fig, theme="streamlit", width="stretch")
 
     with col_right:
         st.subheader("Top Denial Reasons")
-        fig = px.bar(denial_reasons.head(10), x="count", y="denial_reason_description",
-                     orientation="h", color="total_denied_amount",
-                     color_continuous_scale="Reds",
-                     labels={"count": "Denial Count", "denial_reason_description": "Reason",
-                             "total_denied_amount": "$ Denied"})
+        fig = px.bar(
+            denial_reasons.head(10),
+            x="count",
+            y="denial_reason_description",
+            orientation="h",
+            color="total_denied_amount",
+            color_continuous_scale="Reds",
+            labels={"count": "Denial Count", "denial_reason_description": "Reason", "total_denied_amount": "$ Denied"},
+        )
         fig.update_layout(height=350, margin=dict(t=30, b=30), yaxis={"categoryorder": "total ascending"})
         st.plotly_chart(fig, theme="streamlit", width="stretch")
 
@@ -1217,23 +1330,33 @@ with tab3:
     col_left2, col_right2 = st.columns(2)
     with col_left2:
         st.subheader("Denial Rate Trend")
-        fig = px.line(denial_trend.reset_index(), x="year_month", y="denial_rate",
-                      labels={"year_month": "Month", "denial_rate": "Denial Rate (%)"},
-                      color_discrete_sequence=[RCM_COLORS[3]])
+        fig = px.line(
+            denial_trend.reset_index(),
+            x="year_month",
+            y="denial_rate",
+            labels={"year_month": "Month", "denial_rate": "Denial Rate (%)"},
+            color_discrete_sequence=[RCM_COLORS[3]],
+        )
         fig.update_traces(fill="tozeroy", fillcolor="rgba(239,68,68,0.07)", line_width=2.5)
-        fig.add_hline(y=10, line_dash="dash", line_color="#10B981", annotation_text="Target: 10%",
-                      annotation_font_color="#10B981")
+        fig.add_hline(
+            y=10, line_dash="dash", line_color="#10B981", annotation_text="Target: 10%", annotation_font_color="#10B981"
+        )
         fig.update_layout(height=300, margin=dict(t=30, b=30), plot_bgcolor="rgba(248,250,252,0.5)")
         st.plotly_chart(fig, theme="streamlit", width="stretch")
 
     with col_right2:
         st.subheader("Clean Claim Rate Trend")
-        fig = px.line(ccr_trend.reset_index(), x="year_month", y="ccr",
-                      labels={"year_month": "Month", "ccr": "Clean Claim Rate (%)"},
-                      color_discrete_sequence=[RCM_COLORS[1]])
+        fig = px.line(
+            ccr_trend.reset_index(),
+            x="year_month",
+            y="ccr",
+            labels={"year_month": "Month", "ccr": "Clean Claim Rate (%)"},
+            color_discrete_sequence=[RCM_COLORS[1]],
+        )
         fig.update_traces(fill="tozeroy", fillcolor="rgba(16,185,129,0.07)", line_width=2.5)
-        fig.add_hline(y=90, line_dash="dash", line_color="#10B981", annotation_text="Target: 90%",
-                      annotation_font_color="#10B981")
+        fig.add_hline(
+            y=90, line_dash="dash", line_color="#10B981", annotation_text="Target: 90%", annotation_font_color="#10B981"
+        )
         fig.update_layout(height=300, margin=dict(t=30, b=30), plot_bgcolor="rgba(248,250,252,0.5)")
         st.plotly_chart(fig, theme="streamlit", width="stretch")
 
@@ -1244,35 +1367,55 @@ with tab3:
         lag_df = charge_lag_dist.reset_index()
         lag_df.columns = ["Days", "Count"]
         lag_df = lag_df[lag_df["Days"] <= 30]
-        fig = px.bar(lag_df, x="Days", y="Count",
-                     labels={"Days": "Lag (Days)", "Count": "# of Charges"},
-                     color_discrete_sequence=[RCM_COLORS[4]])
+        fig = px.bar(
+            lag_df,
+            x="Days",
+            y="Count",
+            labels={"Days": "Lag (Days)", "Count": "# of Charges"},
+            color_discrete_sequence=[RCM_COLORS[4]],
+        )
         fig.update_traces(marker_line_width=0, opacity=0.9)
         fig.update_layout(height=300, margin=dict(t=30, b=30), plot_bgcolor="rgba(248,250,252,0.5)")
         st.plotly_chart(fig, theme="streamlit", width="stretch")
 
     with col_right3:
         st.subheader("First-Pass Rate Trend")
-        fig = px.line(fpr_trend.reset_index(), x="year_month", y="fpr",
-                      labels={"year_month": "Month", "fpr": "First-Pass Rate (%)"},
-                      color_discrete_sequence=[RCM_COLORS[5]])
+        fig = px.line(
+            fpr_trend.reset_index(),
+            x="year_month",
+            y="fpr",
+            labels={"year_month": "Month", "fpr": "First-Pass Rate (%)"},
+            color_discrete_sequence=[RCM_COLORS[5]],
+        )
         fig.update_traces(fill="tozeroy", fillcolor="rgba(14,165,233,0.07)", line_width=2.5)
-        fig.add_hline(y=85, line_dash="dash", line_color="#10B981", annotation_text="Target: 85%",
-                      annotation_font_color="#10B981")
+        fig.add_hline(
+            y=85, line_dash="dash", line_color="#10B981", annotation_text="Target: 85%", annotation_font_color="#10B981"
+        )
         fig.update_layout(height=300, margin=dict(t=30, b=30), plot_bgcolor="rgba(248,250,252,0.5)")
         st.plotly_chart(fig, theme="streamlit", width="stretch")
 
     # Denial details table
     with st.expander("Denial Reasons Detail Table"):
-        denial_detail_df = denial_reasons[["denial_reason_code", "denial_reason_description", "count",
-                        "total_denied_amount", "total_recovered", "recovery_rate"]].round(2)
+        denial_detail_df = denial_reasons[
+            [
+                "denial_reason_code",
+                "denial_reason_description",
+                "count",
+                "total_denied_amount",
+                "total_recovered",
+                "recovery_rate",
+            ]
+        ].round(2)
         st.dataframe(denial_detail_df, hide_index=True, width="stretch")
 
-    export_buttons("claims_denials", {
-        "Denial Reasons": denial_detail_df,
-        "Filtered Claims": f_claims,
-        "Filtered Denials": f_denials,
-    })
+    export_buttons(
+        "claims_denials",
+        {
+            "Denial Reasons": denial_detail_df,
+            "Filtered Claims": f_claims,
+            "Filtered Denials": f_denials,
+        },
+    )
 
     # ── Claim Scrubbing Rules Breakdown ───────────────────────────────
     st.divider()
@@ -1303,7 +1446,9 @@ with tab3:
         with col_sc1:
             fig = px.bar(
                 scrub_df.sort_values("count"),
-                x="count", y="label", orientation="h",
+                x="count",
+                y="label",
+                orientation="h",
                 color="pct_of_dirty",
                 color_continuous_scale="Reds",
                 labels={"count": "Dirty Claim Count", "label": "", "pct_of_dirty": "% of Dirty"},
@@ -1314,7 +1459,9 @@ with tab3:
 
         with col_sc2:
             fig = px.pie(
-                scrub_df, values="total_charges", names="label",
+                scrub_df,
+                values="total_charges",
+                names="label",
                 title="Charges at Risk by Fail Reason",
                 color_discrete_sequence=RCM_COLORS,
             )
@@ -1323,7 +1470,13 @@ with tab3:
 
         with st.expander("Scrubbing Detail & Resolution Guidance"):
             guidance_df = scrub_df[["label", "count", "total_charges", "pct_of_dirty", "guidance"]].copy().round(2)
-            guidance_df.columns = ["Fail Reason", "Dirty Claims", "Charges at Risk ($)", "% of Dirty", "Resolution Guidance"]
+            guidance_df.columns = [
+                "Fail Reason",
+                "Dirty Claims",
+                "Charges at Risk ($)",
+                "% of Dirty",
+                "Resolution Guidance",
+            ]
             st.dataframe(guidance_df, hide_index=True, width="stretch")
             export_buttons("claim_scrubbing_breakdown", {"Scrubbing Breakdown": guidance_df})
 
@@ -1363,20 +1516,26 @@ with tab4:
         st.subheader("A/R Aging Buckets")
         aging_df = aging_summary.reset_index()
         aging_df.columns = ["Bucket", "Claim Count", "Total A/R", "% of Total"]
-        fig = px.bar(aging_df, x="Bucket", y="Total A/R",
-                     text="% of Total",
-                     color="Bucket",
-                     color_discrete_sequence=["#10B981","#F59E0B","#F97316","#EF4444","#991B1B"])
-        fig.update_traces(texttemplate="%{text:.1f}%", textposition="outside",
-                          marker_line_width=0, opacity=0.92)
-        fig.update_layout(height=400, margin=dict(t=30, b=30), showlegend=False,
-                          plot_bgcolor="rgba(248,250,252,0.5)")
+        fig = px.bar(
+            aging_df,
+            x="Bucket",
+            y="Total A/R",
+            text="% of Total",
+            color="Bucket",
+            color_discrete_sequence=["#10B981", "#F59E0B", "#F97316", "#EF4444", "#991B1B"],
+        )
+        fig.update_traces(texttemplate="%{text:.1f}%", textposition="outside", marker_line_width=0, opacity=0.92)
+        fig.update_layout(height=400, margin=dict(t=30, b=30), showlegend=False, plot_bgcolor="rgba(248,250,252,0.5)")
         st.plotly_chart(fig, theme="streamlit", width="stretch")
 
     with col_right:
         st.subheader("A/R Aging Distribution")
-        fig = px.pie(aging_df, values="Total A/R", names="Bucket",
-                     color_discrete_sequence=["#10B981","#F59E0B","#F97316","#EF4444","#991B1B"])
+        fig = px.pie(
+            aging_df,
+            values="Total A/R",
+            names="Bucket",
+            color_discrete_sequence=["#10B981", "#F59E0B", "#F97316", "#EF4444", "#991B1B"],
+        )
         fig.update_layout(height=400, margin=dict(t=30, b=30))
         st.plotly_chart(fig, theme="streamlit", width="stretch")
 
@@ -1384,17 +1543,32 @@ with tab4:
     st.subheader("Days in A/R Trend")
     fig = make_subplots(specs=[[{"secondary_y": True}]])
     fig.add_trace(
-        go.Bar(x=dar_trend.reset_index()["year_month"], y=dar_trend["ar_balance"],
-               name="A/R Balance", marker_color=RCM_COLORS[0], opacity=0.6),
+        go.Bar(
+            x=dar_trend.reset_index()["year_month"],
+            y=dar_trend["ar_balance"],
+            name="A/R Balance",
+            marker_color=RCM_COLORS[0],
+            opacity=0.6,
+        ),
         secondary_y=False,
     )
     fig.add_trace(
-        go.Scatter(x=dar_trend.reset_index()["year_month"], y=dar_trend["days_in_ar"],
-                   name="Days in A/R", line=dict(color=RCM_COLORS[3], width=3)),
+        go.Scatter(
+            x=dar_trend.reset_index()["year_month"],
+            y=dar_trend["days_in_ar"],
+            name="Days in A/R",
+            line=dict(color=RCM_COLORS[3], width=3),
+        ),
         secondary_y=True,
     )
-    fig.add_hline(y=35, line_dash="dash", line_color="#10B981", secondary_y=True,
-                  annotation_text="Target: 35 days", annotation_font_color="#10B981")
+    fig.add_hline(
+        y=35,
+        line_dash="dash",
+        line_color="#10B981",
+        secondary_y=True,
+        annotation_text="Target: 35 days",
+        annotation_font_color="#10B981",
+    )
     fig.update_layout(height=400, margin=dict(t=30, b=30), plot_bgcolor="rgba(248,250,252,0.5)")
     fig.update_yaxes(title_text="A/R Balance ($)", secondary_y=False)
     fig.update_yaxes(title_text="Days in A/R", secondary_y=True)
@@ -1406,22 +1580,55 @@ with tab4:
     claims_cf["year_month"] = claims_cf["date_of_service"].dt.to_period("M").astype(str)
     pay_cf = f_payments.merge(claims_cf[["claim_id", "year_month"]], on="claim_id", how="left")
 
-    cf = pd.DataFrame({
-        "charges": claims_cf.groupby("year_month")["total_charge_amount"].sum(),
-        "payments": pay_cf.groupby("year_month")["payment_amount"].sum()
-    }).fillna(0).reset_index()
+    cf = (
+        pd.DataFrame(
+            {
+                "charges": claims_cf.groupby("year_month")["total_charge_amount"].sum(),
+                "payments": pay_cf.groupby("year_month")["payment_amount"].sum(),
+            }
+        )
+        .fillna(0)
+        .reset_index()
+    )
     cf.columns = ["Month", "Charges", "Payments"]
     cf["Net Cash Flow"] = cf["Payments"] - cf["Charges"]
 
     fig = go.Figure()
-    fig.add_trace(go.Bar(x=cf["Month"], y=cf["Charges"], name="Charges",
-                         marker_color=RCM_COLORS[0], marker_line_width=0, opacity=0.85))
-    fig.add_trace(go.Bar(x=cf["Month"], y=cf["Payments"], name="Payments",
-                         marker_color=RCM_COLORS[1], marker_line_width=0, opacity=0.85))
-    fig.add_trace(go.Scatter(x=cf["Month"], y=cf["Net Cash Flow"], name="Net Cash Flow",
-                             line=dict(color=RCM_COLORS[3], width=2.5, dash="dot")))
-    fig.update_layout(barmode="group", height=400, margin=dict(t=30, b=30),
-                      yaxis_title="Amount ($)", plot_bgcolor="rgba(248,250,252,0.5)")
+    fig.add_trace(
+        go.Bar(
+            x=cf["Month"],
+            y=cf["Charges"],
+            name="Charges",
+            marker_color=RCM_COLORS[0],
+            marker_line_width=0,
+            opacity=0.85,
+        )
+    )
+    fig.add_trace(
+        go.Bar(
+            x=cf["Month"],
+            y=cf["Payments"],
+            name="Payments",
+            marker_color=RCM_COLORS[1],
+            marker_line_width=0,
+            opacity=0.85,
+        )
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=cf["Month"],
+            y=cf["Net Cash Flow"],
+            name="Net Cash Flow",
+            line=dict(color=RCM_COLORS[3], width=2.5, dash="dot"),
+        )
+    )
+    fig.update_layout(
+        barmode="group",
+        height=400,
+        margin=dict(t=30, b=30),
+        yaxis_title="Amount ($)",
+        plot_bgcolor="rgba(248,250,252,0.5)",
+    )
     st.plotly_chart(fig, theme="streamlit", width="stretch")
 
     # A/R aging table
@@ -1431,10 +1638,13 @@ with tab4:
         aging_detail["% of Total"] = aging_detail["% of Total"].apply(lambda x: f"{x:.1f}%")
         st.dataframe(aging_detail, hide_index=True, width="stretch")
 
-    export_buttons("ar_aging_cashflow", {
-        "AR Aging Summary": aging_df,
-        "Cash Flow": cf,
-    })
+    export_buttons(
+        "ar_aging_cashflow",
+        {
+            "AR Aging Summary": aging_df,
+            "Cash Flow": cf,
+        },
+    )
 
 
 # =====================================================================
@@ -1459,18 +1669,20 @@ with tab5:
     col_left, col_right = st.columns(2)
     with col_left:
         st.subheader("Revenue by Payer")
-        fig = px.bar(payer_mix, x="payer_name", y="total_payments",
-                     color="payer_type",
-                     color_discrete_sequence=RCM_COLORS,
-                     labels={"payer_name": "Payer", "total_payments": "Total Payments ($)",
-                             "payer_type": "Type"})
+        fig = px.bar(
+            payer_mix,
+            x="payer_name",
+            y="total_payments",
+            color="payer_type",
+            color_discrete_sequence=RCM_COLORS,
+            labels={"payer_name": "Payer", "total_payments": "Total Payments ($)", "payer_type": "Type"},
+        )
         fig.update_layout(height=400, margin=dict(t=30, b=30), xaxis_tickangle=-45)
         st.plotly_chart(fig, theme="streamlit", width="stretch")
 
     with col_right:
         st.subheader("Payer Mix (by Volume)")
-        fig = px.pie(payer_mix, values="claim_count", names="payer_name",
-                     color_discrete_sequence=RCM_COLORS)
+        fig = px.pie(payer_mix, values="claim_count", names="payer_name", color_discrete_sequence=RCM_COLORS)
         fig.update_layout(height=400, margin=dict(t=30, b=30))
         st.plotly_chart(fig, theme="streamlit", width="stretch")
 
@@ -1478,52 +1690,77 @@ with tab5:
     col_left2, col_right2 = st.columns(2)
     with col_left2:
         st.subheader("Collection Rate by Payer")
-        fig = px.bar(payer_mix.sort_values("collection_rate"),
-                     x="collection_rate", y="payer_name", orientation="h",
-                     color="collection_rate",
-                     color_continuous_scale="RdYlGn",
-                     labels={"collection_rate": "Collection Rate (%)", "payer_name": "Payer"})
+        fig = px.bar(
+            payer_mix.sort_values("collection_rate"),
+            x="collection_rate",
+            y="payer_name",
+            orientation="h",
+            color="collection_rate",
+            color_continuous_scale="RdYlGn",
+            labels={"collection_rate": "Collection Rate (%)", "payer_name": "Payer"},
+        )
         fig.update_layout(height=400, margin=dict(t=30, b=30))
         st.plotly_chart(fig, theme="streamlit", width="stretch")
 
     with col_right2:
         st.subheader("Denial Rate by Payer")
-        fig = px.bar(denial_by_payer.sort_values("denial_rate"),
-                     x="denial_rate", y="payer_name", orientation="h",
-                     color="denial_rate",
-                     color_continuous_scale="RdYlGn_r",
-                     labels={"denial_rate": "Denial Rate (%)", "payer_name": "Payer"})
+        fig = px.bar(
+            denial_by_payer.sort_values("denial_rate"),
+            x="denial_rate",
+            y="payer_name",
+            orientation="h",
+            color="denial_rate",
+            color_continuous_scale="RdYlGn_r",
+            labels={"denial_rate": "Denial Rate (%)", "payer_name": "Payer"},
+        )
         fig.update_layout(height=400, margin=dict(t=30, b=30))
         st.plotly_chart(fig, theme="streamlit", width="stretch")
 
     # Payer comparison table
     st.subheader("Payer Comparison Table")
-    payer_table = payer_mix.merge(
-        denial_by_payer[["payer_id", "denial_rate"]], on="payer_id", how="left"
-    )[["payer_name", "payer_type", "claim_count", "total_charges", "total_payments",
-       "collection_rate", "denial_rate"]].round(2)
-    payer_table.columns = ["Payer", "Type", "Claims", "Total Charges", "Total Payments",
-                           "Collection Rate (%)", "Denial Rate (%)"]
+    payer_table = payer_mix.merge(denial_by_payer[["payer_id", "denial_rate"]], on="payer_id", how="left")[
+        ["payer_name", "payer_type", "claim_count", "total_charges", "total_payments", "collection_rate", "denial_rate"]
+    ].round(2)
+    payer_table.columns = [
+        "Payer",
+        "Type",
+        "Claims",
+        "Total Charges",
+        "Total Payments",
+        "Collection Rate (%)",
+        "Denial Rate (%)",
+    ]
     st.dataframe(payer_table, hide_index=True, width="stretch")
 
-    export_buttons("payer_analysis", {
-        "Payer Comparison": payer_table,
-        "Payer Mix": payer_mix,
-        "Denial by Payer": denial_by_payer,
-    })
+    export_buttons(
+        "payer_analysis",
+        {
+            "Payer Comparison": payer_table,
+            "Payer Mix": payer_mix,
+            "Denial by Payer": denial_by_payer,
+        },
+    )
 
     # Payer type summary
     st.subheader("Performance by Payer Type")
-    type_summary = payer_mix.groupby("payer_type").agg(
-        claims=("claim_count", "sum"),
-        charges=("total_charges", "sum"),
-        payments=("total_payments", "sum"),
-    ).reset_index()
+    type_summary = (
+        payer_mix.groupby("payer_type")
+        .agg(
+            claims=("claim_count", "sum"),
+            charges=("total_charges", "sum"),
+            payments=("total_payments", "sum"),
+        )
+        .reset_index()
+    )
     type_summary["collection_rate"] = (type_summary["payments"] / type_summary["charges"] * 100).round(2)
-    fig = px.bar(type_summary, x="payer_type", y=["charges", "payments"],
-                 barmode="group",
-                 color_discrete_sequence=RCM_COLORS,
-                 labels={"value": "Amount ($)", "payer_type": "Payer Type", "variable": "Metric"})
+    fig = px.bar(
+        type_summary,
+        x="payer_type",
+        y=["charges", "payments"],
+        barmode="group",
+        color_discrete_sequence=RCM_COLORS,
+        labels={"value": "Amount ($)", "payer_type": "Payer Type", "variable": "Metric"},
+    )
     fig.update_layout(height=350, margin=dict(t=30, b=30))
     st.plotly_chart(fig, theme="streamlit", width="stretch")
 
@@ -1553,37 +1790,63 @@ with tab5:
         with col_d1:
             status_counts = drill_claims["claim_status"].value_counts().reset_index()
             status_counts.columns = ["Status", "Count"]
-            fig = px.pie(status_counts, values="Count", names="Status",
-                         title="Claim Status Mix",
-                         color_discrete_sequence=RCM_COLORS)
+            fig = px.pie(
+                status_counts,
+                values="Count",
+                names="Status",
+                title="Claim Status Mix",
+                color_discrete_sequence=RCM_COLORS,
+            )
             fig.update_layout(height=300, margin=dict(t=40, b=10))
             st.plotly_chart(fig, theme="streamlit", width="stretch")
         with col_d2:
             if not drill_denials.empty:
                 denial_reasons_drill = drill_denials["denial_reason_description"].value_counts().reset_index()
                 denial_reasons_drill.columns = ["Reason", "Count"]
-                fig = px.bar(denial_reasons_drill, x="Count", y="Reason", orientation="h",
-                             title="Denial Reasons",
-                             labels={"Count": "# Denials", "Reason": ""})
-                fig.update_layout(height=300, margin=dict(t=40, b=10),
-                                  yaxis={"categoryorder": "total ascending"})
+                fig = px.bar(
+                    denial_reasons_drill,
+                    x="Count",
+                    y="Reason",
+                    orientation="h",
+                    title="Denial Reasons",
+                    labels={"Count": "# Denials", "Reason": ""},
+                )
+                fig.update_layout(height=300, margin=dict(t=40, b=10), yaxis={"categoryorder": "total ascending"})
                 st.plotly_chart(fig, theme="streamlit", width="stretch")
             else:
                 st.info("No denials for this payer in the selected date range.")
 
         with st.expander("Claim-Level Detail"):
-            claim_detail = drill_claims[["claim_id", "date_of_service", "submission_date",
-                                          "total_charge_amount", "claim_status", "is_clean_claim"]].copy()
+            claim_detail = drill_claims[
+                [
+                    "claim_id",
+                    "date_of_service",
+                    "submission_date",
+                    "total_charge_amount",
+                    "claim_status",
+                    "is_clean_claim",
+                ]
+            ].copy()
             pay_totals = drill_payments.groupby("claim_id")["payment_amount"].sum().reset_index()
             claim_detail = claim_detail.merge(pay_totals, on="claim_id", how="left")
             claim_detail["payment_amount"] = claim_detail["payment_amount"].fillna(0)
-            claim_detail.columns = ["Claim ID", "Date of Service", "Submission Date",
-                                     "Charge Amount", "Status", "Clean Claim", "Payment Amount"]
+            claim_detail.columns = [
+                "Claim ID",
+                "Date of Service",
+                "Submission Date",
+                "Charge Amount",
+                "Status",
+                "Clean Claim",
+                "Payment Amount",
+            ]
             st.dataframe(claim_detail, hide_index=True, width="stretch")
-            export_buttons(f"payer_drilldown_{selected_drilldown_payer.replace(' ', '_')}", {
-                "Claims": claim_detail,
-                "Denials": drill_denials,
-            })
+            export_buttons(
+                f"payer_drilldown_{selected_drilldown_payer.replace(' ', '_')}",
+                {
+                    "Claims": claim_detail,
+                    "Denials": drill_denials,
+                },
+            )
 
 
 # =====================================================================
@@ -1607,20 +1870,28 @@ with tab6:
     col_left, col_right = st.columns(2)
     with col_left:
         st.subheader("Revenue by Department")
-        fig = px.bar(dept_perf, x="department", y=["total_charges", "total_payments"],
-                     barmode="group",
-                     color_discrete_sequence=RCM_COLORS,
-                     labels={"value": "Amount ($)", "department": "Department", "variable": "Metric"})
+        fig = px.bar(
+            dept_perf,
+            x="department",
+            y=["total_charges", "total_payments"],
+            barmode="group",
+            color_discrete_sequence=RCM_COLORS,
+            labels={"value": "Amount ($)", "department": "Department", "variable": "Metric"},
+        )
         fig.update_layout(height=400, margin=dict(t=30, b=30), xaxis_tickangle=-45)
         st.plotly_chart(fig, theme="streamlit", width="stretch")
 
     with col_right:
         st.subheader("Collection Rate by Department")
-        fig = px.bar(dept_perf.sort_values("collection_rate"),
-                     x="collection_rate", y="department", orientation="h",
-                     color="collection_rate",
-                     color_continuous_scale="RdYlGn",
-                     labels={"collection_rate": "Collection Rate (%)", "department": "Department"})
+        fig = px.bar(
+            dept_perf.sort_values("collection_rate"),
+            x="collection_rate",
+            y="department",
+            orientation="h",
+            color="collection_rate",
+            color_continuous_scale="RdYlGn",
+            labels={"collection_rate": "Collection Rate (%)", "department": "Department"},
+        )
         fig.update_layout(height=400, margin=dict(t=30, b=30))
         st.plotly_chart(fig, theme="streamlit", width="stretch")
 
@@ -1628,27 +1899,35 @@ with tab6:
     col_left2, col_right2 = st.columns(2)
     with col_left2:
         st.subheader("Encounter Volume by Department")
-        fig = px.pie(dept_perf, values="encounter_count", names="department",
-                     color_discrete_sequence=RCM_COLORS)
+        fig = px.pie(dept_perf, values="encounter_count", names="department", color_discrete_sequence=RCM_COLORS)
         fig.update_layout(height=400, margin=dict(t=30, b=30))
         st.plotly_chart(fig, theme="streamlit", width="stretch")
 
     with col_right2:
         st.subheader("Avg Payment per Encounter")
-        fig = px.bar(dept_perf.sort_values("avg_payment_per_encounter"),
-                     x="avg_payment_per_encounter", y="department", orientation="h",
-                     color="avg_payment_per_encounter",
-                     color_continuous_scale="Blues",
-                     labels={"avg_payment_per_encounter": "Avg $/Encounter", "department": "Department"})
+        fig = px.bar(
+            dept_perf.sort_values("avg_payment_per_encounter"),
+            x="avg_payment_per_encounter",
+            y="department",
+            orientation="h",
+            color="avg_payment_per_encounter",
+            color_continuous_scale="Blues",
+            labels={"avg_payment_per_encounter": "Avg $/Encounter", "department": "Department"},
+        )
         fig.update_layout(height=400, margin=dict(t=30, b=30))
         st.plotly_chart(fig, theme="streamlit", width="stretch")
 
     # Department encounter type breakdown
     st.subheader("Encounter Type by Department")
     dept_enc = f_encounters.groupby(["department", "encounter_type"]).size().reset_index(name="count")
-    fig = px.bar(dept_enc, x="department", y="count", color="encounter_type",
-                 color_discrete_sequence=RCM_COLORS,
-                 labels={"count": "Count", "department": "Department", "encounter_type": "Type"})
+    fig = px.bar(
+        dept_enc,
+        x="department",
+        y="count",
+        color="encounter_type",
+        color_discrete_sequence=RCM_COLORS,
+        labels={"count": "Count", "department": "Department", "encounter_type": "Type"},
+    )
     fig.update_layout(height=400, margin=dict(t=30, b=30), xaxis_tickangle=-45)
     st.plotly_chart(fig, theme="streamlit", width="stretch")
 
@@ -1659,13 +1938,22 @@ with tab6:
     dept_table["total_payments"] = dept_table["total_payments"].apply(lambda x: f"${x:,.2f}")
     dept_table["collection_rate"] = dept_table["collection_rate"].apply(lambda x: f"{x:.1f}%")
     dept_table["avg_payment_per_encounter"] = dept_table["avg_payment_per_encounter"].apply(lambda x: f"${x:,.2f}")
-    dept_table.columns = ["Department", "Encounters", "Total Charges", "Total Payments",
-                          "Collection Rate", "Avg $/Encounter"]
+    dept_table.columns = [
+        "Department",
+        "Encounters",
+        "Total Charges",
+        "Total Payments",
+        "Collection Rate",
+        "Avg $/Encounter",
+    ]
     st.dataframe(dept_table, hide_index=True, width="stretch")
-    export_buttons("department_performance", {
-        "Department Summary": dept_perf,
-        "Encounter Type Mix": dept_enc,
-    })
+    export_buttons(
+        "department_performance",
+        {
+            "Department Summary": dept_perf,
+            "Encounter Type Mix": dept_enc,
+        },
+    )
 
     # ── Department Drill-Down ─────────────────────────────────────────
     st.divider()
@@ -1693,39 +1981,60 @@ with tab6:
         with col_dd1:
             enc_type_counts = drill_encs["encounter_type"].value_counts().reset_index()
             enc_type_counts.columns = ["Type", "Count"]
-            fig = px.pie(enc_type_counts, values="Count", names="Type",
-                         title="Encounter Type Mix",
-                         color_discrete_sequence=RCM_COLORS)
+            fig = px.pie(
+                enc_type_counts,
+                values="Count",
+                names="Type",
+                title="Encounter Type Mix",
+                color_discrete_sequence=RCM_COLORS,
+            )
             fig.update_layout(height=300, margin=dict(t=40, b=10))
             st.plotly_chart(fig, theme="streamlit", width="stretch")
         with col_dd2:
             status_counts_dept = drill_dept_claims["claim_status"].value_counts().reset_index()
             status_counts_dept.columns = ["Status", "Count"]
-            fig = px.bar(status_counts_dept, x="Status", y="Count",
-                         title="Claim Status",
-                         color="Status",
-                         color_discrete_sequence=RCM_COLORS)
+            fig = px.bar(
+                status_counts_dept,
+                x="Status",
+                y="Count",
+                title="Claim Status",
+                color="Status",
+                color_discrete_sequence=RCM_COLORS,
+            )
             fig.update_layout(height=300, margin=dict(t=40, b=10), showlegend=False)
             st.plotly_chart(fig, theme="streamlit", width="stretch")
 
         with st.expander("Encounter & Claim Detail"):
-            enc_detail = drill_encs[["encounter_id", "date_of_service", "encounter_type",
-                                      "patient_id", "provider_id"]].copy()
+            enc_detail = drill_encs[
+                ["encounter_id", "date_of_service", "encounter_type", "patient_id", "provider_id"]
+            ].copy()
             enc_detail = enc_detail.merge(
                 drill_dept_claims[["encounter_id", "claim_id", "total_charge_amount", "claim_status"]],
-                on="encounter_id", how="left"
+                on="encounter_id",
+                how="left",
             )
             pay_totals_dept = drill_dept_payments.groupby("claim_id")["payment_amount"].sum().reset_index()
             enc_detail = enc_detail.merge(pay_totals_dept, on="claim_id", how="left")
             enc_detail["payment_amount"] = enc_detail["payment_amount"].fillna(0)
-            enc_detail.columns = ["Encounter ID", "Date of Service", "Encounter Type",
-                                   "Patient ID", "Provider ID", "Claim ID",
-                                   "Charge Amount", "Claim Status", "Payment Amount"]
+            enc_detail.columns = [
+                "Encounter ID",
+                "Date of Service",
+                "Encounter Type",
+                "Patient ID",
+                "Provider ID",
+                "Claim ID",
+                "Charge Amount",
+                "Claim Status",
+                "Payment Amount",
+            ]
             st.dataframe(enc_detail, hide_index=True, width="stretch")
-            export_buttons(f"dept_drilldown_{selected_drilldown_dept.replace(' ', '_')}", {
-                "Encounters & Claims": enc_detail,
-                "Denials": drill_dept_denials,
-            })
+            export_buttons(
+                f"dept_drilldown_{selected_drilldown_dept.replace(' ', '_')}",
+                {
+                    "Encounters & Claims": enc_detail,
+                    "Denials": drill_dept_denials,
+                },
+            )
 
 
 # =====================================================================
@@ -1774,11 +2083,16 @@ with tab7:
             st.subheader("Revenue by Provider")
             fig = px.bar(
                 provider_perf.head(15).sort_values("total_payments"),
-                x="total_payments", y="provider_name", orientation="h",
+                x="total_payments",
+                y="provider_name",
+                orientation="h",
                 color="collection_rate",
                 color_continuous_scale="RdYlGn",
-                labels={"total_payments": "Total Payments ($)", "provider_name": "",
-                        "collection_rate": "Collection Rate (%)"},
+                labels={
+                    "total_payments": "Total Payments ($)",
+                    "provider_name": "",
+                    "collection_rate": "Collection Rate (%)",
+                },
                 title="Top 15 Providers by Collections",
             )
             fig.update_layout(height=450, margin=dict(t=40, b=10))
@@ -1788,14 +2102,21 @@ with tab7:
             st.subheader("Denial Rate by Provider")
             fig = px.bar(
                 provider_perf.sort_values("denial_rate", ascending=False).head(15),
-                x="denial_rate", y="provider_name", orientation="h",
+                x="denial_rate",
+                y="provider_name",
+                orientation="h",
                 color="denial_rate",
                 color_continuous_scale="RdYlGn_r",
                 labels={"denial_rate": "Denial Rate (%)", "provider_name": ""},
                 title="Top 15 Providers by Denial Rate",
             )
-            fig.add_vline(x=10, line_dash="dash", line_color="#F59E0B",
-                          annotation_text="10% benchmark", annotation_position="top right")
+            fig.add_vline(
+                x=10,
+                line_dash="dash",
+                line_color="#F59E0B",
+                annotation_text="10% benchmark",
+                annotation_position="top right",
+            )
             fig.update_layout(height=450, margin=dict(t=40, b=10))
             st.plotly_chart(fig, theme="streamlit", width="stretch")
 
@@ -1804,13 +2125,20 @@ with tab7:
             st.subheader("Clean Claim Rate by Provider")
             fig = px.bar(
                 provider_perf.sort_values("clean_claim_rate").head(15),
-                x="clean_claim_rate", y="provider_name", orientation="h",
+                x="clean_claim_rate",
+                y="provider_name",
+                orientation="h",
                 color="clean_claim_rate",
                 color_continuous_scale="RdYlGn",
                 labels={"clean_claim_rate": "Clean Claim Rate (%)", "provider_name": ""},
             )
-            fig.add_vline(x=90, line_dash="dash", line_color="#F59E0B",
-                          annotation_text="90% benchmark", annotation_position="top right")
+            fig.add_vline(
+                x=90,
+                line_dash="dash",
+                line_color="#F59E0B",
+                annotation_text="90% benchmark",
+                annotation_position="top right",
+            )
             fig.update_layout(height=450, margin=dict(t=40, b=10))
             st.plotly_chart(fig, theme="streamlit", width="stretch")
 
@@ -1818,7 +2146,9 @@ with tab7:
             st.subheader("Avg Payment per Encounter")
             fig = px.bar(
                 provider_perf.sort_values("avg_payment_per_encounter", ascending=False).head(15),
-                x="avg_payment_per_encounter", y="provider_name", orientation="h",
+                x="avg_payment_per_encounter",
+                y="provider_name",
+                orientation="h",
                 color="avg_payment_per_encounter",
                 color_continuous_scale="Blues",
                 labels={"avg_payment_per_encounter": "Avg Payment / Encounter ($)", "provider_name": ""},
@@ -1828,14 +2158,35 @@ with tab7:
 
         # ── Provider Scorecard Table ──────────────────────────────────
         st.subheader("Provider Scorecard")
-        scorecard = provider_perf[[
-            "provider_name", "specialty", "department", "encounter_count", "claim_count",
-            "total_charges", "total_payments", "collection_rate", "denial_rate", "clean_claim_rate",
-        ]].copy().round(2)
+        scorecard = (
+            provider_perf[
+                [
+                    "provider_name",
+                    "specialty",
+                    "department",
+                    "encounter_count",
+                    "claim_count",
+                    "total_charges",
+                    "total_payments",
+                    "collection_rate",
+                    "denial_rate",
+                    "clean_claim_rate",
+                ]
+            ]
+            .copy()
+            .round(2)
+        )
         scorecard.columns = [
-            "Provider", "Specialty", "Department", "Encounters", "Claims",
-            "Total Charges ($)", "Total Payments ($)", "Collection Rate (%)",
-            "Denial Rate (%)", "Clean Claim Rate (%)",
+            "Provider",
+            "Specialty",
+            "Department",
+            "Encounters",
+            "Claims",
+            "Total Charges ($)",
+            "Total Payments ($)",
+            "Collection Rate (%)",
+            "Denial Rate (%)",
+            "Clean Claim Rate (%)",
         ]
         st.dataframe(scorecard, hide_index=True, width="stretch")
         export_buttons("provider_performance", {"Provider Scorecard": scorecard})
@@ -1859,30 +2210,42 @@ with tab7:
                 st.metric("Claims", f"{int(prov_row['claim_count']):,}")
             with pd3:
                 cr_delta = round(prov_row["collection_rate"] - avg_prov_collection, 1)
-                st.metric("Collection Rate", f"{prov_row['collection_rate']:.1f}%",
-                          delta=f"{cr_delta:+.1f}% vs avg")
+                st.metric("Collection Rate", f"{prov_row['collection_rate']:.1f}%", delta=f"{cr_delta:+.1f}% vs avg")
             with pd4:
                 dr_delta = round(prov_row["denial_rate"] - avg_prov_denial, 1)
-                st.metric("Denial Rate", f"{prov_row['denial_rate']:.1f}%",
-                          delta=f"{dr_delta:+.1f}% vs avg", delta_color="inverse")
+                st.metric(
+                    "Denial Rate",
+                    f"{prov_row['denial_rate']:.1f}%",
+                    delta=f"{dr_delta:+.1f}% vs avg",
+                    delta_color="inverse",
+                )
 
             col_pd1, col_pd2 = st.columns(2)
             with col_pd1:
                 status_counts = drill_prov_claims["claim_status"].value_counts().reset_index()
                 status_counts.columns = ["Status", "Count"]
-                fig = px.pie(status_counts, values="Count", names="Status",
-                             title="Claim Status Mix", color_discrete_sequence=RCM_COLORS)
+                fig = px.pie(
+                    status_counts,
+                    values="Count",
+                    names="Status",
+                    title="Claim Status Mix",
+                    color_discrete_sequence=RCM_COLORS,
+                )
                 fig.update_layout(height=300, margin=dict(t=40, b=10))
                 st.plotly_chart(fig, theme="streamlit", width="stretch")
             with col_pd2:
                 if not drill_prov_denials.empty:
                     denial_reasons_prov = drill_prov_denials["denial_reason_description"].value_counts().reset_index()
                     denial_reasons_prov.columns = ["Reason", "Count"]
-                    fig = px.bar(denial_reasons_prov, x="Count", y="Reason", orientation="h",
-                                 title="Top Denial Reasons",
-                                 labels={"Count": "# Denials", "Reason": ""})
-                    fig.update_layout(height=300, margin=dict(t=40, b=10),
-                                      yaxis={"categoryorder": "total ascending"})
+                    fig = px.bar(
+                        denial_reasons_prov,
+                        x="Count",
+                        y="Reason",
+                        orientation="h",
+                        title="Top Denial Reasons",
+                        labels={"Count": "# Denials", "Reason": ""},
+                    )
+                    fig.update_layout(height=300, margin=dict(t=40, b=10), yaxis={"categoryorder": "total ascending"})
                     st.plotly_chart(fig, theme="streamlit", width="stretch")
                 else:
                     st.info("No denials for this provider in the selected date range.")
@@ -1931,11 +2294,12 @@ with tab8:
             top_cpt["label"] = top_cpt["cpt_code"] + " — " + top_cpt["cpt_description"].str[:30]
             fig = px.bar(
                 top_cpt.sort_values("total_charges"),
-                x="total_charges", y="label", orientation="h",
+                x="total_charges",
+                y="label",
+                orientation="h",
                 color="denial_rate",
                 color_continuous_scale="RdYlGn_r",
-                labels={"total_charges": "Total Charges ($)", "label": "",
-                        "denial_rate": "Denial Rate (%)"},
+                labels={"total_charges": "Total Charges ($)", "label": "", "denial_rate": "Denial Rate (%)"},
                 title="Top 15 CPT Codes (color = denial rate)",
             )
             fig.update_layout(height=450, margin=dict(t=40, b=10))
@@ -1947,15 +2311,15 @@ with tab8:
             high_vol["label"] = high_vol["cpt_code"] + " — " + high_vol["cpt_description"].str[:25]
             fig = px.bar(
                 high_vol.sort_values("denial_rate", ascending=False).head(15),
-                x="denial_rate", y="label", orientation="h",
+                x="denial_rate",
+                y="label",
+                orientation="h",
                 color="total_charges",
                 color_continuous_scale="Blues",
-                labels={"denial_rate": "Denial Rate (%)", "label": "",
-                        "total_charges": "Total Charges ($)"},
+                labels={"denial_rate": "Denial Rate (%)", "label": "", "total_charges": "Total Charges ($)"},
                 title="Highest Denial Rate (min 10 charges, color = revenue)",
             )
-            fig.add_vline(x=10, line_dash="dash", line_color="#F59E0B",
-                          annotation_text="10% benchmark")
+            fig.add_vline(x=10, line_dash="dash", line_color="#F59E0B", annotation_text="10% benchmark")
             fig.update_layout(height=450, margin=dict(t=40, b=10))
             st.plotly_chart(fig, theme="streamlit", width="stretch")
 
@@ -1964,7 +2328,8 @@ with tab8:
             st.subheader("Charge Volume by CPT Code")
             fig = px.pie(
                 cpt_data.head(12),
-                values="total_charges", names="cpt_code",
+                values="total_charges",
+                names="cpt_code",
                 title="Revenue Share — Top 12 CPT Codes",
                 color_discrete_sequence=RCM_COLORS,
             )
@@ -1975,7 +2340,9 @@ with tab8:
             st.subheader("Avg Charge per Unit by CPT Code")
             fig = px.bar(
                 cpt_data.sort_values("avg_charge_per_unit", ascending=False).head(15),
-                x="avg_charge_per_unit", y="cpt_code", orientation="h",
+                x="avg_charge_per_unit",
+                y="cpt_code",
+                orientation="h",
                 color="avg_charge_per_unit",
                 color_continuous_scale="Blues",
                 labels={"avg_charge_per_unit": "Avg Charge per Unit ($)", "cpt_code": "CPT Code"},
@@ -1986,13 +2353,33 @@ with tab8:
 
         # ── CPT Detail Table ──────────────────────────────────────────
         st.subheader("CPT Code Detail")
-        cpt_table = cpt_data[[
-            "cpt_code", "cpt_description", "charge_count", "total_units",
-            "total_charges", "avg_charge_per_unit", "claim_count", "denied_claims", "denial_rate",
-        ]].copy().round(2)
+        cpt_table = (
+            cpt_data[
+                [
+                    "cpt_code",
+                    "cpt_description",
+                    "charge_count",
+                    "total_units",
+                    "total_charges",
+                    "avg_charge_per_unit",
+                    "claim_count",
+                    "denied_claims",
+                    "denial_rate",
+                ]
+            ]
+            .copy()
+            .round(2)
+        )
         cpt_table.columns = [
-            "CPT Code", "Description", "Charge Count", "Total Units",
-            "Total Charges ($)", "Avg Charge/Unit ($)", "Claims", "Denied Claims", "Denial Rate (%)",
+            "CPT Code",
+            "Description",
+            "Charge Count",
+            "Total Units",
+            "Total Charges ($)",
+            "Avg Charge/Unit ($)",
+            "Claims",
+            "Denied Claims",
+            "Denial Rate (%)",
         ]
         st.dataframe(cpt_table, hide_index=True, width="stretch")
         export_buttons("cpt_code_analysis", {"CPT Code Analysis": cpt_table})
@@ -2041,11 +2428,16 @@ with tab9:
             st.subheader("Recovery Opportunity by Payer")
             fig = px.bar(
                 underpay_df.sort_values("total_underpaid", ascending=False),
-                x="total_underpaid", y="payer_name", orientation="h",
+                x="total_underpaid",
+                y="payer_name",
+                orientation="h",
                 color="underpayment_rate",
                 color_continuous_scale="RdYlGn_r",
-                labels={"total_underpaid": "Underpayment Amount ($)", "payer_name": "",
-                        "underpayment_rate": "Underpayment Rate (%)"},
+                labels={
+                    "total_underpaid": "Underpayment Amount ($)",
+                    "payer_name": "",
+                    "underpayment_rate": "Underpayment Rate (%)",
+                },
                 title="Total Underpayments by Payer (color = rate)",
             )
             fig.update_layout(height=400, margin=dict(t=40, b=10))
@@ -2055,11 +2447,16 @@ with tab9:
             st.subheader("Underpayment Rate by Payer")
             fig = px.bar(
                 underpay_df.sort_values("underpayment_rate", ascending=False),
-                x="underpayment_rate", y="payer_name", orientation="h",
+                x="underpayment_rate",
+                y="payer_name",
+                orientation="h",
                 color="total_underpaid",
                 color_continuous_scale="Reds",
-                labels={"underpayment_rate": "Underpayment Rate (%)", "payer_name": "",
-                        "total_underpaid": "$ Underpaid"},
+                labels={
+                    "underpayment_rate": "Underpayment Rate (%)",
+                    "payer_name": "",
+                    "total_underpaid": "$ Underpaid",
+                },
                 title="Underpayment Rate by Payer (color = dollar amount)",
             )
             fig.update_layout(height=400, margin=dict(t=40, b=10))
@@ -2071,28 +2468,45 @@ with tab9:
             col_u3, col_u4 = st.columns(2)
             with col_u3:
                 fig = go.Figure()
-                fig.add_trace(go.Bar(
-                    x=underpay_trend.index, y=underpay_trend["total_underpaid"],
-                    name="Underpayment Amount", marker_color=RCM_COLORS[3],
-                ))
+                fig.add_trace(
+                    go.Bar(
+                        x=underpay_trend.index,
+                        y=underpay_trend["total_underpaid"],
+                        name="Underpayment Amount",
+                        marker_color=RCM_COLORS[3],
+                    )
+                )
                 fig.update_layout(
-                    height=320, margin=dict(t=40, b=10),
-                    yaxis_title="Amount ($)", xaxis_title="Month",
+                    height=320,
+                    margin=dict(t=40, b=10),
+                    yaxis_title="Amount ($)",
+                    xaxis_title="Month",
                     title="Monthly Underpayment Dollars",
                 )
                 st.plotly_chart(fig, theme="streamlit", width="stretch")
             with col_u4:
                 fig = go.Figure()
-                fig.add_trace(go.Scatter(
-                    x=underpay_trend.index, y=underpay_trend["underpayment_rate"],
-                    mode="lines+markers", name="Underpayment Rate",
-                    line=dict(color=RCM_COLORS[3], width=2),
-                ))
-                fig.add_hline(y=1, line_dash="dash", line_color=RCM_COLORS[2],
-                              annotation_text="1% target", annotation_position="bottom right")
+                fig.add_trace(
+                    go.Scatter(
+                        x=underpay_trend.index,
+                        y=underpay_trend["underpayment_rate"],
+                        mode="lines+markers",
+                        name="Underpayment Rate",
+                        line=dict(color=RCM_COLORS[3], width=2),
+                    )
+                )
+                fig.add_hline(
+                    y=1,
+                    line_dash="dash",
+                    line_color=RCM_COLORS[2],
+                    annotation_text="1% target",
+                    annotation_position="bottom right",
+                )
                 fig.update_layout(
-                    height=320, margin=dict(t=40, b=10),
-                    yaxis_title="Rate (%)", xaxis_title="Month",
+                    height=320,
+                    margin=dict(t=40, b=10),
+                    yaxis_title="Rate (%)",
+                    xaxis_title="Month",
                     title="Monthly Underpayment Rate",
                 )
                 st.plotly_chart(fig, theme="streamlit", width="stretch")
@@ -2101,13 +2515,23 @@ with tab9:
         st.subheader("Allowed vs. Paid vs. Underpaid — by Payer")
         waterfall_df = underpay_df.sort_values("total_allowed", ascending=False)
         fig = go.Figure()
-        fig.add_trace(go.Bar(name="Paid", x=waterfall_df["payer_name"],
-                             y=waterfall_df["total_paid"], marker_color=RCM_COLORS[1]))
-        fig.add_trace(go.Bar(name="Underpaid (Recovery Opportunity)", x=waterfall_df["payer_name"],
-                             y=waterfall_df["total_underpaid"], marker_color=RCM_COLORS[3]))
+        fig.add_trace(
+            go.Bar(name="Paid", x=waterfall_df["payer_name"], y=waterfall_df["total_paid"], marker_color=RCM_COLORS[1])
+        )
+        fig.add_trace(
+            go.Bar(
+                name="Underpaid (Recovery Opportunity)",
+                x=waterfall_df["payer_name"],
+                y=waterfall_df["total_underpaid"],
+                marker_color=RCM_COLORS[3],
+            )
+        )
         fig.update_layout(
-            barmode="stack", height=380, margin=dict(t=40, b=60),
-            yaxis_title="Amount ($)", xaxis_title="Payer",
+            barmode="stack",
+            height=380,
+            margin=dict(t=40, b=60),
+            yaxis_title="Amount ($)",
+            xaxis_title="Payer",
             legend=dict(orientation="h", yanchor="bottom", y=1.02),
             xaxis_tickangle=-30,
         )
@@ -2115,13 +2539,31 @@ with tab9:
 
         # ── Underpayment Detail Table ─────────────────────────────────
         st.subheader("Underpayment Summary by Payer")
-        underpay_table = underpay_df[[
-            "payer_name", "payer_type", "payment_count", "total_allowed",
-            "total_paid", "total_underpaid", "underpaid_count", "underpayment_rate",
-        ]].copy().round(2)
+        underpay_table = (
+            underpay_df[
+                [
+                    "payer_name",
+                    "payer_type",
+                    "payment_count",
+                    "total_allowed",
+                    "total_paid",
+                    "total_underpaid",
+                    "underpaid_count",
+                    "underpayment_rate",
+                ]
+            ]
+            .copy()
+            .round(2)
+        )
         underpay_table.columns = [
-            "Payer", "Payer Type", "Payment Count", "Total Allowed ($)",
-            "Total Paid ($)", "Underpaid Amount ($)", "Underpaid Claims", "Underpayment Rate (%)",
+            "Payer",
+            "Payer Type",
+            "Payment Count",
+            "Total Allowed ($)",
+            "Total Paid ($)",
+            "Underpaid Amount ($)",
+            "Underpaid Claims",
+            "Underpayment Rate (%)",
         ]
         st.dataframe(underpay_table, hide_index=True, width="stretch")
         export_buttons("underpayment_analysis", {"Underpayment by Payer": underpay_table})
@@ -2147,7 +2589,9 @@ with tab9:
 # =====================================================================
 with tab10:
     st.header("Forecasting & Scenario Planning")
-    st.caption("Linear trend projections with anomaly detection and seasonality analysis + interactive what-if scenarios.")
+    st.caption(
+        "Linear trend projections with anomaly detection and seasonality analysis + interactive what-if scenarios."
+    )
 
     FORECAST_MONTHS = 3  # periods to project forward
 
@@ -2159,51 +2603,76 @@ with tab10:
         cf_anomalies = _detect_anomalies(cf_series)
         cf_seasonality = _detect_seasonality(cf_series)
         cf_fitted, cf_forecast, cf_std, cf_future = _linear_forecast(
-            cf_series, FORECAST_MONTHS, exclude_mask=cf_anomalies["mask"],
+            cf_series,
+            FORECAST_MONTHS,
+            exclude_mask=cf_anomalies["mask"],
         )
 
         if cf_fitted is not None:
-            all_periods  = list(cf_series.index) + cf_future
-            actual_vals  = list(cf_series.values)
-            proj_vals    = [None] * len(cf_series) + list(cf_forecast)
-            fitted_vals  = list(cf_fitted)
+            all_periods = list(cf_series.index) + cf_future
+            actual_vals = list(cf_series.values)
+            proj_vals = [None] * len(cf_series) + list(cf_forecast)
+            fitted_vals = list(cf_fitted)
 
             fig = go.Figure()
-            fig.add_trace(go.Bar(
-                x=cf_series.index, y=cf_series.values,
-                name="Actual Collections", marker_color=RCM_COLORS[1], opacity=0.8,
-            ))
-            fig.add_trace(go.Scatter(
-                x=list(cf_series.index), y=fitted_vals,
-                name="Trend Line", mode="lines",
-                line=dict(color=RCM_COLORS[0], width=2, dash="dot"),
-            ))
-            fig.add_trace(go.Scatter(
-                x=cf_future, y=cf_forecast,
-                name="Projected", mode="lines+markers",
-                line=dict(color=RCM_COLORS[2], width=3),
-                marker=dict(size=10, symbol="diamond"),
-            ))
+            fig.add_trace(
+                go.Bar(
+                    x=cf_series.index,
+                    y=cf_series.values,
+                    name="Actual Collections",
+                    marker_color=RCM_COLORS[1],
+                    opacity=0.8,
+                )
+            )
+            fig.add_trace(
+                go.Scatter(
+                    x=list(cf_series.index),
+                    y=fitted_vals,
+                    name="Trend Line",
+                    mode="lines",
+                    line=dict(color=RCM_COLORS[0], width=2, dash="dot"),
+                )
+            )
+            fig.add_trace(
+                go.Scatter(
+                    x=cf_future,
+                    y=cf_forecast,
+                    name="Projected",
+                    mode="lines+markers",
+                    line=dict(color=RCM_COLORS[2], width=3),
+                    marker=dict(size=10, symbol="diamond"),
+                )
+            )
             # Confidence band
-            fig.add_trace(go.Scatter(
-                x=cf_future + cf_future[::-1],
-                y=list(cf_forecast + cf_std) + list((cf_forecast - cf_std)[::-1]),
-                fill="toself", fillcolor="rgba(245,158,11,0.15)",
-                line=dict(color="rgba(0,0,0,0)"),
-                name="±1 Std Dev", showlegend=True,
-            ))
+            fig.add_trace(
+                go.Scatter(
+                    x=cf_future + cf_future[::-1],
+                    y=list(cf_forecast + cf_std) + list((cf_forecast - cf_std)[::-1]),
+                    fill="toself",
+                    fillcolor="rgba(245,158,11,0.15)",
+                    line=dict(color="rgba(0,0,0,0)"),
+                    name="±1 Std Dev",
+                    showlegend=True,
+                )
+            )
             # Anomaly markers
             if cf_anomalies["count"] > 0:
                 anom_idx = [a[0] for a in cf_anomalies["anomalies"]]
                 anom_val = [a[1] for a in cf_anomalies["anomalies"]]
-                fig.add_trace(go.Scatter(
-                    x=anom_idx, y=anom_val,
-                    name="Anomaly (excluded)", mode="markers",
-                    marker=dict(size=14, symbol="x", color="red", line=dict(width=2)),
-                ))
+                fig.add_trace(
+                    go.Scatter(
+                        x=anom_idx,
+                        y=anom_val,
+                        name="Anomaly (excluded)",
+                        mode="markers",
+                        marker=dict(size=14, symbol="x", color="red", line=dict(width=2)),
+                    )
+                )
             fig.update_layout(
-                height=380, margin=dict(t=40, b=30),
-                yaxis_title="Monthly Collections ($)", xaxis_title="Month",
+                height=380,
+                margin=dict(t=40, b=30),
+                yaxis_title="Monthly Collections ($)",
+                xaxis_title="Month",
                 legend=dict(orientation="h", yanchor="bottom", y=1.02),
             )
             st.plotly_chart(fig, theme="streamlit", width="stretch")
@@ -2213,7 +2682,7 @@ with tab10:
                 st.warning(f"**{cf_anomalies['count']} anomalous month(s) excluded from forecast:** {anom_list}")
 
             fcast_total = cf_forecast.sum()
-            trend_dir   = "↑ upward" if cf_forecast[-1] > cf_series.iloc[-1] else "↓ downward"
+            trend_dir = "↑ upward" if cf_forecast[-1] > cf_series.iloc[-1] else "↓ downward"
             st.info(
                 f"**Projection:** Estimated **${fcast_total:,.0f}** in collections over the next "
                 f"{FORECAST_MONTHS} months. Trend is **{trend_dir}**."
@@ -2236,48 +2705,66 @@ with tab10:
             dar_anomalies = _detect_anomalies(dar_series)
             dar_seasonality = _detect_seasonality(dar_series)
             dar_fitted, dar_forecast_vals, dar_std, dar_future = _linear_forecast(
-                dar_series, FORECAST_MONTHS, exclude_mask=dar_anomalies["mask"],
+                dar_series,
+                FORECAST_MONTHS,
+                exclude_mask=dar_anomalies["mask"],
             )
             if dar_fitted is not None:
                 fig = go.Figure()
-                fig.add_trace(go.Scatter(
-                    x=list(dar_series.index), y=list(dar_series.values),
-                    name="Actual DAR", mode="lines+markers",
-                    line=dict(color=RCM_COLORS[0], width=2),
-                ))
-                fig.add_trace(go.Scatter(
-                    x=dar_future, y=dar_forecast_vals,
-                    name="Projected DAR", mode="lines+markers",
-                    line=dict(color=RCM_COLORS[2], width=3, dash="dash"),
-                    marker=dict(size=9, symbol="diamond"),
-                ))
+                fig.add_trace(
+                    go.Scatter(
+                        x=list(dar_series.index),
+                        y=list(dar_series.values),
+                        name="Actual DAR",
+                        mode="lines+markers",
+                        line=dict(color=RCM_COLORS[0], width=2),
+                    )
+                )
+                fig.add_trace(
+                    go.Scatter(
+                        x=dar_future,
+                        y=dar_forecast_vals,
+                        name="Projected DAR",
+                        mode="lines+markers",
+                        line=dict(color=RCM_COLORS[2], width=3, dash="dash"),
+                        marker=dict(size=9, symbol="diamond"),
+                    )
+                )
                 # Confidence band
-                fig.add_trace(go.Scatter(
-                    x=dar_future + dar_future[::-1],
-                    y=list(dar_forecast_vals + dar_std) + list((dar_forecast_vals - dar_std)[::-1]),
-                    fill="toself", fillcolor="rgba(239,68,68,0.1)",
-                    line=dict(color="rgba(0,0,0,0)"), name="±1 Std Dev",
-                ))
+                fig.add_trace(
+                    go.Scatter(
+                        x=dar_future + dar_future[::-1],
+                        y=list(dar_forecast_vals + dar_std) + list((dar_forecast_vals - dar_std)[::-1]),
+                        fill="toself",
+                        fillcolor="rgba(239,68,68,0.1)",
+                        line=dict(color="rgba(0,0,0,0)"),
+                        name="±1 Std Dev",
+                    )
+                )
                 # Anomaly markers
                 if dar_anomalies["count"] > 0:
                     anom_idx = [a[0] for a in dar_anomalies["anomalies"]]
                     anom_val = [a[1] for a in dar_anomalies["anomalies"]]
-                    fig.add_trace(go.Scatter(
-                        x=anom_idx, y=anom_val,
-                        name="Anomaly (excluded)", mode="markers",
-                        marker=dict(size=14, symbol="x", color="red", line=dict(width=2)),
-                    ))
-                fig.add_hline(y=35, line_dash="dash", line_color="green",
-                              annotation_text="35-day benchmark")
-                fig.update_layout(height=340, margin=dict(t=40, b=10),
-                                  yaxis_title="Days in A/R", xaxis_title="Month")
+                    fig.add_trace(
+                        go.Scatter(
+                            x=anom_idx,
+                            y=anom_val,
+                            name="Anomaly (excluded)",
+                            mode="markers",
+                            marker=dict(size=14, symbol="x", color="red", line=dict(width=2)),
+                        )
+                    )
+                fig.add_hline(y=35, line_dash="dash", line_color="green", annotation_text="35-day benchmark")
+                fig.update_layout(height=340, margin=dict(t=40, b=10), yaxis_title="Days in A/R", xaxis_title="Month")
                 st.plotly_chart(fig, theme="streamlit", width="stretch")
                 if dar_anomalies["count"] > 0:
                     anom_list = ", ".join(f"{a[0]} ({a[1]:.1f} days)" for a in dar_anomalies["anomalies"])
                     st.warning(f"**{dar_anomalies['count']} anomalous month(s) excluded:** {anom_list}")
                 proj_dar = float(dar_forecast_vals[-1])
                 if proj_dar > 35:
-                    st.warning(f"Projected DAR in {dar_future[-1]}: **{proj_dar:.1f} days** — above the 35-day benchmark.")
+                    st.warning(
+                        f"Projected DAR in {dar_future[-1]}: **{proj_dar:.1f} days** — above the 35-day benchmark."
+                    )
                 else:
                     st.success(f"Projected DAR in {dar_future[-1]}: **{proj_dar:.1f} days** — within benchmark.")
                 _render_model_stats(dar_series, "Days in A/R", dar_anomalies, dar_seasonality)
@@ -2293,40 +2780,58 @@ with tab10:
             dr_anomalies = _detect_anomalies(dr_series)
             dr_seasonality = _detect_seasonality(dr_series)
             dr_fitted, dr_forecast_vals, dr_std, dr_future = _linear_forecast(
-                dr_series, FORECAST_MONTHS, exclude_mask=dr_anomalies["mask"],
+                dr_series,
+                FORECAST_MONTHS,
+                exclude_mask=dr_anomalies["mask"],
             )
             if dr_fitted is not None:
                 fig = go.Figure()
-                fig.add_trace(go.Scatter(
-                    x=list(dr_series.index), y=list(dr_series.values),
-                    name="Actual Denial Rate", mode="lines+markers",
-                    line=dict(color=RCM_COLORS[3], width=2),
-                ))
-                fig.add_trace(go.Scatter(
-                    x=dr_future, y=dr_forecast_vals,
-                    name="Projected Denial Rate", mode="lines+markers",
-                    line=dict(color=RCM_COLORS[2], width=3, dash="dash"),
-                    marker=dict(size=9, symbol="diamond"),
-                ))
-                fig.add_trace(go.Scatter(
-                    x=dr_future + dr_future[::-1],
-                    y=list(dr_forecast_vals + dr_std) + list((dr_forecast_vals - dr_std)[::-1]),
-                    fill="toself", fillcolor="rgba(239,68,68,0.1)",
-                    line=dict(color="rgba(0,0,0,0)"), name="±1 Std Dev",
-                ))
+                fig.add_trace(
+                    go.Scatter(
+                        x=list(dr_series.index),
+                        y=list(dr_series.values),
+                        name="Actual Denial Rate",
+                        mode="lines+markers",
+                        line=dict(color=RCM_COLORS[3], width=2),
+                    )
+                )
+                fig.add_trace(
+                    go.Scatter(
+                        x=dr_future,
+                        y=dr_forecast_vals,
+                        name="Projected Denial Rate",
+                        mode="lines+markers",
+                        line=dict(color=RCM_COLORS[2], width=3, dash="dash"),
+                        marker=dict(size=9, symbol="diamond"),
+                    )
+                )
+                fig.add_trace(
+                    go.Scatter(
+                        x=dr_future + dr_future[::-1],
+                        y=list(dr_forecast_vals + dr_std) + list((dr_forecast_vals - dr_std)[::-1]),
+                        fill="toself",
+                        fillcolor="rgba(239,68,68,0.1)",
+                        line=dict(color="rgba(0,0,0,0)"),
+                        name="±1 Std Dev",
+                    )
+                )
                 # Anomaly markers
                 if dr_anomalies["count"] > 0:
                     anom_idx = [a[0] for a in dr_anomalies["anomalies"]]
                     anom_val = [a[1] for a in dr_anomalies["anomalies"]]
-                    fig.add_trace(go.Scatter(
-                        x=anom_idx, y=anom_val,
-                        name="Anomaly (excluded)", mode="markers",
-                        marker=dict(size=14, symbol="x", color="red", line=dict(width=2)),
-                    ))
-                fig.add_hline(y=10, line_dash="dash", line_color="green",
-                              annotation_text="10% benchmark")
-                fig.update_layout(height=340, margin=dict(t=40, b=10),
-                                  yaxis_title="Denial Rate (%)", xaxis_title="Month")
+                    fig.add_trace(
+                        go.Scatter(
+                            x=anom_idx,
+                            y=anom_val,
+                            name="Anomaly (excluded)",
+                            mode="markers",
+                            marker=dict(size=14, symbol="x", color="red", line=dict(width=2)),
+                        )
+                    )
+                fig.add_hline(y=10, line_dash="dash", line_color="green", annotation_text="10% benchmark")
+                fig.update_layout(
+                    height=340, margin=dict(t=40, b=10), yaxis_title="Denial Rate (%)", xaxis_title="Month"
+                )
                 st.plotly_chart(fig, theme="streamlit", width="stretch")
                 if dr_anomalies["count"] > 0:
                     anom_list = ", ".join(f"{a[0]} ({a[1]:.1f}%)" for a in dr_anomalies["anomalies"])
@@ -2352,19 +2857,23 @@ with tab10:
     )
 
     # Derive baseline figures needed for scenarios
-    _total_claims    = denial_trend["total_claims"].sum()  if not denial_trend.empty and "total_claims" in denial_trend.columns else 0
-    _total_denied    = denial_trend["denied_claims"].sum() if not denial_trend.empty and "denied_claims" in denial_trend.columns else 0
-    _num_months      = max(len(denial_trend), 1)
+    _total_claims = (
+        denial_trend["total_claims"].sum() if not denial_trend.empty and "total_claims" in denial_trend.columns else 0
+    )
+    _total_denied = (
+        denial_trend["denied_claims"].sum() if not denial_trend.empty and "denied_claims" in denial_trend.columns else 0
+    )
+    _num_months = max(len(denial_trend), 1)
     _avg_monthly_cls = _total_claims / _num_months
 
-    _total_payments_sc = dar_trend["payments"].sum()  if not dar_trend.empty and "payments" in dar_trend.columns else 0
-    _total_charges_sc  = dar_trend["charges"].sum()   if not dar_trend.empty and "charges" in dar_trend.columns else 0
+    _total_payments_sc = dar_trend["payments"].sum() if not dar_trend.empty and "payments" in dar_trend.columns else 0
+    _total_charges_sc = dar_trend["charges"].sum() if not dar_trend.empty and "charges" in dar_trend.columns else 0
     _avg_daily_charges = _total_charges_sc / max((_num_months * 30), 1)
-    _paid_claims       = max(_total_claims - _total_denied, 1)
+    _paid_claims = max(_total_claims - _total_denied, 1)
     _avg_payment_per_claim = _total_payments_sc / _paid_claims if _paid_claims > 0 else 0
 
-    _total_clean   = ccr_trend["clean_claims"].sum()  if not ccr_trend.empty and "clean_claims" in ccr_trend.columns else 0
-    _rework_cost   = 25.0  # industry-standard cost per reworked claim ($)
+    _total_clean = ccr_trend["clean_claims"].sum() if not ccr_trend.empty and "clean_claims" in ccr_trend.columns else 0
+    _rework_cost = 25.0  # industry-standard cost per reworked claim ($)
 
     col_s1, col_s2, col_s3 = st.columns(3)
 
@@ -2373,17 +2882,19 @@ with tab10:
         st.caption(f"Baseline: **{denial_val:.1f}%** denial rate across **{int(_avg_monthly_cls):,}** claims/month")
         denial_improve = st.slider(
             "Reduce denial rate by (percentage points)",
-            min_value=0.0, max_value=min(float(denial_val), 10.0),
-            value=min(2.0, float(denial_val)), step=0.5,
+            min_value=0.0,
+            max_value=min(float(denial_val), 10.0),
+            value=min(2.0, float(denial_val)),
+            step=0.5,
             key="scenario_denial",
         )
-        monthly_recovered_claims = (_avg_monthly_cls * denial_improve / 100)
-        monthly_recovery         = monthly_recovered_claims * _avg_payment_per_claim
-        annual_recovery          = monthly_recovery * 12
+        monthly_recovered_claims = _avg_monthly_cls * denial_improve / 100
+        monthly_recovery = monthly_recovered_claims * _avg_payment_per_claim
+        annual_recovery = monthly_recovery * 12
 
-        st.metric("Monthly Revenue Recovery",  f"${monthly_recovery:,.0f}")
-        st.metric("Annual Revenue Recovery",   f"${annual_recovery:,.0f}")
-        st.metric("Claims Recovered / Month",  f"{monthly_recovered_claims:.0f}")
+        st.metric("Monthly Revenue Recovery", f"${monthly_recovery:,.0f}")
+        st.metric("Annual Revenue Recovery", f"${annual_recovery:,.0f}")
+        st.metric("Claims Recovered / Month", f"{monthly_recovered_claims:.0f}")
         if denial_improve > 0 and _avg_payment_per_claim > 0:
             st.success(
                 f"Reducing denial rate from **{denial_val:.1f}%** to "
@@ -2396,39 +2907,40 @@ with tab10:
         st.caption(f"Baseline: **{dar_val:.1f} days** A/R | Avg daily charges: **${_avg_daily_charges:,.0f}**")
         dar_improve = st.slider(
             "Reduce DAR by (days)",
-            min_value=0, max_value=30,
-            value=5, step=1,
+            min_value=0,
+            max_value=30,
+            value=5,
+            step=1,
             key="scenario_dar",
         )
         cash_unlocked = dar_improve * _avg_daily_charges
 
         st.metric("One-Time Cash Acceleration", f"${cash_unlocked:,.0f}")
-        st.metric("New Projected DAR",           f"{max(dar_val - dar_improve, 0):.1f} days")
+        st.metric("New Projected DAR", f"{max(dar_val - dar_improve, 0):.1f} days")
         benchmark_gap = max(dar_val - 35, 0)
-        st.metric("Remaining Gap to Benchmark",  f"{max(benchmark_gap - dar_improve, 0):.1f} days")
+        st.metric("Remaining Gap to Benchmark", f"{max(benchmark_gap - dar_improve, 0):.1f} days")
         if dar_improve > 0 and _avg_daily_charges > 0:
-            st.success(
-                f"Cutting DAR by **{dar_improve} days** releases "
-                f"**${cash_unlocked:,.0f}** in working capital."
-            )
+            st.success(f"Cutting DAR by **{dar_improve} days** releases **${cash_unlocked:,.0f}** in working capital.")
 
     with col_s3, st.container(border=True):
         st.markdown("#### Improve Clean Claim Rate")
         st.caption(f"Baseline: **{ccr_val:.1f}%** CCR | Rework cost: **${_rework_cost:.0f}/claim**")
         ccr_improve = st.slider(
             "Improve clean claim rate by (percentage points)",
-            min_value=0.0, max_value=min(100.0 - float(ccr_val), 10.0),
-            value=min(3.0, max(0.0, 100.0 - float(ccr_val))), step=0.5,
+            min_value=0.0,
+            max_value=min(100.0 - float(ccr_val), 10.0),
+            value=min(3.0, max(0.0, 100.0 - float(ccr_val))),
+            step=0.5,
             key="scenario_ccr",
         )
-        extra_clean_monthly  = _avg_monthly_cls * ccr_improve / 100
+        extra_clean_monthly = _avg_monthly_cls * ccr_improve / 100
         monthly_rework_saved = extra_clean_monthly * _rework_cost
-        annual_rework_saved  = monthly_rework_saved * 12
-        implied_denial_drop  = ccr_improve * 0.4  # empirical: ~40% of dirty claims become denials
+        annual_rework_saved = monthly_rework_saved * 12
+        implied_denial_drop = ccr_improve * 0.4  # empirical: ~40% of dirty claims become denials
 
-        st.metric("Monthly Rework Savings",    f"${monthly_rework_saved:,.0f}")
-        st.metric("Annual Rework Savings",     f"${annual_rework_saved:,.0f}")
-        st.metric("Implied Denial Rate Drop",  f"~{implied_denial_drop:.1f} pp")
+        st.metric("Monthly Rework Savings", f"${monthly_rework_saved:,.0f}")
+        st.metric("Annual Rework Savings", f"${annual_rework_saved:,.0f}")
+        st.metric("Implied Denial Rate Drop", f"~{implied_denial_drop:.1f} pp")
         if ccr_improve > 0:
             st.success(
                 f"Raising CCR from **{ccr_val:.1f}%** to **{ccr_val + ccr_improve:.1f}%** "
@@ -2440,7 +2952,7 @@ with tab10:
     st.subheader("Combined Annual Impact Estimate")
     combined_annual = (
         monthly_recovery * 12
-        + cash_unlocked   # one-time, shown separately
+        + cash_unlocked  # one-time, shown separately
         + annual_rework_saved
     )
     ci1, ci2, ci3, ci4 = st.columns(4)
@@ -2474,15 +2986,15 @@ with tab11:
     )
 
     pr_payer = query_patient_responsibility_by_payer(params)
-    pr_dept  = query_patient_responsibility_by_dept(params)
+    pr_dept = query_patient_responsibility_by_dept(params)
     pr_trend = query_patient_responsibility_trend(params)
 
     if pr_payer.empty:
         st.info("No patient responsibility data available. Ensure payments have allowed_amount populated.")
     else:
-        total_pr         = pr_payer["total_patient_resp"].sum()
+        total_pr = pr_payer["total_patient_resp"].sum()
         total_allowed_pr = pr_payer["total_allowed"].sum()
-        overall_pr_rate  = (total_pr / total_allowed_pr * 100) if total_allowed_pr > 0 else 0
+        overall_pr_rate = (total_pr / total_allowed_pr * 100) if total_allowed_pr > 0 else 0
         avg_pr_per_claim = pr_payer["avg_patient_resp"].mean()
         # Self-pay proxy: payers with payer_type == 'Self-Pay'
         self_pay_total = pr_payer.loc[
@@ -2508,11 +3020,16 @@ with tab11:
             st.subheader("Patient Responsibility by Payer")
             fig = px.bar(
                 pr_payer.sort_values("total_patient_resp"),
-                x="total_patient_resp", y="payer_name", orientation="h",
+                x="total_patient_resp",
+                y="payer_name",
+                orientation="h",
                 color="pct_of_allowed",
                 color_continuous_scale="RdYlGn_r",
-                labels={"total_patient_resp": "Patient Responsibility ($)", "payer_name": "",
-                        "pct_of_allowed": "% of Allowed"},
+                labels={
+                    "total_patient_resp": "Patient Responsibility ($)",
+                    "payer_name": "",
+                    "pct_of_allowed": "% of Allowed",
+                },
                 title="Total Patient Responsibility by Payer (color = % of allowed)",
             )
             fig.update_layout(height=400, margin=dict(t=40, b=10))
@@ -2520,18 +3037,26 @@ with tab11:
 
         with col_pr2:
             st.subheader("Patient Responsibility Rate by Payer Type")
-            ptype = pr_payer.groupby("payer_type").agg(
-                total_patient_resp=("total_patient_resp", "sum"),
-                total_allowed=("total_allowed", "sum"),
-            ).reset_index()
+            ptype = (
+                pr_payer.groupby("payer_type")
+                .agg(
+                    total_patient_resp=("total_patient_resp", "sum"),
+                    total_allowed=("total_allowed", "sum"),
+                )
+                .reset_index()
+            )
             ptype["pr_rate"] = (ptype["total_patient_resp"] / ptype["total_allowed"] * 100).round(1)
             fig = px.bar(
                 ptype.sort_values("total_patient_resp", ascending=False),
-                x="payer_type", y="total_patient_resp",
+                x="payer_type",
+                y="total_patient_resp",
                 color="pr_rate",
                 color_continuous_scale="Oranges",
-                labels={"total_patient_resp": "Total Patient Responsibility ($)",
-                        "payer_type": "Payer Type", "pr_rate": "PR Rate (%)"},
+                labels={
+                    "total_patient_resp": "Total Patient Responsibility ($)",
+                    "payer_type": "Payer Type",
+                    "pr_rate": "PR Rate (%)",
+                },
                 title="Patient Responsibility by Payer Type",
                 text="pr_rate",
             )
@@ -2545,25 +3070,42 @@ with tab11:
             col_pr3, col_pr4 = st.columns(2)
             with col_pr3:
                 fig = go.Figure()
-                fig.add_trace(go.Bar(
-                    x=pr_trend.index, y=pr_trend["total_patient_resp"],
-                    name="Patient Responsibility", marker_color=RCM_COLORS[2],
-                ))
-                fig.update_layout(height=320, margin=dict(t=40, b=10),
-                                  yaxis_title="Amount ($)", xaxis_title="Month",
-                                  title="Monthly Patient Responsibility ($)")
+                fig.add_trace(
+                    go.Bar(
+                        x=pr_trend.index,
+                        y=pr_trend["total_patient_resp"],
+                        name="Patient Responsibility",
+                        marker_color=RCM_COLORS[2],
+                    )
+                )
+                fig.update_layout(
+                    height=320,
+                    margin=dict(t=40, b=10),
+                    yaxis_title="Amount ($)",
+                    xaxis_title="Month",
+                    title="Monthly Patient Responsibility ($)",
+                )
                 st.plotly_chart(fig, theme="streamlit", width="stretch")
             with col_pr4:
                 fig = go.Figure()
-                fig.add_trace(go.Scatter(
-                    x=pr_trend.index, y=pr_trend["patient_resp_rate"],
-                    mode="lines+markers", name="PR Rate (%)",
-                    line=dict(color=RCM_COLORS[2], width=2),
-                    fill="tozeroy", fillcolor="rgba(245,158,11,0.1)",
-                ))
-                fig.update_layout(height=320, margin=dict(t=40, b=10),
-                                  yaxis_title="Rate (%)", xaxis_title="Month",
-                                  title="Patient Responsibility Rate (% of Allowed)")
+                fig.add_trace(
+                    go.Scatter(
+                        x=pr_trend.index,
+                        y=pr_trend["patient_resp_rate"],
+                        mode="lines+markers",
+                        name="PR Rate (%)",
+                        line=dict(color=RCM_COLORS[2], width=2),
+                        fill="tozeroy",
+                        fillcolor="rgba(245,158,11,0.1)",
+                    )
+                )
+                fig.update_layout(
+                    height=320,
+                    margin=dict(t=40, b=10),
+                    yaxis_title="Rate (%)",
+                    xaxis_title="Month",
+                    title="Patient Responsibility Rate (% of Allowed)",
+                )
                 st.plotly_chart(fig, theme="streamlit", width="stretch")
 
         # ── Department / Encounter Type Breakdown ─────────────────────
@@ -2573,7 +3115,9 @@ with tab11:
             dept_total = pr_dept.groupby("department")["total_patient_resp"].sum().reset_index()
             fig = px.bar(
                 dept_total.sort_values("total_patient_resp"),
-                x="total_patient_resp", y="department", orientation="h",
+                x="total_patient_resp",
+                y="department",
+                orientation="h",
                 color="total_patient_resp",
                 color_continuous_scale="Oranges",
                 labels={"total_patient_resp": "Patient Responsibility ($)", "department": ""},
@@ -2585,7 +3129,9 @@ with tab11:
         with col_pr6:
             enc_total = pr_dept.groupby("encounter_type")["total_patient_resp"].sum().reset_index()
             fig = px.pie(
-                enc_total, values="total_patient_resp", names="encounter_type",
+                enc_total,
+                values="total_patient_resp",
+                names="encounter_type",
                 title="Patient Responsibility by Encounter Type",
                 color_discrete_sequence=RCM_COLORS,
             )
@@ -2594,13 +3140,27 @@ with tab11:
 
         # ── Summary Table ─────────────────────────────────────────────
         st.subheader("Patient Responsibility by Payer — Detail")
-        pr_table = pr_payer[[
-            "payer_name", "payer_type", "payment_count",
-            "total_patient_resp", "avg_patient_resp", "pct_of_allowed",
-        ]].copy().round(2)
+        pr_table = (
+            pr_payer[
+                [
+                    "payer_name",
+                    "payer_type",
+                    "payment_count",
+                    "total_patient_resp",
+                    "avg_patient_resp",
+                    "pct_of_allowed",
+                ]
+            ]
+            .copy()
+            .round(2)
+        )
         pr_table.columns = [
-            "Payer", "Payer Type", "Payments",
-            "Total Patient Responsibility ($)", "Avg per Claim ($)", "% of Allowed",
+            "Payer",
+            "Payer Type",
+            "Payments",
+            "Total Patient Responsibility ($)",
+            "Avg per Claim ($)",
+            "% of Allowed",
         ]
         st.dataframe(pr_table, hide_index=True, width="stretch")
         export_buttons("patient_responsibility", {"Patient Responsibility": pr_table})
@@ -2636,6 +3196,7 @@ with tab12:
 
     # ── API key guard ─────────────────────────────────────────────────
     import os as _os
+
     _api_key_set = bool(
         _os.environ.get("OPENROUTER_API_KEY", "").strip()
         and _os.environ.get("OPENROUTER_API_KEY", "").strip() != "your_api_key_here"
@@ -2654,8 +3215,8 @@ with tab12:
     _col_model, _col_clear = st.columns([3, 1])
     with _col_model:
         _model_labels = [label for label, _ in AVAILABLE_MODELS]
-        _model_ids    = [mid   for _, mid   in AVAILABLE_MODELS]
-        _default_idx  = _model_ids.index(DEFAULT_MODEL) if DEFAULT_MODEL in _model_ids else 0
+        _model_ids = [mid for _, mid in AVAILABLE_MODELS]
+        _default_idx = _model_ids.index(DEFAULT_MODEL) if DEFAULT_MODEL in _model_ids else 0
         _selected_label = st.selectbox(
             "Model",
             _model_labels,
@@ -2668,27 +3229,27 @@ with tab12:
     with _col_clear:
         st.markdown("<div style='margin-top:28px'></div>", unsafe_allow_html=True)
         if st.button("Clear chat", key="ai_clear_chat"):
-            st.session_state["ai_display_turns"]  = []
-            st.session_state["ai_api_messages"]   = []
+            st.session_state["ai_display_turns"] = []
+            st.session_state["ai_api_messages"] = []
             st.rerun()
 
     # ── Live KPI snapshot (passed into system prompt) ─────────────────
     _live_kpis = {
-        "Days in A/R":            f"{dar_val} days",
-        "Net Collection Rate":    f"{ncr_val}%",
-        "Gross Collection Rate":  f"{gcr_val}%",
-        "Clean Claim Rate":       f"{ccr_val}%",
-        "Denial Rate":            f"{denial_val}%",
-        "First-Pass Rate":        f"{fpr_val}%",
-        "Payment Accuracy":       f"{accuracy_val}%",
-        "Bad Debt Rate":          f"{bad_debt_val}%",
-        "Cost to Collect":        f"{ctc_val}%",
-        "Active filter — date":   f"{start_dt.strftime('%b %Y')} to {end_dt.strftime('%b %Y')}",
-        "Active filter — payer":  selected_payer,
-        "Active filter — dept":   selected_dept,
+        "Days in A/R": f"{dar_val} days",
+        "Net Collection Rate": f"{ncr_val}%",
+        "Gross Collection Rate": f"{gcr_val}%",
+        "Clean Claim Rate": f"{ccr_val}%",
+        "Denial Rate": f"{denial_val}%",
+        "First-Pass Rate": f"{fpr_val}%",
+        "Payment Accuracy": f"{accuracy_val}%",
+        "Bad Debt Rate": f"{bad_debt_val}%",
+        "Cost to Collect": f"{ctc_val}%",
+        "Active filter — date": f"{start_dt.strftime('%b %Y')} to {end_dt.strftime('%b %Y')}",
+        "Active filter — payer": selected_payer,
+        "Active filter — dept": selected_dept,
         "Active filter — enc type": selected_enc_type,
-        "Claims in view":         f"{len(f_claims):,}",
-        "Encounters in view":     f"{len(f_encounters):,}",
+        "Claims in view": f"{len(f_claims):,}",
+        "Encounters in view": f"{len(f_encounters):,}",
     }
 
     # ── Initialise session state ──────────────────────────────────────
@@ -2709,10 +3270,7 @@ with tab12:
                     _qdf = pd.DataFrame(_q["rows"], columns=_q["columns"])
                     st.dataframe(_qdf, hide_index=True, use_container_width=True)
                     if _q.get("truncated"):
-                        st.caption(
-                            f"Showing {_q['row_count']:,} of "
-                            f"{_q['total_rows']:,} rows"
-                        )
+                        st.caption(f"Showing {_q['row_count']:,} of {_q['total_rows']:,} rows")
                 else:
                     st.info("Query returned 0 rows.")
         if turn.get("content"):
@@ -2733,7 +3291,8 @@ with tab12:
         for i, _sug in enumerate(_suggestions):
             with _sug_cols[i % 3]:
                 if st.button(
-                    _sug, key=f"ai_sug_{i}",
+                    _sug,
+                    key=f"ai_sug_{i}",
                     disabled=not _api_key_set,
                     use_container_width=True,
                 ):
@@ -2757,9 +3316,7 @@ with tab12:
 
     if _user_input:
         # Show user message immediately
-        st.session_state["ai_display_turns"].append(
-            {"role": "user", "content": _user_input}
-        )
+        st.session_state["ai_display_turns"].append({"role": "user", "content": _user_input})
         with st.chat_message("user"):
             st.markdown(_user_input)
 
@@ -2784,16 +3341,18 @@ with tab12:
                             _pending_desc = _event["description"]
 
                         elif _event["type"] == "tool_result":
-                            _queries_this_turn.append({
-                                "description": _event["description"],
-                                "sql":         _event["sql"],
-                                "columns":     _event["columns"],
-                                "rows":        _event["rows"],
-                                "row_count":   _event["row_count"],
-                                "total_rows":  _event["total_rows"],
-                                "truncated":   _event["truncated"],
-                                "error":       _event.get("error"),
-                            })
+                            _queries_this_turn.append(
+                                {
+                                    "description": _event["description"],
+                                    "sql": _event["sql"],
+                                    "columns": _event["columns"],
+                                    "rows": _event["rows"],
+                                    "row_count": _event["row_count"],
+                                    "total_rows": _event["total_rows"],
+                                    "truncated": _event["truncated"],
+                                    "error": _event.get("error"),
+                                }
+                            )
 
                         elif _event["type"] == "text":
                             _final_text = _event["content"]
@@ -2811,11 +3370,13 @@ with tab12:
             )
 
         # Persist display turn
-        st.session_state["ai_display_turns"].append({
-            "role":    "assistant",
-            "content": _final_text,
-            "queries": _queries_this_turn,
-        })
+        st.session_state["ai_display_turns"].append(
+            {
+                "role": "assistant",
+                "content": _final_text,
+                "queries": _queries_this_turn,
+            }
+        )
 
         # Persist API messages: _api_msgs was mutated in-place by run_agentic_turn
         # Strip the system message (index 0) before saving — it's rebuilt fresh each turn

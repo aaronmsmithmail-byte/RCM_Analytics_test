@@ -13,6 +13,7 @@ from src.database import build_filter_cte, create_tables
 # Shared fixtures
 # ===========================================================================
 
+
 @pytest.fixture
 def db(tmp_path):
     """Temporary DuckDB database pre-loaded with representative Silver data.
@@ -73,6 +74,7 @@ def _execute_cte(db_path, cte_sql, params):
 # SQL structure tests
 # ===========================================================================
 
+
 class TestBuildFilterCteSqlStructure:
     """Verify the shape and parameterisation of the generated SQL."""
 
@@ -97,8 +99,11 @@ class TestBuildFilterCteSqlStructure:
 
     def test_all_filters_combined(self):
         cte, params = build_filter_cte(
-            "2024-01-01", "2024-12-31",
-            payer_id="PYR001", department="Cardiology", encounter_type="Outpatient",
+            "2024-01-01",
+            "2024-12-31",
+            payer_id="PYR001",
+            department="Cardiology",
+            encounter_type="Outpatient",
         )
         assert len(params) == 5
         assert "c.payer_id = ?" in cte
@@ -115,8 +120,10 @@ class TestBuildFilterCteSqlStructure:
 
     def test_no_raw_values_in_sql(self):
         cte, _ = build_filter_cte(
-            "2024-01-01", "2024-12-31",
-            payer_id="PYR001", department="Cardiology",
+            "2024-01-01",
+            "2024-12-31",
+            payer_id="PYR001",
+            department="Cardiology",
         )
         assert "PYR001" not in cte
         assert "Cardiology" not in cte
@@ -126,6 +133,7 @@ class TestBuildFilterCteSqlStructure:
 # ===========================================================================
 # Execution tests against real database
 # ===========================================================================
+
 
 class TestBuildFilterCteExecution:
     """Run the generated CTE against a test database and verify row counts."""
@@ -152,8 +160,11 @@ class TestBuildFilterCteExecution:
 
     def test_all_filters_narrow_results(self, db):
         cte, params = build_filter_cte(
-            "2024-01-01", "2024-12-31",
-            payer_id="PYR001", department="Cardiology", encounter_type="Outpatient",
+            "2024-01-01",
+            "2024-12-31",
+            payer_id="PYR001",
+            department="Cardiology",
+            encounter_type="Outpatient",
         )
         result = _execute_cte(db, cte, params)
         assert result == {"CLM001", "CLM002"}

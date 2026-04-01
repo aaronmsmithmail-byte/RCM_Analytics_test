@@ -2,7 +2,7 @@
 # ================================================
 # Usage: make <target>
 
-.PHONY: test lint verify format setup data
+.PHONY: test lint verify format coverage security ci setup data run run-full
 
 # ── Quality Gates ────────────────────────────────────────────
 test:
@@ -14,6 +14,18 @@ lint:
 verify: lint test
 	@echo ""
 	@echo "✅ All gates passed (lint + tests)"
+
+# ── Coverage & Security ─────────────────────────────────────
+coverage:
+	python -m pytest tests/ -q --cov=src --cov-report=term-missing
+
+security:
+	bandit -r src/ app.py -c bandit.toml --severity-level medium
+	pip-audit -r requirements.txt
+
+ci: lint test security
+	@echo ""
+	@echo "✅ All CI gates passed (lint + tests + security)"
 
 # ── Formatting ───────────────────────────────────────────────
 format:

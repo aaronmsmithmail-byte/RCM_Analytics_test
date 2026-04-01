@@ -14,6 +14,7 @@ from src.database import create_tables, persist_metadata
 # Shared fixtures
 # ===========================================================================
 
+
 @pytest.fixture
 def db_with_meta(tmp_path):
     """Database with schema + metadata tables populated."""
@@ -40,6 +41,7 @@ def db_empty(tmp_path):
 # ===========================================================================
 # _get_meta_context
 # ===========================================================================
+
 
 class TestGetMetaContext:
     def test_returns_string(self, db_with_meta):
@@ -75,6 +77,7 @@ class TestGetMetaContext:
 # ===========================================================================
 # build_system_prompt
 # ===========================================================================
+
 
 class TestBuildSystemPrompt:
     def test_returns_string(self, db_with_meta):

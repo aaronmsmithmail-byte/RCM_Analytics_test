@@ -17,6 +17,7 @@ from src.database import (
 # Shared fixtures
 # ===========================================================================
 
+
 @pytest.fixture
 def conn(tmp_path):
     """Fresh DuckDB connection with schema created."""
@@ -44,13 +45,16 @@ def _write_csv(path, content):
 # load_csv_to_bronze
 # ===========================================================================
 
+
 class TestLoadCsvToBronze:
     def test_loads_rows_into_bronze(self, conn, data_dir, monkeypatch):
         monkeypatch.setattr("src.database.DATA_DIR", str(data_dir))
-        _write_csv(data_dir / "payers.csv",
-                   "payer_id,payer_name,payer_type,avg_reimbursement_pct,contract_id\n"
-                   "PYR001,Aetna,Commercial,0.85,C001\n"
-                   "PYR002,Medicaid,Government,0.70,G001\n")
+        _write_csv(
+            data_dir / "payers.csv",
+            "payer_id,payer_name,payer_type,avg_reimbursement_pct,contract_id\n"
+            "PYR001,Aetna,Commercial,0.85,C001\n"
+            "PYR002,Medicaid,Government,0.70,G001\n",
+        )
 
         load_csv_to_bronze(conn, "bronze_payers", "payers.csv")
 
@@ -59,15 +63,14 @@ class TestLoadCsvToBronze:
 
     def test_all_columns_stored_as_text(self, conn, data_dir, monkeypatch):
         monkeypatch.setattr("src.database.DATA_DIR", str(data_dir))
-        _write_csv(data_dir / "payers.csv",
-                   "payer_id,payer_name,payer_type,avg_reimbursement_pct,contract_id\n"
-                   "PYR001,Aetna,Commercial,0.85,C001\n")
+        _write_csv(
+            data_dir / "payers.csv",
+            "payer_id,payer_name,payer_type,avg_reimbursement_pct,contract_id\nPYR001,Aetna,Commercial,0.85,C001\n",
+        )
 
         load_csv_to_bronze(conn, "bronze_payers", "payers.csv")
 
-        val = conn.execute(
-            "SELECT avg_reimbursement_pct FROM bronze_payers"
-        ).fetchone()[0]
+        val = conn.execute("SELECT avg_reimbursement_pct FROM bronze_payers").fetchone()[0]
         assert isinstance(val, str)
         assert val == "0.85"
 
@@ -82,15 +85,16 @@ class TestLoadCsvToBronze:
     def test_reload_replaces_existing_data(self, conn, data_dir, monkeypatch):
         monkeypatch.setattr("src.database.DATA_DIR", str(data_dir))
         csv = data_dir / "payers.csv"
-        _write_csv(csv,
-                   "payer_id,payer_name,payer_type,avg_reimbursement_pct,contract_id\n"
-                   "PYR001,Aetna,Commercial,0.85,C001\n")
+        _write_csv(
+            csv, "payer_id,payer_name,payer_type,avg_reimbursement_pct,contract_id\nPYR001,Aetna,Commercial,0.85,C001\n"
+        )
         load_csv_to_bronze(conn, "bronze_payers", "payers.csv")
 
         # Reload with different data
-        _write_csv(csv,
-                   "payer_id,payer_name,payer_type,avg_reimbursement_pct,contract_id\n"
-                   "PYR099,NewPayer,Commercial,0.90,C099\n")
+        _write_csv(
+            csv,
+            "payer_id,payer_name,payer_type,avg_reimbursement_pct,contract_id\nPYR099,NewPayer,Commercial,0.90,C099\n",
+        )
         load_csv_to_bronze(conn, "bronze_payers", "payers.csv")
 
         rows = conn.execute("SELECT COUNT(*) FROM bronze_payers").fetchone()[0]
@@ -100,26 +104,28 @@ class TestLoadCsvToBronze:
 
     def test_records_pipeline_run(self, conn, data_dir, monkeypatch):
         monkeypatch.setattr("src.database.DATA_DIR", str(data_dir))
-        _write_csv(data_dir / "claims.csv",
-                   "claim_id,encounter_id,patient_id,payer_id,date_of_service,"
-                   "submission_date,total_charge_amount,claim_status,"
-                   "is_clean_claim,submission_method,fail_reason\n"
-                   "CLM001,ENC001,PAT001,PYR001,2024-01-01,2024-01-02,"
-                   "1000,Paid,True,Electronic,\n")
+        _write_csv(
+            data_dir / "claims.csv",
+            "claim_id,encounter_id,patient_id,payer_id,date_of_service,"
+            "submission_date,total_charge_amount,claim_status,"
+            "is_clean_claim,submission_method,fail_reason\n"
+            "CLM001,ENC001,PAT001,PYR001,2024-01-01,2024-01-02,"
+            "1000,Paid,True,Electronic,\n",
+        )
         load_csv_to_bronze(conn, "bronze_claims", "claims.csv")
 
-        run = conn.execute(
-            "SELECT domain, row_count, source_file FROM pipeline_runs WHERE domain='claims'"
-        ).fetchone()
+        run = conn.execute("SELECT domain, row_count, source_file FROM pipeline_runs WHERE domain='claims'").fetchone()
         assert run[0] == "claims"
         assert run[1] == 1
         assert run[2] == "claims.csv"
 
     def test_strips_loaded_at_column(self, conn, data_dir, monkeypatch):
         monkeypatch.setattr("src.database.DATA_DIR", str(data_dir))
-        _write_csv(data_dir / "payers.csv",
-                   "payer_id,payer_name,payer_type,avg_reimbursement_pct,contract_id,_loaded_at\n"
-                   "PYR001,Aetna,Commercial,0.85,C001,2024-01-01\n")
+        _write_csv(
+            data_dir / "payers.csv",
+            "payer_id,payer_name,payer_type,avg_reimbursement_pct,contract_id,_loaded_at\n"
+            "PYR001,Aetna,Commercial,0.85,C001,2024-01-01\n",
+        )
         load_csv_to_bronze(conn, "bronze_payers", "payers.csv")
 
         rows = conn.execute("SELECT COUNT(*) FROM bronze_payers").fetchone()[0]
@@ -129,6 +135,7 @@ class TestLoadCsvToBronze:
 # ===========================================================================
 # _etl_bronze_to_silver — type casting and transformations
 # ===========================================================================
+
 
 class TestEtlBronzeToSilver:
     def _load_bronze_data(self, conn):
@@ -191,9 +198,7 @@ class TestEtlBronzeToSilver:
         self._load_bronze_data(conn)
         _etl_bronze_to_silver(conn)
 
-        val = conn.execute(
-            "SELECT avg_reimbursement_pct FROM silver_payers WHERE payer_id='PYR001'"
-        ).fetchone()[0]
+        val = conn.execute("SELECT avg_reimbursement_pct FROM silver_payers WHERE payer_id='PYR001'").fetchone()[0]
         assert isinstance(val, float)
         assert val == pytest.approx(0.85)
 
@@ -201,9 +206,7 @@ class TestEtlBronzeToSilver:
         self._load_bronze_data(conn)
         _etl_bronze_to_silver(conn)
 
-        val = conn.execute(
-            "SELECT total_charge_amount FROM silver_claims WHERE claim_id='CLM001'"
-        ).fetchone()[0]
+        val = conn.execute("SELECT total_charge_amount FROM silver_claims WHERE claim_id='CLM001'").fetchone()[0]
         assert isinstance(val, float)
         assert val == pytest.approx(1000.50)
 
@@ -211,18 +214,14 @@ class TestEtlBronzeToSilver:
         self._load_bronze_data(conn)
         _etl_bronze_to_silver(conn)
 
-        val = conn.execute(
-            "SELECT is_clean_claim FROM silver_claims WHERE claim_id='CLM001'"
-        ).fetchone()[0]
+        val = conn.execute("SELECT is_clean_claim FROM silver_claims WHERE claim_id='CLM001'").fetchone()[0]
         assert val == 1
 
     def test_boolean_numeric_1_converted_to_1(self, conn):
         self._load_bronze_data(conn)
         _etl_bronze_to_silver(conn)
 
-        val = conn.execute(
-            "SELECT is_accurate_payment FROM silver_payments WHERE payment_id='PAY001'"
-        ).fetchone()[0]
+        val = conn.execute("SELECT is_accurate_payment FROM silver_payments WHERE payment_id='PAY001'").fetchone()[0]
         assert val == 1
 
     def test_boolean_false_converted_to_0(self, conn):
@@ -236,18 +235,14 @@ class TestEtlBronzeToSilver:
         """)
         _etl_bronze_to_silver(conn)
 
-        val = conn.execute(
-            "SELECT is_clean_claim FROM silver_claims WHERE claim_id='CLM002'"
-        ).fetchone()[0]
+        val = conn.execute("SELECT is_clean_claim FROM silver_claims WHERE claim_id='CLM002'").fetchone()[0]
         assert val == 0
 
     def test_empty_fail_reason_becomes_null(self, conn):
         self._load_bronze_data(conn)
         _etl_bronze_to_silver(conn)
 
-        val = conn.execute(
-            "SELECT fail_reason FROM silver_claims WHERE claim_id='CLM001'"
-        ).fetchone()[0]
+        val = conn.execute("SELECT fail_reason FROM silver_claims WHERE claim_id='CLM001'").fetchone()[0]
         assert val is None
 
     def test_nonempty_fail_reason_preserved(self, conn):
@@ -261,9 +256,7 @@ class TestEtlBronzeToSilver:
         """)
         _etl_bronze_to_silver(conn)
 
-        val = conn.execute(
-            "SELECT fail_reason FROM silver_claims WHERE claim_id='CLM003'"
-        ).fetchone()[0]
+        val = conn.execute("SELECT fail_reason FROM silver_claims WHERE claim_id='CLM003'").fetchone()[0]
         assert val == "MISSING_AUTH"
 
     def test_null_pk_rows_filtered_out(self, conn):
@@ -318,9 +311,7 @@ class TestEtlBronzeToSilver:
         self._load_bronze_data(conn)
         _etl_bronze_to_silver(conn)
 
-        val = conn.execute(
-            "SELECT recovered_amount FROM silver_denials WHERE denial_id='DEN001'"
-        ).fetchone()[0]
+        val = conn.execute("SELECT recovered_amount FROM silver_denials WHERE denial_id='DEN001'").fetchone()[0]
         assert isinstance(val, float)
         assert val == pytest.approx(450.00)
 
@@ -335,18 +326,14 @@ class TestEtlBronzeToSilver:
         """)
         _etl_bronze_to_silver(conn)
 
-        val = conn.execute(
-            "SELECT recovered_amount FROM silver_denials WHERE denial_id='DEN002'"
-        ).fetchone()[0]
+        val = conn.execute("SELECT recovered_amount FROM silver_denials WHERE denial_id='DEN002'").fetchone()[0]
         assert val == pytest.approx(0.0)
 
     def test_charge_units_cast_to_integer(self, conn):
         self._load_bronze_data(conn)
         _etl_bronze_to_silver(conn)
 
-        val = conn.execute(
-            "SELECT units FROM silver_charges WHERE charge_id='CHG001'"
-        ).fetchone()[0]
+        val = conn.execute("SELECT units FROM silver_charges WHERE charge_id='CHG001'").fetchone()[0]
         assert isinstance(val, int)
         assert val == 1
 
@@ -367,9 +354,15 @@ class TestEtlBronzeToSilver:
         _etl_bronze_to_silver(conn)
 
         tables = [
-            ("silver_payers", 1), ("silver_patients", 1), ("silver_providers", 1),
-            ("silver_encounters", 1), ("silver_charges", 1), ("silver_claims", 1),
-            ("silver_payments", 1), ("silver_denials", 1), ("silver_adjustments", 1),
+            ("silver_payers", 1),
+            ("silver_patients", 1),
+            ("silver_providers", 1),
+            ("silver_encounters", 1),
+            ("silver_charges", 1),
+            ("silver_claims", 1),
+            ("silver_payments", 1),
+            ("silver_denials", 1),
+            ("silver_adjustments", 1),
             ("silver_operating_costs", 1),
         ]
         for table, expected in tables:

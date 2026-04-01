@@ -85,6 +85,7 @@ from src.database import build_filter_cte, query_to_dataframe
 # Filter parameter container
 # ===========================================================================
 
+
 @dataclass
 class FilterParams:
     """All four sidebar filter dimensions in one object.
@@ -96,6 +97,7 @@ class FilterParams:
         department:     Department name to restrict to, or None for all.
         encounter_type: Encounter type to restrict to, or None for all.
     """
+
     start_date: str
     end_date: str
     payer_id: str | None = None
@@ -107,10 +109,12 @@ class FilterParams:
 # Internal helpers
 # ===========================================================================
 
+
 def _cte(p: FilterParams):
     """Return (cte_sql, params) for the filtered_claims CTE."""
     return build_filter_cte(
-        p.start_date, p.end_date,
+        p.start_date,
+        p.end_date,
         payer_id=p.payer_id,
         department=p.department,
         encounter_type=p.encounter_type,
@@ -126,16 +130,21 @@ def _try_cube_query(measures, dimensions=None, p: FilterParams = None):
     """
     try:
         from src.cube_client import build_cube_filters, is_cube_available, query_cube
+
         if not is_cube_available():
             return None
-        filters, time_dims = build_cube_filters(
-            p.start_date, p.end_date,
-            payer_id=p.payer_id,
-            department=p.department,
-            encounter_type=p.encounter_type,
-        ) if p else ([], [])
-        return query_cube(measures, dimensions=dimensions,
-                          filters=filters, time_dimensions=time_dims)
+        filters, time_dims = (
+            build_cube_filters(
+                p.start_date,
+                p.end_date,
+                payer_id=p.payer_id,
+                department=p.department,
+                encounter_type=p.encounter_type,
+            )
+            if p
+            else ([], [])
+        )
+        return query_cube(measures, dimensions=dimensions, filters=filters, time_dimensions=time_dims)
     except Exception:
         return None
 
@@ -155,6 +164,7 @@ def _set_period_index(df: pd.DataFrame) -> pd.DataFrame:
 # ===========================================================================
 # 1. DAYS IN ACCOUNTS RECEIVABLE (DAR)
 # ===========================================================================
+
 
 def query_days_in_ar(p: FilterParams, db_path=None):
     """Calculate Days in Accounts Receivable (DAR).
@@ -190,7 +200,9 @@ def query_days_in_ar(p: FilterParams, db_path=None):
     # row duplication when a claim has multiple payments (a LEFT JOIN
     # to silver_payments would produce N rows per claim with N payments,
     # causing SUM(charge_amount) to be overcounted by a factor of N).
-    sql = cte + """
+    sql = (
+        cte
+        + """
 , monthly_charges AS (
     SELECT strftime(CAST(date_of_service AS DATE), '%Y-%m') AS period,
            SUM(total_charge_amount)           AS charges
@@ -208,6 +220,7 @@ FROM monthly_charges c
 LEFT JOIN monthly_payments mp ON c.period = mp.period
 ORDER BY c.period
 """
+    )
     df = query_to_dataframe(sql, params=params, db_path=db_path)
     if df.empty:
         return 0.0, _empty_trend("charges", "payments", "ar_balance", "days_in_ar")
@@ -227,6 +240,7 @@ ORDER BY c.period
 # ===========================================================================
 # 2. NET COLLECTION RATE (NCR)
 # ===========================================================================
+
 
 def query_net_collection_rate(p: FilterParams, db_path=None):
     """Calculate Net Collection Rate (NCR).
@@ -261,7 +275,9 @@ def query_net_collection_rate(p: FilterParams, db_path=None):
     cte, params = _cte(p)
     # Use three separate monthly CTEs to prevent charge duplication when a
     # claim has multiple payments or multiple adjustments.
-    sql = cte + """
+    sql = (
+        cte
+        + """
 , monthly_charges AS (
     SELECT strftime(CAST(date_of_service AS DATE), '%Y-%m') AS period,
            SUM(total_charge_amount)           AS charges
@@ -290,6 +306,7 @@ LEFT JOIN monthly_payments    mp ON c.period = mp.period
 LEFT JOIN monthly_contractual mc ON c.period = mc.period
 ORDER BY c.period
 """
+    )
     df = query_to_dataframe(sql, params=params, db_path=db_path)
     if df.empty:
         return 0.0, _empty_trend("charges", "payments", "contractual_adj", "ncr")
@@ -312,6 +329,7 @@ ORDER BY c.period
 # ===========================================================================
 # 3. GROSS COLLECTION RATE (GCR)
 # ===========================================================================
+
 
 def query_gross_collection_rate(p: FilterParams, db_path=None):
     """Calculate Gross Collection Rate (GCR).
@@ -338,7 +356,9 @@ def query_gross_collection_rate(p: FilterParams, db_path=None):
 
     # ── Fallback: raw SQL via DuckDB ─────────────────────────────────
     cte, params = _cte(p)
-    sql = cte + """
+    sql = (
+        cte
+        + """
 , monthly_charges AS (
     SELECT strftime(CAST(date_of_service AS DATE), '%Y-%m') AS period,
            SUM(total_charge_amount)           AS charges
@@ -356,6 +376,7 @@ FROM monthly_charges c
 LEFT JOIN monthly_payments mp ON c.period = mp.period
 ORDER BY c.period
 """
+    )
     df = query_to_dataframe(sql, params=params, db_path=db_path)
     if df.empty:
         return 0.0, _empty_trend("charges", "payments", "gcr")
@@ -372,6 +393,7 @@ ORDER BY c.period
 # ===========================================================================
 # 4. CLEAN CLAIM RATE (CCR)
 # ===========================================================================
+
 
 def query_clean_claim_rate(p: FilterParams, db_path=None):
     """Calculate Clean Claim Rate (CCR).
@@ -392,13 +414,17 @@ def query_clean_claim_rate(p: FilterParams, db_path=None):
         total = cube_df["total_claims"].sum()
         clean = cube_df["clean_claims"].sum()
         ccr = (clean / total * 100) if total > 0 else 0.0
-        cube_df["ccr"] = np.where(cube_df["total_claims"] > 0, cube_df["clean_claims"] / cube_df["total_claims"] * 100, 0)
+        cube_df["ccr"] = np.where(
+            cube_df["total_claims"] > 0, cube_df["clean_claims"] / cube_df["total_claims"] * 100, 0
+        )
         cube_df = _set_period_index(cube_df)
         return round(float(ccr), 2), cube_df
 
     # ── Fallback: raw SQL via DuckDB ─────────────────────────────────
     cte, params = _cte(p)
-    sql = cte + """
+    sql = (
+        cte
+        + """
 SELECT strftime(CAST(submission_date AS DATE), '%Y-%m')       AS period,
        COUNT(*)                                 AS total_claims,
        SUM(is_clean_claim)                      AS clean_claims
@@ -406,6 +432,7 @@ FROM filtered_claims
 GROUP BY strftime(CAST(submission_date AS DATE), '%Y-%m')
 ORDER BY period
 """
+    )
     df = query_to_dataframe(sql, params=params, db_path=db_path)
     if df.empty:
         return 0.0, _empty_trend("total_claims", "clean_claims", "ccr")
@@ -422,6 +449,7 @@ ORDER BY period
 # ===========================================================================
 # 5. CLAIM DENIAL RATE
 # ===========================================================================
+
 
 def query_denial_rate(p: FilterParams, db_path=None):
     """Calculate Claim Denial Rate.
@@ -444,15 +472,16 @@ def query_denial_rate(p: FilterParams, db_path=None):
         denied = cube_df["denied_claims"].sum()
         rate = (denied / total * 100) if total > 0 else 0.0
         cube_df["denial_rate"] = np.where(
-            cube_df["total_claims"] > 0,
-            cube_df["denied_claims"] / cube_df["total_claims"] * 100, 0
+            cube_df["total_claims"] > 0, cube_df["denied_claims"] / cube_df["total_claims"] * 100, 0
         )
         cube_df = _set_period_index(cube_df)
         return round(float(rate), 2), cube_df
 
     # ── Fallback: raw SQL via DuckDB ─────────────────────────────────
     cte, params = _cte(p)
-    sql = cte + """
+    sql = (
+        cte
+        + """
 SELECT strftime(CAST(submission_date AS DATE), '%Y-%m') AS period,
        COUNT(*)                           AS total_claims,
        SUM(CASE WHEN claim_status IN ('Denied', 'Appealed')
@@ -461,6 +490,7 @@ FROM filtered_claims
 GROUP BY strftime(CAST(submission_date AS DATE), '%Y-%m')
 ORDER BY period
 """
+    )
     df = query_to_dataframe(sql, params=params, db_path=db_path)
     if df.empty:
         return 0.0, _empty_trend("total_claims", "denied_claims", "denial_rate")
@@ -469,9 +499,7 @@ ORDER BY period
     denied = df["denied_claims"].sum()
     rate = (denied / total * 100) if total > 0 else 0.0
 
-    df["denial_rate"] = np.where(
-        df["total_claims"] > 0, df["denied_claims"] / df["total_claims"] * 100, 0
-    )
+    df["denial_rate"] = np.where(df["total_claims"] > 0, df["denied_claims"] / df["total_claims"] * 100, 0)
     df = _set_period_index(df)
     return round(float(rate), 2), df
 
@@ -479,6 +507,7 @@ ORDER BY period
 # ===========================================================================
 # 6. DENIAL REASONS BREAKDOWN
 # ===========================================================================
+
 
 def query_denial_reasons(p: FilterParams, db_path=None):
     """Aggregate denials by reason code to identify root causes.
@@ -493,7 +522,9 @@ def query_denial_reasons(p: FilterParams, db_path=None):
 
     # ── Fallback: raw SQL via DuckDB ─────────────────────────────────
     cte, params = _cte(p)
-    sql = cte + """
+    sql = (
+        cte
+        + """
 SELECT d.denial_reason_code,
        d.denial_reason_description,
        COUNT(*)                              AS count,
@@ -504,12 +535,19 @@ JOIN silver_denials d ON fc.claim_id = d.claim_id
 GROUP BY d.denial_reason_code, d.denial_reason_description
 ORDER BY count DESC
 """
+    )
     df = query_to_dataframe(sql, params=params, db_path=db_path)
     if df.empty:
-        return pd.DataFrame(columns=[
-            "denial_reason_code", "denial_reason_description",
-            "count", "total_denied_amount", "total_recovered", "recovery_rate",
-        ])
+        return pd.DataFrame(
+            columns=[
+                "denial_reason_code",
+                "denial_reason_description",
+                "count",
+                "total_denied_amount",
+                "total_recovered",
+                "recovery_rate",
+            ]
+        )
 
     df["recovery_rate"] = np.where(
         df["total_denied_amount"] > 0,
@@ -522,6 +560,7 @@ ORDER BY count DESC
 # ===========================================================================
 # 7. FIRST-PASS RESOLUTION RATE (FPRR)
 # ===========================================================================
+
 
 def query_first_pass_rate(p: FilterParams, db_path=None):
     """Calculate First-Pass Resolution Rate (FPRR).
@@ -539,7 +578,9 @@ def query_first_pass_rate(p: FilterParams, db_path=None):
 
     # ── Fallback: raw SQL via DuckDB ─────────────────────────────────
     cte, params = _cte(p)
-    sql = cte + """
+    sql = (
+        cte
+        + """
 SELECT strftime(CAST(submission_date AS DATE), '%Y-%m') AS period,
        COUNT(*)                           AS total,
        SUM(CASE WHEN claim_status = 'Paid' THEN 1 ELSE 0 END) AS paid
@@ -547,6 +588,7 @@ FROM filtered_claims
 GROUP BY strftime(CAST(submission_date AS DATE), '%Y-%m')
 ORDER BY period
 """
+    )
     df = query_to_dataframe(sql, params=params, db_path=db_path)
     if df.empty:
         return 0.0, _empty_trend("total", "paid", "fpr")
@@ -563,6 +605,7 @@ ORDER BY period
 # ===========================================================================
 # 8. AVERAGE CHARGE LAG (Days)
 # ===========================================================================
+
 
 def query_charge_lag(p: FilterParams, db_path=None):
     """Calculate Average Charge Lag.
@@ -589,7 +632,9 @@ def query_charge_lag(p: FilterParams, db_path=None):
     # ── Fallback: raw SQL via DuckDB ─────────────────────────────────
     cte, params = _cte(p)
     # Charges for encounters that appear in filtered claims
-    sql = cte + """
+    sql = (
+        cte
+        + """
 SELECT strftime(CAST(ch.service_date AS DATE), '%Y-%m')                              AS period,
        date_diff('day', CAST(ch.service_date AS DATE),
                        CAST(ch.post_date AS DATE))                     AS lag_days
@@ -598,6 +643,7 @@ WHERE ch.encounter_id IN (SELECT DISTINCT encounter_id FROM filtered_claims)
   AND ch.post_date   IS NOT NULL
   AND ch.service_date IS NOT NULL
 """
+    )
     df = query_to_dataframe(sql, params=params, db_path=db_path)
     if df.empty:
         return 0.0, pd.Series(dtype=float), pd.Series(dtype=float)
@@ -614,6 +660,7 @@ WHERE ch.encounter_id IN (SELECT DISTINCT encounter_id FROM filtered_claims)
 # ===========================================================================
 # 9. COST TO COLLECT (CTC)
 # ===========================================================================
+
 
 def query_cost_to_collect(p: FilterParams, db_path=None):
     """Calculate Cost to Collect.
@@ -645,7 +692,9 @@ def query_cost_to_collect(p: FilterParams, db_path=None):
     # ── Fallback: raw SQL via DuckDB ─────────────────────────────────
     cte, params = _cte(p)
     # Monthly collections from filtered claims
-    sql = cte + """
+    sql = (
+        cte
+        + """
 SELECT strftime(CAST(fc.date_of_service AS DATE), '%Y-%m') AS period,
        COALESCE(SUM(p.payment_amount), 0)    AS collections
 FROM filtered_claims fc
@@ -653,6 +702,7 @@ LEFT JOIN silver_payments p ON fc.claim_id = p.claim_id
 GROUP BY strftime(CAST(fc.date_of_service AS DATE), '%Y-%m')
 ORDER BY period
 """
+    )
     collections_df = query_to_dataframe(sql, params=params, db_path=db_path)
     if collections_df.empty:
         return 0.0, _empty_trend("rcm_cost", "collections", "cost_to_collect_pct")
@@ -681,6 +731,7 @@ ORDER BY period
 # 10. A/R AGING BUCKETS
 # ===========================================================================
 
+
 def query_ar_aging(p: FilterParams, db_path=None):
     """Categorize outstanding A/R into aging buckets.
 
@@ -699,7 +750,9 @@ def query_ar_aging(p: FilterParams, db_path=None):
 
     # ── Fallback: raw SQL via DuckDB ─────────────────────────────────
     cte, params = _cte(p)
-    sql = cte + """
+    sql = (
+        cte
+        + """
 SELECT fc.claim_id,
        fc.date_of_service,
        fc.total_charge_amount - COALESCE(SUM(p.payment_amount), 0) AS ar_balance,
@@ -709,6 +762,7 @@ LEFT JOIN silver_payments p ON fc.claim_id = p.claim_id
 GROUP BY fc.claim_id, fc.date_of_service, fc.total_charge_amount
 HAVING ar_balance > 0
 """
+    )
     df = query_to_dataframe(sql, params=params, db_path=db_path)
     if df.empty:
         return empty_summary, 0.0
@@ -725,10 +779,15 @@ HAVING ar_balance > 0
         return "120+"
 
     df["aging_bucket"] = df["days_outstanding"].apply(_bucket)
-    summary = df.groupby("aging_bucket").agg(
-        claim_count=("claim_id", "count"),
-        total_ar=("ar_balance", "sum"),
-    ).reindex(["0-30", "31-60", "61-90", "91-120", "120+"]).fillna(0)
+    summary = (
+        df.groupby("aging_bucket")
+        .agg(
+            claim_count=("claim_id", "count"),
+            total_ar=("ar_balance", "sum"),
+        )
+        .reindex(["0-30", "31-60", "61-90", "91-120", "120+"])
+        .fillna(0)
+    )
 
     total_ar = summary["total_ar"].sum()
     summary["pct_of_total"] = np.where(total_ar > 0, summary["total_ar"] / total_ar * 100, 0)
@@ -738,6 +797,7 @@ HAVING ar_balance > 0
 # ===========================================================================
 # 11. PAYMENT ACCURACY RATE
 # ===========================================================================
+
 
 def query_payment_accuracy(p: FilterParams, db_path=None):
     """Calculate Payment Accuracy Rate.
@@ -759,12 +819,15 @@ def query_payment_accuracy(p: FilterParams, db_path=None):
 
     # ── Fallback: raw SQL via DuckDB ─────────────────────────────────
     cte, params = _cte(p)
-    sql = cte + """
+    sql = (
+        cte
+        + """
 SELECT COUNT(*)                     AS total,
        SUM(p.is_accurate_payment)   AS accurate
 FROM filtered_claims fc
 JOIN silver_payments p ON fc.claim_id = p.claim_id
 """
+    )
     df = query_to_dataframe(sql, params=params, db_path=db_path)
     if df.empty or df["total"].iloc[0] == 0:
         return 0.0
@@ -776,6 +839,7 @@ JOIN silver_payments p ON fc.claim_id = p.claim_id
 # ===========================================================================
 # 12. BAD DEBT RATE
 # ===========================================================================
+
 
 def query_bad_debt_rate(p: FilterParams, db_path=None):
     """Calculate Bad Debt Rate.
@@ -799,7 +863,9 @@ def query_bad_debt_rate(p: FilterParams, db_path=None):
     # ── Fallback: raw SQL via DuckDB ─────────────────────────────────
     cte, params = _cte(p)
     # Compute charges and write-offs separately to avoid row duplication.
-    sql = cte + """
+    sql = (
+        cte
+        + """
 SELECT
     (SELECT COALESCE(SUM(total_charge_amount), 0) FROM filtered_claims) AS total_charges,
     COALESCE((
@@ -809,6 +875,7 @@ SELECT
           AND a.claim_id IN (SELECT claim_id FROM filtered_claims)
     ), 0) AS bad_debt
 """
+    )
     df = query_to_dataframe(sql, params=params, db_path=db_path)
     if df.empty:
         return 0.0, 0.0, 0.0
@@ -821,6 +888,7 @@ SELECT
 # ===========================================================================
 # 13. APPEAL SUCCESS RATE
 # ===========================================================================
+
 
 def query_appeal_success_rate(p: FilterParams, db_path=None):
     """Calculate Appeal Success Rate.
@@ -841,7 +909,9 @@ def query_appeal_success_rate(p: FilterParams, db_path=None):
 
     # ── Fallback: raw SQL via DuckDB ─────────────────────────────────
     cte, params = _cte(p)
-    sql = cte + """
+    sql = (
+        cte
+        + """
 SELECT d.appeal_status,
        COUNT(*) AS n
 FROM filtered_claims fc
@@ -849,6 +919,7 @@ JOIN silver_denials d ON fc.claim_id = d.claim_id
 WHERE d.appeal_status IN ('Won', 'Lost', 'In Progress')
 GROUP BY d.appeal_status
 """
+    )
     df = query_to_dataframe(sql, params=params, db_path=db_path)
     if df.empty:
         return 0.0, 0, 0
@@ -861,6 +932,7 @@ GROUP BY d.appeal_status
 # ===========================================================================
 # 14. AVERAGE REIMBURSEMENT PER ENCOUNTER
 # ===========================================================================
+
 
 def query_avg_reimbursement(p: FilterParams, db_path=None):
     """Calculate Average Reimbursement per Encounter.
@@ -881,14 +953,18 @@ def query_avg_reimbursement(p: FilterParams, db_path=None):
         total_pay = cube_df["total_payments"].sum()
         total_enc = cube_df["encounter_count"].sum()
         avg = (total_pay / total_enc) if total_enc > 0 else 0.0
-        trend = cube_df.set_index("period")["total_payments"] / cube_df.set_index("period")["encounter_count"].replace(0, np.nan)
+        trend = cube_df.set_index("period")["total_payments"] / cube_df.set_index("period")["encounter_count"].replace(
+            0, np.nan
+        )
         trend = trend.fillna(0)
         trend.index.name = "year_month"
         return round(float(avg), 2), trend
 
     # ── Fallback: raw SQL via DuckDB ─────────────────────────────────
     cte, params = _cte(p)
-    sql = cte + """
+    sql = (
+        cte
+        + """
 SELECT strftime(CAST(fc.date_of_service AS DATE), '%Y-%m') AS period,
        COALESCE(SUM(p.payment_amount), 0)    AS payment_amount
 FROM filtered_claims fc
@@ -896,6 +972,7 @@ LEFT JOIN silver_payments p ON fc.claim_id = p.claim_id
 GROUP BY fc.claim_id, fc.date_of_service
 ORDER BY period
 """
+    )
     df = query_to_dataframe(sql, params=params, db_path=db_path)
     if df.empty:
         return 0.0, pd.Series(dtype=float)
@@ -910,6 +987,7 @@ ORDER BY period
 # 15. PAYER MIX ANALYSIS
 # ===========================================================================
 
+
 def query_payer_mix(p: FilterParams, db_path=None):
     """Analyze revenue and volume by payer.
 
@@ -923,7 +1001,9 @@ def query_payer_mix(p: FilterParams, db_path=None):
 
     # ── Fallback: raw SQL via DuckDB ─────────────────────────────────
     cte, params = _cte(p)
-    sql = cte + """
+    sql = (
+        cte
+        + """
 SELECT fc.payer_id,
        py.payer_name,
        py.payer_type,
@@ -936,12 +1016,20 @@ LEFT JOIN silver_payments p ON fc.claim_id  = p.claim_id
 GROUP BY fc.payer_id, py.payer_name, py.payer_type
 ORDER BY total_payments DESC
 """
+    )
     df = query_to_dataframe(sql, params=params, db_path=db_path)
     if df.empty:
-        return pd.DataFrame(columns=[
-            "payer_id", "payer_name", "payer_type",
-            "claim_count", "total_charges", "total_payments", "collection_rate",
-        ])
+        return pd.DataFrame(
+            columns=[
+                "payer_id",
+                "payer_name",
+                "payer_type",
+                "claim_count",
+                "total_charges",
+                "total_payments",
+                "collection_rate",
+            ]
+        )
     df["collection_rate"] = np.where(
         df["total_charges"] > 0,
         df["total_payments"] / df["total_charges"] * 100,
@@ -953,6 +1041,7 @@ ORDER BY total_payments DESC
 # ===========================================================================
 # 16. DENIAL RATE BY PAYER
 # ===========================================================================
+
 
 def query_denial_rate_by_payer(p: FilterParams, db_path=None):
     """Calculate denial rate for each payer.
@@ -966,7 +1055,9 @@ def query_denial_rate_by_payer(p: FilterParams, db_path=None):
 
     # ── Fallback: raw SQL via DuckDB ─────────────────────────────────
     cte, params = _cte(p)
-    sql = cte + """
+    sql = (
+        cte
+        + """
 SELECT fc.payer_id,
        py.payer_name,
        COUNT(*)                                                        AS total_claims,
@@ -977,6 +1068,7 @@ JOIN silver_payers py ON fc.payer_id = py.payer_id
 GROUP BY fc.payer_id, py.payer_name
 ORDER BY denied * 1.0 / COUNT(*) DESC
 """
+    )
     df = query_to_dataframe(sql, params=params, db_path=db_path)
     if df.empty:
         return pd.DataFrame(columns=["payer_id", "payer_name", "total_claims", "denied", "denial_rate"])
@@ -992,6 +1084,7 @@ ORDER BY denied * 1.0 / COUNT(*) DESC
 # 17. DEPARTMENT PERFORMANCE
 # ===========================================================================
 
+
 def query_department_performance(p: FilterParams, db_path=None):
     """Calculate revenue performance metrics by clinical department.
 
@@ -1005,7 +1098,9 @@ def query_department_performance(p: FilterParams, db_path=None):
 
     # ── Fallback: raw SQL via DuckDB ─────────────────────────────────
     cte, params = _cte(p)
-    sql = cte + """
+    sql = (
+        cte
+        + """
 SELECT e.department,
        COUNT(DISTINCT e.encounter_id)         AS encounter_count,
        COALESCE(SUM(fc.total_charge_amount), 0) AS total_charges,
@@ -1016,12 +1111,19 @@ LEFT JOIN silver_payments p ON fc.claim_id    = p.claim_id
 GROUP BY e.department
 ORDER BY total_payments DESC
 """
+    )
     df = query_to_dataframe(sql, params=params, db_path=db_path)
     if df.empty:
-        return pd.DataFrame(columns=[
-            "department", "encounter_count", "total_charges",
-            "total_payments", "collection_rate", "avg_payment_per_encounter",
-        ])
+        return pd.DataFrame(
+            columns=[
+                "department",
+                "encounter_count",
+                "total_charges",
+                "total_payments",
+                "collection_rate",
+                "avg_payment_per_encounter",
+            ]
+        )
     df["collection_rate"] = np.where(
         df["total_charges"] > 0,
         df["total_payments"] / df["total_charges"] * 100,
@@ -1038,6 +1140,7 @@ ORDER BY total_payments DESC
 # ===========================================================================
 # 18. PROVIDER PERFORMANCE
 # ===========================================================================
+
 
 def query_provider_performance(p: FilterParams, db_path=None):
     """Calculate revenue cycle KPIs by individual provider.
@@ -1058,7 +1161,9 @@ def query_provider_performance(p: FilterParams, db_path=None):
 
     # ── Fallback: raw SQL via DuckDB ─────────────────────────────────
     cte, params = _cte(p)
-    sql = cte + """
+    sql = (
+        cte
+        + """
 , provider_claims AS (
     SELECT pr.provider_id,
            pr.provider_name,
@@ -1096,22 +1201,28 @@ FROM provider_claims pc
 LEFT JOIN provider_payments pp ON pc.provider_id = pp.provider_id
 ORDER BY total_payments DESC
 """
+    )
     df = query_to_dataframe(sql, params=params, db_path=db_path)
     if df.empty:
-        return pd.DataFrame(columns=[
-            "provider_id", "provider_name", "specialty", "department",
-            "encounter_count", "claim_count", "total_charges", "total_payments",
-            "collection_rate", "denial_rate", "clean_claim_rate", "avg_payment_per_encounter",
-        ])
-    df["collection_rate"] = np.where(
-        df["total_charges"] > 0, df["total_payments"] / df["total_charges"] * 100, 0
-    )
-    df["denial_rate"] = np.where(
-        df["claim_count"] > 0, df["denied_claims"] / df["claim_count"] * 100, 0
-    )
-    df["clean_claim_rate"] = np.where(
-        df["claim_count"] > 0, df["clean_claims"] / df["claim_count"] * 100, 0
-    )
+        return pd.DataFrame(
+            columns=[
+                "provider_id",
+                "provider_name",
+                "specialty",
+                "department",
+                "encounter_count",
+                "claim_count",
+                "total_charges",
+                "total_payments",
+                "collection_rate",
+                "denial_rate",
+                "clean_claim_rate",
+                "avg_payment_per_encounter",
+            ]
+        )
+    df["collection_rate"] = np.where(df["total_charges"] > 0, df["total_payments"] / df["total_charges"] * 100, 0)
+    df["denial_rate"] = np.where(df["claim_count"] > 0, df["denied_claims"] / df["claim_count"] * 100, 0)
+    df["clean_claim_rate"] = np.where(df["claim_count"] > 0, df["clean_claims"] / df["claim_count"] * 100, 0)
     df["avg_payment_per_encounter"] = np.where(
         df["encounter_count"] > 0, df["total_payments"] / df["encounter_count"], 0
     )
@@ -1121,6 +1232,7 @@ ORDER BY total_payments DESC
 # ===========================================================================
 # 19. CPT CODE ANALYSIS
 # ===========================================================================
+
 
 def query_cpt_analysis(p: FilterParams, db_path=None):
     """Analyse revenue and denial patterns at the CPT procedure-code level.
@@ -1139,7 +1251,9 @@ def query_cpt_analysis(p: FilterParams, db_path=None):
 
     # ── Fallback: raw SQL via DuckDB ─────────────────────────────────
     cte, params = _cte(p)
-    sql = cte + """
+    sql = (
+        cte
+        + """
 , encounter_ids AS (
     SELECT DISTINCT encounter_id FROM filtered_claims
 ), charge_stats AS (
@@ -1174,24 +1288,31 @@ FROM charge_stats cs
 LEFT JOIN claim_stats cls ON cs.cpt_code = cls.cpt_code
 ORDER BY cs.total_charges DESC
 """
+    )
     df = query_to_dataframe(sql, params=params, db_path=db_path)
     if df.empty:
-        return pd.DataFrame(columns=[
-            "cpt_code", "cpt_description", "charge_count", "total_units",
-            "total_charges", "avg_charge_per_unit", "claim_count", "denied_claims", "denial_rate",
-        ])
-    df["avg_charge_per_unit"] = np.where(
-        df["total_units"] > 0, df["total_charges"] / df["total_units"], 0
-    )
-    df["denial_rate"] = np.where(
-        df["claim_count"] > 0, df["denied_claims"] / df["claim_count"] * 100, 0
-    )
+        return pd.DataFrame(
+            columns=[
+                "cpt_code",
+                "cpt_description",
+                "charge_count",
+                "total_units",
+                "total_charges",
+                "avg_charge_per_unit",
+                "claim_count",
+                "denied_claims",
+                "denial_rate",
+            ]
+        )
+    df["avg_charge_per_unit"] = np.where(df["total_units"] > 0, df["total_charges"] / df["total_units"], 0)
+    df["denial_rate"] = np.where(df["claim_count"] > 0, df["denied_claims"] / df["claim_count"] * 100, 0)
     return df
 
 
 # ===========================================================================
 # 20. UNDERPAYMENT ANALYSIS
 # ===========================================================================
+
 
 def query_underpayment_analysis(p: FilterParams, db_path=None):
     """Identify payer underpayments by comparing payment_amount to allowed_amount.
@@ -1214,7 +1335,9 @@ def query_underpayment_analysis(p: FilterParams, db_path=None):
 
     # ── Fallback: raw SQL via DuckDB ─────────────────────────────────
     cte, params = _cte(p)
-    sql = cte + """
+    sql = (
+        cte
+        + """
 SELECT fc.payer_id,
        py.payer_name,
        py.payer_type,
@@ -1233,16 +1356,22 @@ WHERE p.allowed_amount IS NOT NULL AND p.allowed_amount > 0
 GROUP BY fc.payer_id, py.payer_name, py.payer_type
 ORDER BY total_underpaid DESC
 """
+    )
     df = query_to_dataframe(sql, params=params, db_path=db_path)
     empty_cols = [
-        "payer_id", "payer_name", "payer_type", "payment_count",
-        "total_allowed", "total_paid", "total_underpaid", "underpaid_count", "underpayment_rate",
+        "payer_id",
+        "payer_name",
+        "payer_type",
+        "payment_count",
+        "total_allowed",
+        "total_paid",
+        "total_underpaid",
+        "underpaid_count",
+        "underpayment_rate",
     ]
     if df.empty:
         return pd.DataFrame(columns=empty_cols), 0.0
-    df["underpayment_rate"] = np.where(
-        df["total_allowed"] > 0, df["total_underpaid"] / df["total_allowed"] * 100, 0
-    )
+    df["underpayment_rate"] = np.where(df["total_allowed"] > 0, df["total_underpaid"] / df["total_allowed"] * 100, 0)
     total_recovery = float(df["total_underpaid"].sum())
     return df, total_recovery
 
@@ -1264,7 +1393,8 @@ def query_underpayment_trend(p: FilterParams, db_path=None):
         cube_df.columns = ["period", "total_allowed", "total_paid", "total_underpaid"]
         cube_df["underpayment_rate"] = np.where(
             cube_df["total_allowed"] > 0,
-            cube_df["total_underpaid"] / cube_df["total_allowed"] * 100, 0,
+            cube_df["total_underpaid"] / cube_df["total_allowed"] * 100,
+            0,
         )
         cube_df = cube_df.set_index("period")
         cube_df.index.name = "year_month"
@@ -1272,7 +1402,9 @@ def query_underpayment_trend(p: FilterParams, db_path=None):
 
     # ── Fallback: raw SQL via DuckDB ─────────────────────────────────
     cte, params = _cte(p)
-    sql = cte + """
+    sql = (
+        cte
+        + """
 SELECT strftime(CAST(p.payment_date AS DATE), '%Y-%m')                              AS period,
        SUM(p.allowed_amount)                                          AS total_allowed,
        SUM(p.payment_amount)                                          AS total_paid,
@@ -1285,12 +1417,11 @@ WHERE p.allowed_amount IS NOT NULL AND p.allowed_amount > 0
 GROUP BY strftime(CAST(p.payment_date AS DATE), '%Y-%m')
 ORDER BY period
 """
+    )
     df = query_to_dataframe(sql, params=params, db_path=db_path)
     if df.empty:
         return pd.DataFrame(columns=["total_allowed", "total_paid", "total_underpaid", "underpayment_rate"])
-    df["underpayment_rate"] = np.where(
-        df["total_allowed"] > 0, df["total_underpaid"] / df["total_allowed"] * 100, 0
-    )
+    df["underpayment_rate"] = np.where(df["total_allowed"] > 0, df["total_underpaid"] / df["total_allowed"] * 100, 0)
     df = df.set_index("period")
     df.index.name = "year_month"
     return df
@@ -1302,20 +1433,20 @@ ORDER BY period
 
 # Human-readable labels and resolution guidance for each fail reason code.
 _FAIL_REASON_LABELS = {
-    "MISSING_AUTH":        "Missing Prior Authorization",
-    "ELIGIBILITY_FAIL":    "Patient Eligibility Not Verified",
-    "CODING_ERROR":        "Invalid CPT/ICD-10 Combination",
-    "DUPLICATE_SUBMISSION":"Duplicate Claim Submission",
-    "TIMELY_FILING":       "Outside Timely Filing Window",
-    "MISSING_INFO":        "Missing Required Information",
+    "MISSING_AUTH": "Missing Prior Authorization",
+    "ELIGIBILITY_FAIL": "Patient Eligibility Not Verified",
+    "CODING_ERROR": "Invalid CPT/ICD-10 Combination",
+    "DUPLICATE_SUBMISSION": "Duplicate Claim Submission",
+    "TIMELY_FILING": "Outside Timely Filing Window",
+    "MISSING_INFO": "Missing Required Information",
 }
 _FAIL_REASON_GUIDANCE = {
-    "MISSING_AUTH":        "Automate auth check at scheduling; obtain PA before service date.",
-    "ELIGIBILITY_FAIL":    "Verify eligibility 24-48h before appointment via real-time check.",
-    "CODING_ERROR":        "Add CPT/ICD-10 edit rules to charge capture; schedule coder training.",
-    "DUPLICATE_SUBMISSION":"Enable duplicate detection in clearinghouse scrubber settings.",
-    "TIMELY_FILING":       "Set automated alerts when claims approach payer filing deadlines.",
-    "MISSING_INFO":        "Implement front-desk registration checklists with required-field validation.",
+    "MISSING_AUTH": "Automate auth check at scheduling; obtain PA before service date.",
+    "ELIGIBILITY_FAIL": "Verify eligibility 24-48h before appointment via real-time check.",
+    "CODING_ERROR": "Add CPT/ICD-10 edit rules to charge capture; schedule coder training.",
+    "DUPLICATE_SUBMISSION": "Enable duplicate detection in clearinghouse scrubber settings.",
+    "TIMELY_FILING": "Set automated alerts when claims approach payer filing deadlines.",
+    "MISSING_INFO": "Implement front-desk registration checklists with required-field validation.",
 }
 
 
@@ -1331,7 +1462,9 @@ def query_clean_claim_breakdown(p: FilterParams, db_path=None):
 
     # ── Fallback: raw SQL via DuckDB ─────────────────────────────────
     cte, params = _cte(p)
-    sql = cte + """
+    sql = (
+        cte
+        + """
 SELECT fail_reason,
        COUNT(*)                    AS count,
        SUM(total_charge_amount)    AS total_charges
@@ -1341,14 +1474,22 @@ WHERE is_clean_claim = 0
 GROUP BY fail_reason
 ORDER BY count DESC
 """
+    )
     df = query_to_dataframe(sql, params=params, db_path=db_path)
     if df.empty:
-        return pd.DataFrame(columns=[
-            "fail_reason", "label", "count", "total_charges", "pct_of_dirty", "guidance",
-        ])
+        return pd.DataFrame(
+            columns=[
+                "fail_reason",
+                "label",
+                "count",
+                "total_charges",
+                "pct_of_dirty",
+                "guidance",
+            ]
+        )
     total_dirty = df["count"].sum()
     df["pct_of_dirty"] = np.where(total_dirty > 0, df["count"] / total_dirty * 100, 0)
-    df["label"]    = df["fail_reason"].map(_FAIL_REASON_LABELS).fillna(df["fail_reason"])
+    df["label"] = df["fail_reason"].map(_FAIL_REASON_LABELS).fillna(df["fail_reason"])
     df["guidance"] = df["fail_reason"].map(_FAIL_REASON_GUIDANCE).fillna("")
     return df
 
@@ -1356,6 +1497,7 @@ ORDER BY count DESC
 # ===========================================================================
 # 22. PATIENT FINANCIAL RESPONSIBILITY
 # ===========================================================================
+
 
 def query_patient_responsibility_by_payer(p: FilterParams, db_path=None):
     """Patient financial responsibility (patient portion) grouped by payer.
@@ -1374,7 +1516,9 @@ def query_patient_responsibility_by_payer(p: FilterParams, db_path=None):
 
     # ── Fallback: raw SQL via DuckDB ─────────────────────────────────
     cte, params = _cte(p)
-    sql = cte + """
+    sql = (
+        cte
+        + """
 SELECT py.payer_name,
        py.payer_type,
        COUNT(p.payment_id)                                                    AS payment_count,
@@ -1390,15 +1534,20 @@ WHERE p.allowed_amount IS NOT NULL AND p.allowed_amount > 0
 GROUP BY py.payer_name, py.payer_type
 ORDER BY total_patient_resp DESC
 """
+    )
     df = query_to_dataframe(sql, params=params, db_path=db_path)
     if df.empty:
-        return pd.DataFrame(columns=[
-            "payer_name", "payer_type", "payment_count",
-            "total_patient_resp", "avg_patient_resp", "pct_of_allowed",
-        ])
-    df["pct_of_allowed"] = np.where(
-        df["total_allowed"] > 0, df["total_patient_resp"] / df["total_allowed"] * 100, 0
-    )
+        return pd.DataFrame(
+            columns=[
+                "payer_name",
+                "payer_type",
+                "payment_count",
+                "total_patient_resp",
+                "avg_patient_resp",
+                "pct_of_allowed",
+            ]
+        )
+    df["pct_of_allowed"] = np.where(df["total_allowed"] > 0, df["total_patient_resp"] / df["total_allowed"] * 100, 0)
     return df
 
 
@@ -1414,7 +1563,9 @@ def query_patient_responsibility_by_dept(p: FilterParams, db_path=None):
 
     # ── Fallback: raw SQL via DuckDB ─────────────────────────────────
     cte, params = _cte(p)
-    sql = cte + """
+    sql = (
+        cte
+        + """
 SELECT e.department,
        e.encounter_type,
        COUNT(DISTINCT fc.claim_id)                                            AS claim_count,
@@ -1429,11 +1580,18 @@ WHERE p.allowed_amount IS NOT NULL AND p.allowed_amount > 0
 GROUP BY e.department, e.encounter_type
 ORDER BY total_patient_resp DESC
 """
+    )
     df = query_to_dataframe(sql, params=params, db_path=db_path)
     if df.empty:
-        return pd.DataFrame(columns=[
-            "department", "encounter_type", "claim_count", "total_patient_resp", "avg_patient_resp",
-        ])
+        return pd.DataFrame(
+            columns=[
+                "department",
+                "encounter_type",
+                "claim_count",
+                "total_patient_resp",
+                "avg_patient_resp",
+            ]
+        )
     return df
 
 
@@ -1450,7 +1608,9 @@ def query_patient_responsibility_trend(p: FilterParams, db_path=None):
 
     # ── Fallback: raw SQL via DuckDB ─────────────────────────────────
     cte, params = _cte(p)
-    sql = cte + """
+    sql = (
+        cte
+        + """
 SELECT strftime(CAST(fc.date_of_service AS DATE), '%Y-%m')                                  AS period,
        SUM(CASE WHEN p.allowed_amount > p.payment_amount
                 THEN p.allowed_amount - p.payment_amount ELSE 0 END)          AS total_patient_resp,
@@ -1462,12 +1622,11 @@ WHERE p.allowed_amount IS NOT NULL AND p.allowed_amount > 0
 GROUP BY strftime(CAST(fc.date_of_service AS DATE), '%Y-%m')
 ORDER BY period
 """
+    )
     df = query_to_dataframe(sql, params=params, db_path=db_path)
     if df.empty:
         return pd.DataFrame(columns=["total_patient_resp", "total_allowed", "patient_resp_rate"])
-    df["patient_resp_rate"] = np.where(
-        df["total_allowed"] > 0, df["total_patient_resp"] / df["total_allowed"] * 100, 0
-    )
+    df["patient_resp_rate"] = np.where(df["total_allowed"] > 0, df["total_patient_resp"] / df["total_allowed"] * 100, 0)
     df = df.set_index("period")
     df.index.name = "year_month"
     return df
@@ -1479,28 +1638,28 @@ ORDER BY period
 
 # Expected refresh cadence per domain (hours) — used to compute staleness.
 _DOMAIN_CADENCE_HOURS = {
-    "claims":          4,
-    "payments":        6,
-    "encounters":      4,
-    "charges":         4,
-    "denials":        12,
-    "adjustments":     8,
-    "payers":         24,
-    "patients":       24,
-    "providers":      24,
+    "claims": 4,
+    "payments": 6,
+    "encounters": 4,
+    "charges": 4,
+    "denials": 12,
+    "adjustments": 8,
+    "payers": 24,
+    "patients": 24,
+    "providers": 24,
     "operating_costs": 720,  # monthly
 }
 
 _DOMAIN_LABELS = {
-    "claims":          "Claims",
-    "payments":        "Payments / ERA",
-    "encounters":      "Encounters / ADT",
-    "charges":         "Charges / CDM",
-    "denials":         "Denials",
-    "adjustments":     "Adjustments",
-    "payers":          "Payer Master",
-    "patients":        "Patient Demographics",
-    "providers":       "Provider Roster",
+    "claims": "Claims",
+    "payments": "Payments / ERA",
+    "encounters": "Encounters / ADT",
+    "charges": "Charges / CDM",
+    "denials": "Denials",
+    "adjustments": "Adjustments",
+    "payers": "Payer Master",
+    "patients": "Patient Demographics",
+    "providers": "Provider Roster",
     "operating_costs": "Operating Costs",
 }
 
@@ -1516,17 +1675,24 @@ def query_data_freshness(db_path=None):
     sql = "SELECT domain, last_loaded_at, row_count, source_file FROM pipeline_runs ORDER BY domain"
     df = query_to_dataframe(sql, db_path=db_path)
     if df.empty:
-        return pd.DataFrame(columns=[
-            "domain", "label", "last_loaded_at", "row_count",
-            "source_file", "cadence_hours", "age_hours", "status",
-        ])
+        return pd.DataFrame(
+            columns=[
+                "domain",
+                "label",
+                "last_loaded_at",
+                "row_count",
+                "source_file",
+                "cadence_hours",
+                "age_hours",
+                "status",
+            ]
+        )
     now = pd.Timestamp.utcnow().replace(tzinfo=None)
-    df["label"]         = df["domain"].map(_DOMAIN_LABELS).fillna(df["domain"])
+    df["label"] = df["domain"].map(_DOMAIN_LABELS).fillna(df["domain"])
     df["cadence_hours"] = df["domain"].map(_DOMAIN_CADENCE_HOURS).fillna(24)
     df["last_loaded_at_dt"] = pd.to_datetime(df["last_loaded_at"], errors="coerce", utc=True).dt.tz_localize(None)
     df["age_hours"] = (now - df["last_loaded_at_dt"]).dt.total_seconds() / 3600
     df["status"] = "fresh"
-    df.loc[df["age_hours"] > df["cadence_hours"],       "status"] = "stale"
-    df.loc[df["age_hours"] > df["cadence_hours"] * 3,   "status"] = "critical"
-    return df[["domain", "label", "last_loaded_at", "row_count", "source_file",
-               "cadence_hours", "age_hours", "status"]]
+    df.loc[df["age_hours"] > df["cadence_hours"], "status"] = "stale"
+    df.loc[df["age_hours"] > df["cadence_hours"] * 3, "status"] = "critical"
+    return df[["domain", "label", "last_loaded_at", "row_count", "source_file", "cadence_hours", "age_hours", "status"]]

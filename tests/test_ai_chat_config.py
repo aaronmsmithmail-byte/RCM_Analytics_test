@@ -37,6 +37,7 @@ def _reload(env_overrides: dict):
 
 # ── AI_MAX_ROWS ────────────────────────────────────────────────────────────────
 
+
 def test_max_rows_default():
     rows, _ = _reload({"AI_MAX_ROWS": None})
     assert rows == 100
@@ -63,6 +64,7 @@ def test_max_rows_exactly_at_minimum():
 
 
 # ── AI_MAX_ITERATIONS ──────────────────────────────────────────────────────────
+
 
 def test_max_iterations_default():
     _, iters = _reload({"AI_MAX_ITERATIONS": None})

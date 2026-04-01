@@ -24,6 +24,7 @@ import streamlit as st
 # Shared DB helper
 # ---------------------------------------------------------------------------
 
+
 def _query_meta(sql: str) -> pd.DataFrame:
     """
     Run a SELECT against the DuckDB database and return a DataFrame.
@@ -32,6 +33,7 @@ def _query_meta(sql: str) -> pd.DataFrame:
     if the database hasn't been initialised yet.
     """
     from src.database import get_connection
+
     conn = get_connection()
     try:
         return conn.execute(sql).df()
@@ -183,37 +185,260 @@ _KPI_CATALOG_FALLBACK = [
         "Data Sources": "silver_encounters.department, silver_payments.payment_amount, silver_claims.encounter_id",
         "Dashboard Tab": "Department Performance",
     },
+    {
+        "Metric": "Provider Performance",
+        "Category": "Segmentation",
+        "Definition": "Collection rate, denial rate, and clean claim rate scored per provider — highlights outliers.",
+        "Formula": "SUM(payments)/SUM(charges), Denied/Total, Clean/Total GROUP BY provider_id",
+        "Data Sources": "silver_providers.provider_id, silver_claims.*, silver_payments.payment_amount, silver_encounters.provider_id",
+        "Dashboard Tab": "Provider Performance",
+    },
+    {
+        "Metric": "CPT Code Analysis",
+        "Category": "Segmentation",
+        "Definition": "Revenue, denial rate, and charge concentration by procedure code — identifies high-value and high-risk CPTs.",
+        "Formula": "SUM(charge_amount), COUNT(*), denial_rate GROUP BY cpt_code",
+        "Data Sources": "silver_charges.cpt_code, silver_charges.charge_amount, silver_claims.claim_status, silver_payments.payment_amount",
+        "Dashboard Tab": "CPT Code Analysis",
+    },
+    {
+        "Metric": "Underpayment Rate",
+        "Category": "Recovery & Appeals",
+        "Definition": "Percentage of payments where the payer paid less than the contracted allowed amount — a direct contractual recovery opportunity.",
+        "Formula": "COUNT(payment_amount < allowed_amount) / COUNT(payments) × 100",
+        "Data Sources": "silver_payments.allowed_amount, silver_payments.payment_amount, silver_payers.payer_name",
+        "Dashboard Tab": "Underpayment Analysis",
+    },
+    {
+        "Metric": "Clean Claim Scrubbing Breakdown",
+        "Category": "Claims Quality",
+        "Definition": "Distribution of scrubbing fail reasons for dirty claims — root cause analysis for claim rejection prevention.",
+        "Formula": "COUNT(*) GROUP BY fail_reason WHERE is_clean_claim = 0",
+        "Data Sources": "silver_claims.fail_reason, silver_claims.is_clean_claim",
+        "Dashboard Tab": "Claims & Denials",
+    },
+    {
+        "Metric": "Patient Financial Responsibility",
+        "Category": "Collections",
+        "Definition": "Patient-owed portion (co-pay, deductible, coinsurance) by payer, department, and encounter type.",
+        "Formula": "SUM(total_charge_amount − payment_amount) GROUP BY payer/dept",
+        "Data Sources": "silver_payments.allowed_amount, silver_payments.payment_amount, silver_claims.total_charge_amount, silver_payers.payer_type",
+        "Dashboard Tab": "Patient Responsibility",
+    },
+    {
+        "Metric": "Data Freshness",
+        "Category": "Operational",
+        "Definition": "Last ETL load time, row count, and staleness status per data domain — monitors pipeline health.",
+        "Formula": "NOW() − last_loaded_at per domain",
+        "Data Sources": "pipeline_runs.domain, pipeline_runs.last_loaded_at, pipeline_runs.row_count",
+        "Dashboard Tab": "Executive Summary (sidebar)",
+    },
 ]
 
 _TABLE_CATALOG = [
     # ── Bronze layer ──────────────────────────────────────────────────────
-    {"Layer": "Bronze", "Table": "bronze_payers",          "Source System": "Payer Master",         "Key Columns": "payer_id (TEXT), _loaded_at",                                       "Description": "Raw CSV ingestion — insurance payer master list",                    "Relationships": "Source for silver_payers"},
-    {"Layer": "Bronze", "Table": "bronze_patients",        "Source System": "EHR",                  "Key Columns": "patient_id (TEXT), primary_payer_id (TEXT), _loaded_at",              "Description": "Raw CSV ingestion — patient demographics",                          "Relationships": "Source for silver_patients"},
-    {"Layer": "Bronze", "Table": "bronze_providers",       "Source System": "EHR",                  "Key Columns": "provider_id (TEXT), department (TEXT), _loaded_at",                   "Description": "Raw CSV ingestion — clinician roster",                              "Relationships": "Source for silver_providers"},
-    {"Layer": "Bronze", "Table": "bronze_encounters",      "Source System": "EHR",                  "Key Columns": "encounter_id (TEXT), patient_id (TEXT), provider_id (TEXT), _loaded_at","Description": "Raw CSV ingestion — individual patient visits",                     "Relationships": "Source for silver_encounters"},
-    {"Layer": "Bronze", "Table": "bronze_charges",         "Source System": "EHR / Charge Capture", "Key Columns": "charge_id (TEXT), encounter_id (TEXT), charge_amount (TEXT), _loaded_at","Description": "Raw CSV ingestion — line-item charges per encounter",               "Relationships": "Source for silver_charges"},
-    {"Layer": "Bronze", "Table": "bronze_claims",          "Source System": "Clearinghouse",        "Key Columns": "claim_id (TEXT), encounter_id (TEXT), payer_id (TEXT), _loaded_at",   "Description": "Raw CSV ingestion — insurance claims submitted for payment",        "Relationships": "Source for silver_claims"},
-    {"Layer": "Bronze", "Table": "bronze_payments",        "Source System": "Clearinghouse / ERA",  "Key Columns": "payment_id (TEXT), claim_id (TEXT), payment_amount (TEXT), _loaded_at","Description": "Raw CSV ingestion — payments received against claims",               "Relationships": "Source for silver_payments"},
-    {"Layer": "Bronze", "Table": "bronze_denials",         "Source System": "Clearinghouse / ERA",  "Key Columns": "denial_id (TEXT), claim_id (TEXT), denied_amount (TEXT), _loaded_at", "Description": "Raw CSV ingestion — claim denials with reason codes",               "Relationships": "Source for silver_denials"},
-    {"Layer": "Bronze", "Table": "bronze_adjustments",     "Source System": "Billing System",       "Key Columns": "adjustment_id (TEXT), claim_id (TEXT), adjustment_amount (TEXT), _loaded_at","Description": "Raw CSV ingestion — contractual write-offs and adjustments",    "Relationships": "Source for silver_adjustments"},
-    {"Layer": "Bronze", "Table": "bronze_operating_costs", "Source System": "ERP / Finance",        "Key Columns": "period (TEXT), total_rcm_cost (TEXT), _loaded_at",                    "Description": "Raw CSV ingestion — monthly RCM department operating costs",       "Relationships": "Source for silver_operating_costs"},
+    {
+        "Layer": "Bronze",
+        "Table": "bronze_payers",
+        "Source System": "Payer Master",
+        "Key Columns": "payer_id (TEXT), _loaded_at",
+        "Description": "Raw CSV ingestion — insurance payer master list",
+        "Relationships": "Source for silver_payers",
+    },
+    {
+        "Layer": "Bronze",
+        "Table": "bronze_patients",
+        "Source System": "EHR",
+        "Key Columns": "patient_id (TEXT), primary_payer_id (TEXT), _loaded_at",
+        "Description": "Raw CSV ingestion — patient demographics",
+        "Relationships": "Source for silver_patients",
+    },
+    {
+        "Layer": "Bronze",
+        "Table": "bronze_providers",
+        "Source System": "EHR",
+        "Key Columns": "provider_id (TEXT), department (TEXT), _loaded_at",
+        "Description": "Raw CSV ingestion — clinician roster",
+        "Relationships": "Source for silver_providers",
+    },
+    {
+        "Layer": "Bronze",
+        "Table": "bronze_encounters",
+        "Source System": "EHR",
+        "Key Columns": "encounter_id (TEXT), patient_id (TEXT), provider_id (TEXT), _loaded_at",
+        "Description": "Raw CSV ingestion — individual patient visits",
+        "Relationships": "Source for silver_encounters",
+    },
+    {
+        "Layer": "Bronze",
+        "Table": "bronze_charges",
+        "Source System": "EHR / Charge Capture",
+        "Key Columns": "charge_id (TEXT), encounter_id (TEXT), charge_amount (TEXT), _loaded_at",
+        "Description": "Raw CSV ingestion — line-item charges per encounter",
+        "Relationships": "Source for silver_charges",
+    },
+    {
+        "Layer": "Bronze",
+        "Table": "bronze_claims",
+        "Source System": "Clearinghouse",
+        "Key Columns": "claim_id (TEXT), encounter_id (TEXT), payer_id (TEXT), _loaded_at",
+        "Description": "Raw CSV ingestion — insurance claims submitted for payment",
+        "Relationships": "Source for silver_claims",
+    },
+    {
+        "Layer": "Bronze",
+        "Table": "bronze_payments",
+        "Source System": "Clearinghouse / ERA",
+        "Key Columns": "payment_id (TEXT), claim_id (TEXT), payment_amount (TEXT), _loaded_at",
+        "Description": "Raw CSV ingestion — payments received against claims",
+        "Relationships": "Source for silver_payments",
+    },
+    {
+        "Layer": "Bronze",
+        "Table": "bronze_denials",
+        "Source System": "Clearinghouse / ERA",
+        "Key Columns": "denial_id (TEXT), claim_id (TEXT), denied_amount (TEXT), _loaded_at",
+        "Description": "Raw CSV ingestion — claim denials with reason codes",
+        "Relationships": "Source for silver_denials",
+    },
+    {
+        "Layer": "Bronze",
+        "Table": "bronze_adjustments",
+        "Source System": "Billing System",
+        "Key Columns": "adjustment_id (TEXT), claim_id (TEXT), adjustment_amount (TEXT), _loaded_at",
+        "Description": "Raw CSV ingestion — contractual write-offs and adjustments",
+        "Relationships": "Source for silver_adjustments",
+    },
+    {
+        "Layer": "Bronze",
+        "Table": "bronze_operating_costs",
+        "Source System": "ERP / Finance",
+        "Key Columns": "period (TEXT), total_rcm_cost (TEXT), _loaded_at",
+        "Description": "Raw CSV ingestion — monthly RCM department operating costs",
+        "Relationships": "Source for silver_operating_costs",
+    },
     # ── Silver layer — derived from Bronze ETL; no external source ────────
-    {"Layer": "Silver", "Table": "silver_payers",          "Source System": "—",                    "Key Columns": "payer_id PK, payer_name, payer_type, avg_reimbursement_pct REAL",     "Description": "Typed & FK-constrained — insurance payer master list",             "Relationships": "1-to-many → silver_patients, silver_claims"},
-    {"Layer": "Silver", "Table": "silver_patients",        "Source System": "—",                    "Key Columns": "patient_id PK, primary_payer_id FK",                                  "Description": "Typed & FK-constrained — patient demographics and primary payer",  "Relationships": "Many-to-1 → silver_payers; 1-to-many → silver_encounters"},
-    {"Layer": "Silver", "Table": "silver_providers",       "Source System": "—",                    "Key Columns": "provider_id PK, department, specialty",                               "Description": "Typed & FK-constrained — clinician roster with department",        "Relationships": "1-to-many → silver_encounters"},
-    {"Layer": "Silver", "Table": "silver_encounters",      "Source System": "—",                    "Key Columns": "encounter_id PK, patient_id FK, provider_id FK, date_of_service, department, encounter_type", "Description": "Typed & FK-constrained — individual patient visits", "Relationships": "Many-to-1 → silver_patients, silver_providers; 1-to-many → silver_charges, silver_claims"},
-    {"Layer": "Silver", "Table": "silver_charges",         "Source System": "—",                    "Key Columns": "charge_id PK, encounter_id FK, charge_amount REAL, units INTEGER",    "Description": "Typed & FK-constrained — line-item charges per encounter",         "Relationships": "Many-to-1 → silver_encounters"},
-    {"Layer": "Silver", "Table": "silver_claims",          "Source System": "—",                    "Key Columns": "claim_id PK, encounter_id FK, patient_id FK, payer_id FK, total_charge_amount REAL, claim_status, is_clean_claim INTEGER", "Description": "Typed & FK-constrained — insurance claims; source of truth for KPIs", "Relationships": "Many-to-1 → silver_encounters, silver_payers; 1-to-many → silver_payments, silver_denials, silver_adjustments"},
-    {"Layer": "Silver", "Table": "silver_payments",        "Source System": "—",                    "Key Columns": "payment_id PK, claim_id FK, payment_amount REAL, is_accurate_payment INTEGER", "Description": "Typed & FK-constrained — payments received against claims",  "Relationships": "Many-to-1 → silver_claims"},
-    {"Layer": "Silver", "Table": "silver_denials",         "Source System": "—",                    "Key Columns": "denial_id PK, claim_id FK, denial_reason_code, denied_amount REAL, appeal_status, recovered_amount REAL", "Description": "Typed & FK-constrained — claim denials with reason codes and appeal tracking", "Relationships": "Many-to-1 → silver_claims"},
-    {"Layer": "Silver", "Table": "silver_adjustments",     "Source System": "—",                    "Key Columns": "adjustment_id PK, claim_id FK, adjustment_type_code, adjustment_amount REAL", "Description": "Typed & FK-constrained — contractual write-offs and balance adjustments", "Relationships": "Many-to-1 → silver_claims"},
-    {"Layer": "Silver", "Table": "silver_operating_costs", "Source System": "—",                    "Key Columns": "period PK, total_rcm_cost REAL",                                      "Description": "Typed & FK-constrained — monthly RCM department operating costs", "Relationships": "Standalone (joined by period/month to silver_claims)"},
+    {
+        "Layer": "Silver",
+        "Table": "silver_payers",
+        "Source System": "—",
+        "Key Columns": "payer_id PK, payer_name, payer_type, avg_reimbursement_pct REAL",
+        "Description": "Typed & FK-constrained — insurance payer master list",
+        "Relationships": "1-to-many → silver_patients, silver_claims",
+    },
+    {
+        "Layer": "Silver",
+        "Table": "silver_patients",
+        "Source System": "—",
+        "Key Columns": "patient_id PK, primary_payer_id FK",
+        "Description": "Typed & FK-constrained — patient demographics and primary payer",
+        "Relationships": "Many-to-1 → silver_payers; 1-to-many → silver_encounters",
+    },
+    {
+        "Layer": "Silver",
+        "Table": "silver_providers",
+        "Source System": "—",
+        "Key Columns": "provider_id PK, department, specialty",
+        "Description": "Typed & FK-constrained — clinician roster with department",
+        "Relationships": "1-to-many → silver_encounters",
+    },
+    {
+        "Layer": "Silver",
+        "Table": "silver_encounters",
+        "Source System": "—",
+        "Key Columns": "encounter_id PK, patient_id FK, provider_id FK, date_of_service, department, encounter_type",
+        "Description": "Typed & FK-constrained — individual patient visits",
+        "Relationships": "Many-to-1 → silver_patients, silver_providers; 1-to-many → silver_charges, silver_claims",
+    },
+    {
+        "Layer": "Silver",
+        "Table": "silver_charges",
+        "Source System": "—",
+        "Key Columns": "charge_id PK, encounter_id FK, charge_amount REAL, units INTEGER",
+        "Description": "Typed & FK-constrained — line-item charges per encounter",
+        "Relationships": "Many-to-1 → silver_encounters",
+    },
+    {
+        "Layer": "Silver",
+        "Table": "silver_claims",
+        "Source System": "—",
+        "Key Columns": "claim_id PK, encounter_id FK, patient_id FK, payer_id FK, total_charge_amount REAL, claim_status, is_clean_claim INTEGER",
+        "Description": "Typed & FK-constrained — insurance claims; source of truth for KPIs",
+        "Relationships": "Many-to-1 → silver_encounters, silver_payers; 1-to-many → silver_payments, silver_denials, silver_adjustments",
+    },
+    {
+        "Layer": "Silver",
+        "Table": "silver_payments",
+        "Source System": "—",
+        "Key Columns": "payment_id PK, claim_id FK, payment_amount REAL, is_accurate_payment INTEGER",
+        "Description": "Typed & FK-constrained — payments received against claims",
+        "Relationships": "Many-to-1 → silver_claims",
+    },
+    {
+        "Layer": "Silver",
+        "Table": "silver_denials",
+        "Source System": "—",
+        "Key Columns": "denial_id PK, claim_id FK, denial_reason_code, denied_amount REAL, appeal_status, recovered_amount REAL",
+        "Description": "Typed & FK-constrained — claim denials with reason codes and appeal tracking",
+        "Relationships": "Many-to-1 → silver_claims",
+    },
+    {
+        "Layer": "Silver",
+        "Table": "silver_adjustments",
+        "Source System": "—",
+        "Key Columns": "adjustment_id PK, claim_id FK, adjustment_type_code, adjustment_amount REAL",
+        "Description": "Typed & FK-constrained — contractual write-offs and balance adjustments",
+        "Relationships": "Many-to-1 → silver_claims",
+    },
+    {
+        "Layer": "Silver",
+        "Table": "silver_operating_costs",
+        "Source System": "—",
+        "Key Columns": "period PK, total_rcm_cost REAL",
+        "Description": "Typed & FK-constrained — monthly RCM department operating costs",
+        "Relationships": "Standalone (joined by period/month to silver_claims)",
+    },
     # ── Gold layer — SQL views over Silver; no external source ────────────
-    {"Layer": "Gold",   "Table": "gold_monthly_kpis",          "Source System": "—", "Key Columns": "period, claim_count, total_charges, total_payments, clean_claim_rate, denial_rate, gcr", "Description": "SQL VIEW — monthly KPI aggregations across all claims",           "Relationships": "Aggregates silver_claims, silver_payments"},
-    {"Layer": "Gold",   "Table": "gold_payer_performance",     "Source System": "—", "Key Columns": "payer_id, payer_name, total_claims, total_charges, total_payments, collection_rate, denial_rate", "Description": "SQL VIEW — per-payer revenue and denial metrics",       "Relationships": "Aggregates silver_claims, silver_payments, silver_payers"},
-    {"Layer": "Gold",   "Table": "gold_department_performance","Source System": "—", "Key Columns": "department, encounter_count, total_charges, total_payments, collection_rate, avg_payment_per_encounter", "Description": "SQL VIEW — revenue and volume by clinical department", "Relationships": "Aggregates silver_encounters, silver_claims, silver_payments"},
-    {"Layer": "Gold",   "Table": "gold_ar_aging",              "Source System": "—", "Key Columns": "aging_bucket, claim_count, total_ar, pct_of_total",               "Description": "SQL VIEW — outstanding A/R bucketed into 0-30, 31-60, 61-90, 91-120, 120+ day bands", "Relationships": "Aggregates silver_claims, silver_payments"},
-    {"Layer": "Gold",   "Table": "gold_denial_analysis",       "Source System": "—", "Key Columns": "denial_reason_code, description, count, total_denied, total_recovered, recovery_rate", "Description": "SQL VIEW — denial volume and recovery rate by reason code", "Relationships": "Aggregates silver_denials"},
+    {
+        "Layer": "Gold",
+        "Table": "gold_monthly_kpis",
+        "Source System": "—",
+        "Key Columns": "period, claim_count, total_charges, total_payments, clean_claim_rate, denial_rate, gcr",
+        "Description": "SQL VIEW — monthly KPI aggregations across all claims",
+        "Relationships": "Aggregates silver_claims, silver_payments",
+    },
+    {
+        "Layer": "Gold",
+        "Table": "gold_payer_performance",
+        "Source System": "—",
+        "Key Columns": "payer_id, payer_name, total_claims, total_charges, total_payments, collection_rate, denial_rate",
+        "Description": "SQL VIEW — per-payer revenue and denial metrics",
+        "Relationships": "Aggregates silver_claims, silver_payments, silver_payers",
+    },
+    {
+        "Layer": "Gold",
+        "Table": "gold_department_performance",
+        "Source System": "—",
+        "Key Columns": "department, encounter_count, total_charges, total_payments, collection_rate, avg_payment_per_encounter",
+        "Description": "SQL VIEW — revenue and volume by clinical department",
+        "Relationships": "Aggregates silver_encounters, silver_claims, silver_payments",
+    },
+    {
+        "Layer": "Gold",
+        "Table": "gold_ar_aging",
+        "Source System": "—",
+        "Key Columns": "aging_bucket, claim_count, total_ar, pct_of_total",
+        "Description": "SQL VIEW — outstanding A/R bucketed into 0-30, 31-60, 61-90, 91-120, 120+ day bands",
+        "Relationships": "Aggregates silver_claims, silver_payments",
+    },
+    {
+        "Layer": "Gold",
+        "Table": "gold_denial_analysis",
+        "Source System": "—",
+        "Key Columns": "denial_reason_code, description, count, total_denied, total_recovered, recovery_rate",
+        "Description": "SQL VIEW — denial volume and recovery rate by reason code",
+        "Relationships": "Aggregates silver_denials",
+    },
 ]
 
 # Visual colours for CSV source system categories in the lineage diagram.
@@ -221,13 +446,13 @@ _TABLE_CATALOG = [
 # is the single source of truth in the DB; only the colour is layout data.
 # Colours align with RCM_COLORS.
 _SOURCE_SYSTEM_COLORS = {
-    "Payer Master":          "#0EA5E9",  # sky   — external contract data
-    "EHR":                   "#10B981",  # green — clinical
-    "EHR / Charge Capture":  "#10B981",  # green — clinical (CDM lives in EHR)
-    "Clearinghouse":         "#1E6FBF",  # blue  — claims mgmt gateway
-    "Clearinghouse / ERA":   "#1E6FBF",  # blue  — electronic remittance / payer response
-    "Billing System":        "#6366F1",  # indigo — write-off posting
-    "ERP / Finance":         "#14B8A6",  # teal  — GL cost centre reports
+    "Payer Master": "#0EA5E9",  # sky   — external contract data
+    "EHR": "#10B981",  # green — clinical
+    "EHR / Charge Capture": "#10B981",  # green — clinical (CDM lives in EHR)
+    "Clearinghouse": "#1E6FBF",  # blue  — claims mgmt gateway
+    "Clearinghouse / ERA": "#1E6FBF",  # blue  — electronic remittance / payer response
+    "Billing System": "#6366F1",  # indigo — write-off posting
+    "ERP / Finance": "#14B8A6",  # teal  — GL cost centre reports
 }
 
 
@@ -235,64 +460,214 @@ _SOURCE_SYSTEM_COLORS = {
 
 _KG_NODES = [
     # Reference entities (blue) — outer ring top
-    {"id": "payers",    "label": "payers",    "x": 5.0, "y": 9.0, "color": "#5b8dee", "size": 30,
-     "group": "Reference", "source_system": "Payer Master",
-     "hover": "silver_payers: payer_id PK, payer_name, payer_type, avg_reimbursement_pct REAL"},
-    {"id": "patients",  "label": "patients",  "x": 1.5, "y": 7.0, "color": "#5b8dee", "size": 30,
-     "group": "Reference", "source_system": "EHR",
-     "hover": "silver_patients: patient_id PK, primary_payer_id FK → silver_payers"},
-    {"id": "providers", "label": "providers", "x": 8.5, "y": 7.0, "color": "#5b8dee", "size": 30,
-     "group": "Reference", "source_system": "EHR",
-     "hover": "silver_providers: provider_id PK, department, specialty"},
+    {
+        "id": "payers",
+        "label": "payers",
+        "x": 5.0,
+        "y": 9.0,
+        "color": "#5b8dee",
+        "size": 30,
+        "group": "Reference",
+        "source_system": "Payer Master",
+        "hover": "silver_payers: payer_id PK, payer_name, payer_type, avg_reimbursement_pct REAL",
+    },
+    {
+        "id": "patients",
+        "label": "patients",
+        "x": 1.5,
+        "y": 7.0,
+        "color": "#5b8dee",
+        "size": 30,
+        "group": "Reference",
+        "source_system": "EHR",
+        "hover": "silver_patients: patient_id PK, primary_payer_id FK → silver_payers",
+    },
+    {
+        "id": "providers",
+        "label": "providers",
+        "x": 8.5,
+        "y": 7.0,
+        "color": "#5b8dee",
+        "size": 30,
+        "group": "Reference",
+        "source_system": "EHR",
+        "hover": "silver_providers: provider_id PK, department, specialty",
+    },
     # Central hub
-    {"id": "encounters", "label": "encounters", "x": 5.0, "y": 5.5, "color": "#38c172", "size": 36,
-     "group": "Transactional", "source_system": "EHR",
-     "hover": "silver_encounters: encounter_id PK, patient_id FK, provider_id FK, date_of_service, department, encounter_type"},
+    {
+        "id": "encounters",
+        "label": "encounters",
+        "x": 5.0,
+        "y": 5.5,
+        "color": "#38c172",
+        "size": 36,
+        "group": "Transactional",
+        "source_system": "EHR",
+        "hover": "silver_encounters: encounter_id PK, patient_id FK, provider_id FK, date_of_service, department, encounter_type",
+    },
     # Claims hub
-    {"id": "claims", "label": "claims", "x": 5.0, "y": 3.0, "color": "#38c172", "size": 36,
-     "group": "Transactional", "source_system": "Clearinghouse",
-     "hover": "silver_claims: claim_id PK, encounter_id FK, patient_id FK, payer_id FK, date_of_service, submission_date, total_charge_amount REAL, claim_status, is_clean_claim INTEGER"},
+    {
+        "id": "claims",
+        "label": "claims",
+        "x": 5.0,
+        "y": 3.0,
+        "color": "#38c172",
+        "size": 36,
+        "group": "Transactional",
+        "source_system": "Clearinghouse",
+        "hover": "silver_claims: claim_id PK, encounter_id FK, patient_id FK, payer_id FK, date_of_service, submission_date, total_charge_amount REAL, claim_status, is_clean_claim INTEGER",
+    },
     # Leaf transactional nodes
-    {"id": "charges",     "label": "charges",     "x": 1.5, "y": 4.5, "color": "#38c172", "size": 26,
-     "group": "Transactional", "source_system": "EHR / Charge Capture",
-     "hover": "silver_charges: charge_id PK, encounter_id FK, charge_amount REAL, units INTEGER, service_date, post_date"},
-    {"id": "payments",    "label": "payments",    "x": 2.5, "y": 1.0, "color": "#38c172", "size": 26,
-     "group": "Transactional", "source_system": "Clearinghouse / ERA",
-     "hover": "silver_payments: payment_id PK, claim_id FK, payment_amount REAL, is_accurate_payment INTEGER"},
-    {"id": "denials",     "label": "denials",     "x": 5.0, "y": 0.5, "color": "#38c172", "size": 26,
-     "group": "Transactional", "source_system": "Clearinghouse / ERA",
-     "hover": "silver_denials: denial_id PK, claim_id FK, denial_reason_code, denied_amount REAL, appeal_status, recovered_amount REAL"},
-    {"id": "adjustments", "label": "adjustments", "x": 7.5, "y": 1.0, "color": "#38c172", "size": 26,
-     "group": "Transactional", "source_system": "Billing System",
-     "hover": "silver_adjustments: adjustment_id PK, claim_id FK, adjustment_type_code, adjustment_amount REAL"},
+    {
+        "id": "charges",
+        "label": "charges",
+        "x": 1.5,
+        "y": 4.5,
+        "color": "#38c172",
+        "size": 26,
+        "group": "Transactional",
+        "source_system": "EHR / Charge Capture",
+        "hover": "silver_charges: charge_id PK, encounter_id FK, charge_amount REAL, units INTEGER, service_date, post_date",
+    },
+    {
+        "id": "payments",
+        "label": "payments",
+        "x": 2.5,
+        "y": 1.0,
+        "color": "#38c172",
+        "size": 26,
+        "group": "Transactional",
+        "source_system": "Clearinghouse / ERA",
+        "hover": "silver_payments: payment_id PK, claim_id FK, payer_id FK → silver_payers, payment_amount REAL, allowed_amount REAL, is_accurate_payment INTEGER",
+    },
+    {
+        "id": "denials",
+        "label": "denials",
+        "x": 5.0,
+        "y": 0.5,
+        "color": "#38c172",
+        "size": 26,
+        "group": "Transactional",
+        "source_system": "Clearinghouse / ERA",
+        "hover": "silver_denials: denial_id PK, claim_id FK, denial_reason_code, denied_amount REAL, appeal_status, recovered_amount REAL",
+    },
+    {
+        "id": "adjustments",
+        "label": "adjustments",
+        "x": 7.5,
+        "y": 1.0,
+        "color": "#38c172",
+        "size": 26,
+        "group": "Transactional",
+        "source_system": "Billing System",
+        "hover": "silver_adjustments: adjustment_id PK, claim_id FK, adjustment_type_code, adjustment_amount REAL",
+    },
     # Operational
-    {"id": "operating_costs", "label": "operating\ncosts", "x": 9.0, "y": 4.5, "color": "#e8a838", "size": 26,
-     "group": "Operational", "source_system": "ERP / Finance",
-     "hover": "silver_operating_costs: period PK, total_rcm_cost REAL"},
+    {
+        "id": "operating_costs",
+        "label": "operating\ncosts",
+        "x": 9.0,
+        "y": 4.5,
+        "color": "#e8a838",
+        "size": 26,
+        "group": "Operational",
+        "source_system": "ERP / Finance",
+        "hover": "silver_operating_costs: period PK, total_rcm_cost REAL",
+    },
 ]
 
 _KG_EDGES = [
-    {"source": "payers",    "target": "patients",      "label": "1:N (primary_payer_id)"},
-    {"source": "patients",  "target": "encounters",    "label": "1:N (patient_id)"},
-    {"source": "providers", "target": "encounters",    "label": "1:N (provider_id)"},
-    {"source": "encounters","target": "charges",       "label": "1:N (encounter_id)"},
-    {"source": "encounters","target": "claims",        "label": "1:N (encounter_id)"},
-    {"source": "payers",    "target": "claims",        "label": "1:N (payer_id)"},
-    {"source": "claims",    "target": "payments",      "label": "1:N (claim_id)"},
-    {"source": "claims",    "target": "denials",       "label": "1:N (claim_id)"},
-    {"source": "claims",    "target": "adjustments",   "label": "1:N (claim_id)"},
+    {"source": "payers", "target": "patients", "label": "1:N (primary_payer_id)"},
+    {"source": "patients", "target": "encounters", "label": "1:N (patient_id)"},
+    {"source": "providers", "target": "encounters", "label": "1:N (provider_id)"},
+    {"source": "encounters", "target": "charges", "label": "1:N (encounter_id)"},
+    {"source": "encounters", "target": "claims", "label": "1:N (encounter_id)"},
+    {"source": "payers", "target": "claims", "label": "1:N (payer_id)"},
+    {"source": "patients", "target": "claims", "label": "1:N (patient_id)"},
+    {"source": "payers", "target": "payments", "label": "1:N (payer_id)"},
+    {"source": "claims", "target": "payments", "label": "1:N (claim_id)"},
+    {"source": "claims", "target": "denials", "label": "1:N (claim_id)"},
+    {"source": "claims", "target": "adjustments", "label": "1:N (claim_id)"},
 ]
 
 _KG_RELATIONSHIPS = [
-    {"parent_table": "payers",    "child_table": "patients",     "join_column": "primary_payer_id", "cardinality": "1:N", "business_meaning": "Each patient has one primary payer"},
-    {"parent_table": "payers",    "child_table": "claims",       "join_column": "payer_id",         "cardinality": "1:N", "business_meaning": "Claims are billed to one payer"},
-    {"parent_table": "patients",  "child_table": "encounters",   "join_column": "patient_id",       "cardinality": "1:N", "business_meaning": "A patient can have many visits"},
-    {"parent_table": "providers", "child_table": "encounters",   "join_column": "provider_id",      "cardinality": "1:N", "business_meaning": "A provider sees many patients"},
-    {"parent_table": "encounters","child_table": "charges",      "join_column": "encounter_id",     "cardinality": "1:N", "business_meaning": "Each visit generates line-item charges"},
-    {"parent_table": "encounters","child_table": "claims",       "join_column": "encounter_id",     "cardinality": "1:N", "business_meaning": "Each visit produces one or more insurance claims"},
-    {"parent_table": "claims",    "child_table": "payments",     "join_column": "claim_id",         "cardinality": "1:N", "business_meaning": "A claim may receive partial or split payments"},
-    {"parent_table": "claims",    "child_table": "denials",      "join_column": "claim_id",         "cardinality": "1:N", "business_meaning": "A claim can be denied once or multiple times"},
-    {"parent_table": "claims",    "child_table": "adjustments",  "join_column": "claim_id",         "cardinality": "1:N", "business_meaning": "Contractual write-offs are applied per claim"},
+    {
+        "parent_table": "payers",
+        "child_table": "patients",
+        "join_column": "primary_payer_id",
+        "cardinality": "1:N",
+        "business_meaning": "Each patient has one primary payer",
+    },
+    {
+        "parent_table": "payers",
+        "child_table": "claims",
+        "join_column": "payer_id",
+        "cardinality": "1:N",
+        "business_meaning": "Claims are billed to one payer",
+    },
+    {
+        "parent_table": "patients",
+        "child_table": "encounters",
+        "join_column": "patient_id",
+        "cardinality": "1:N",
+        "business_meaning": "A patient can have many visits",
+    },
+    {
+        "parent_table": "patients",
+        "child_table": "claims",
+        "join_column": "patient_id",
+        "cardinality": "1:N",
+        "business_meaning": "Claims track which patient received services",
+    },
+    {
+        "parent_table": "payers",
+        "child_table": "payments",
+        "join_column": "payer_id",
+        "cardinality": "1:N",
+        "business_meaning": "Payments are remitted by a specific payer",
+    },
+    {
+        "parent_table": "providers",
+        "child_table": "encounters",
+        "join_column": "provider_id",
+        "cardinality": "1:N",
+        "business_meaning": "A provider sees many patients",
+    },
+    {
+        "parent_table": "encounters",
+        "child_table": "charges",
+        "join_column": "encounter_id",
+        "cardinality": "1:N",
+        "business_meaning": "Each visit generates line-item charges",
+    },
+    {
+        "parent_table": "encounters",
+        "child_table": "claims",
+        "join_column": "encounter_id",
+        "cardinality": "1:N",
+        "business_meaning": "Each visit produces one or more insurance claims",
+    },
+    {
+        "parent_table": "claims",
+        "child_table": "payments",
+        "join_column": "claim_id",
+        "cardinality": "1:N",
+        "business_meaning": "A claim may receive partial or split payments",
+    },
+    {
+        "parent_table": "claims",
+        "child_table": "denials",
+        "join_column": "claim_id",
+        "cardinality": "1:N",
+        "business_meaning": "A claim can be denied once or multiple times",
+    },
+    {
+        "parent_table": "claims",
+        "child_table": "adjustments",
+        "join_column": "claim_id",
+        "cardinality": "1:N",
+        "business_meaning": "Contractual write-offs are applied per claim",
+    },
 ]
 
 
@@ -301,22 +676,160 @@ _KG_RELATIONSHIPS = [
 # This fallback list is used only when the DB is unavailable.
 
 _SEMANTIC_LAYER_FALLBACK = [
-    {"business_concept": "Revenue",       "kpi_name": "Gross Collection Rate",       "silver_columns": "silver_claims.total_charge_amount, silver_payments.payment_amount",                                                              "formula": "SUM(payments)/SUM(charges)×100",              "business_rule": "Measures total collections vs. gross billed"},
-    {"business_concept": "Revenue",       "kpi_name": "Bad Debt Rate",               "silver_columns": "silver_adjustments.adjustment_type_code, silver_adjustments.adjustment_amount, silver_claims.total_charge_amount",               "formula": "SUM(bad_debt_adj)/SUM(charges)×100",           "business_rule": "Write-offs where type_code indicates bad debt"},
-    {"business_concept": "Revenue",       "kpi_name": "Avg Reimbursement/Encounter", "silver_columns": "silver_payments.payment_amount, silver_encounters.encounter_id",                                                                 "formula": "SUM(payments)/COUNT(encounters)",              "business_rule": "Revenue efficiency per patient visit"},
-    {"business_concept": "Collections",   "kpi_name": "Net Collection Rate",         "silver_columns": "silver_payments.payment_amount, silver_claims.total_charge_amount, silver_adjustments.adjustment_amount",                        "formula": "Payments/(Charges−Adjustments)×100",           "business_rule": "Adjustments remove contractually non-collectible amounts"},
-    {"business_concept": "Collections",   "kpi_name": "Cost to Collect",             "silver_columns": "silver_operating_costs.total_rcm_cost, silver_payments.payment_amount",                                                          "formula": "RCM Cost/Collections×100",                     "business_rule": "Billing dept efficiency; target <3%"},
-    {"business_concept": "Claims Quality","kpi_name": "Clean Claim Rate",            "silver_columns": "silver_claims.is_clean_claim",                                                                                                    "formula": "SUM(is_clean_claim)/COUNT(claims)×100",        "business_rule": "Claims passing payer edits on first submission"},
-    {"business_concept": "Claims Quality","kpi_name": "Denial Rate",                 "silver_columns": "silver_claims.claim_status",                                                                                                      "formula": "COUNT(status='Denied')/COUNT(claims)×100",     "business_rule": "Industry benchmark <5%"},
-    {"business_concept": "Claims Quality","kpi_name": "First-Pass Rate",             "silver_columns": "silver_claims.claim_status, silver_claims.is_clean_claim",                                                                       "formula": "Resolved on first pass/Total×100",             "business_rule": "Resolved = Paid or legitimately Denied w/o rework"},
-    {"business_concept": "Claims Quality","kpi_name": "Charge Lag",                  "silver_columns": "silver_claims.submission_date, silver_claims.date_of_service",                                                                   "formula": "AVG(submission_date − date_of_service)",       "business_rule": "Target <3 days; delays increase A/R balance"},
-    {"business_concept": "A/R Health",    "kpi_name": "Days in A/R",                 "silver_columns": "silver_claims.total_charge_amount, silver_payments.payment_amount",                                                              "formula": "(Charges−Payments)/(Monthly Charges/30)",      "business_rule": "Target <40 days; >50 is critical"},
-    {"business_concept": "A/R Health",    "kpi_name": "A/R Aging",                   "silver_columns": "silver_claims.date_of_service, silver_claims.claim_status, silver_payments.payment_amount",                                      "formula": "Outstanding bucketed by age in days",          "business_rule": "90+ day bucket should be <15% of total A/R"},
-    {"business_concept": "A/R Health",    "kpi_name": "Payment Accuracy Rate",       "silver_columns": "silver_payments.is_accurate_payment",                                                                                             "formula": "SUM(is_accurate_payment)/COUNT×100",           "business_rule": "Inaccurate payments require follow-up with payer"},
-    {"business_concept": "Recovery",      "kpi_name": "Appeal Success Rate",         "silver_columns": "silver_denials.appeal_status",                                                                                                    "formula": "Successful/Total Appealed×100",                "business_rule": "Target >50%; tracks ability to recover denied revenue"},
-    {"business_concept": "Payer Perf.",   "kpi_name": "Payer Mix",                   "silver_columns": "silver_payments.payment_amount, silver_payers.payer_type, silver_claims.payer_id",                                              "formula": "SUM(payments) GROUP BY payer_type",            "business_rule": "High self-pay mix → higher collection risk"},
-    {"business_concept": "Payer Perf.",   "kpi_name": "Denial Rate by Payer",        "silver_columns": "silver_claims.claim_status, silver_claims.payer_id, silver_payers.payer_name",                                                  "formula": "Denied/Total GROUP BY payer",                  "business_rule": "Identifies payers with problematic contracts/edits"},
-    {"business_concept": "Dept Perf.",    "kpi_name": "Department Performance",      "silver_columns": "silver_encounters.department, silver_payments.payment_amount, silver_claims.encounter_id",                                       "formula": "SUM(payments), COUNT(encounters) GROUP BY dept","business_rule": "Revenue and volume by clinical department"},
+    {
+        "business_concept": "Revenue",
+        "kpi_name": "Gross Collection Rate",
+        "silver_columns": "silver_claims.total_charge_amount, silver_payments.payment_amount",
+        "formula": "SUM(payments)/SUM(charges)×100",
+        "business_rule": "Measures total collections vs. gross billed",
+    },
+    {
+        "business_concept": "Revenue",
+        "kpi_name": "Bad Debt Rate",
+        "silver_columns": "silver_adjustments.adjustment_type_code, silver_adjustments.adjustment_amount, silver_claims.total_charge_amount",
+        "formula": "SUM(bad_debt_adj)/SUM(charges)×100",
+        "business_rule": "Write-offs where type_code indicates bad debt",
+    },
+    {
+        "business_concept": "Revenue",
+        "kpi_name": "Avg Reimbursement/Encounter",
+        "silver_columns": "silver_payments.payment_amount, silver_encounters.encounter_id",
+        "formula": "SUM(payments)/COUNT(encounters)",
+        "business_rule": "Revenue efficiency per patient visit",
+    },
+    {
+        "business_concept": "Collections",
+        "kpi_name": "Net Collection Rate",
+        "silver_columns": "silver_payments.payment_amount, silver_claims.total_charge_amount, silver_adjustments.adjustment_amount",
+        "formula": "Payments/(Charges−Adjustments)×100",
+        "business_rule": "Adjustments remove contractually non-collectible amounts",
+    },
+    {
+        "business_concept": "Collections",
+        "kpi_name": "Cost to Collect",
+        "silver_columns": "silver_operating_costs.total_rcm_cost, silver_payments.payment_amount",
+        "formula": "RCM Cost/Collections×100",
+        "business_rule": "Billing dept efficiency; target <3%",
+    },
+    {
+        "business_concept": "Claims Quality",
+        "kpi_name": "Clean Claim Rate",
+        "silver_columns": "silver_claims.is_clean_claim",
+        "formula": "SUM(is_clean_claim)/COUNT(claims)×100",
+        "business_rule": "Claims passing payer edits on first submission",
+    },
+    {
+        "business_concept": "Claims Quality",
+        "kpi_name": "Denial Rate",
+        "silver_columns": "silver_claims.claim_status",
+        "formula": "COUNT(status='Denied')/COUNT(claims)×100",
+        "business_rule": "Industry benchmark <5%",
+    },
+    {
+        "business_concept": "Claims Quality",
+        "kpi_name": "First-Pass Rate",
+        "silver_columns": "silver_claims.claim_status, silver_claims.is_clean_claim",
+        "formula": "Resolved on first pass/Total×100",
+        "business_rule": "Resolved = Paid or legitimately Denied w/o rework",
+    },
+    {
+        "business_concept": "Claims Quality",
+        "kpi_name": "Charge Lag",
+        "silver_columns": "silver_claims.submission_date, silver_claims.date_of_service",
+        "formula": "AVG(submission_date − date_of_service)",
+        "business_rule": "Target <3 days; delays increase A/R balance",
+    },
+    {
+        "business_concept": "A/R Health",
+        "kpi_name": "Days in A/R",
+        "silver_columns": "silver_claims.total_charge_amount, silver_payments.payment_amount",
+        "formula": "(Charges−Payments)/(Monthly Charges/30)",
+        "business_rule": "Target <40 days; >50 is critical",
+    },
+    {
+        "business_concept": "A/R Health",
+        "kpi_name": "A/R Aging",
+        "silver_columns": "silver_claims.date_of_service, silver_claims.claim_status, silver_payments.payment_amount",
+        "formula": "Outstanding bucketed by age in days",
+        "business_rule": "90+ day bucket should be <15% of total A/R",
+    },
+    {
+        "business_concept": "A/R Health",
+        "kpi_name": "Payment Accuracy Rate",
+        "silver_columns": "silver_payments.is_accurate_payment",
+        "formula": "SUM(is_accurate_payment)/COUNT×100",
+        "business_rule": "Inaccurate payments require follow-up with payer",
+    },
+    {
+        "business_concept": "Recovery",
+        "kpi_name": "Appeal Success Rate",
+        "silver_columns": "silver_denials.appeal_status",
+        "formula": "Successful/Total Appealed×100",
+        "business_rule": "Target >50%; tracks ability to recover denied revenue",
+    },
+    {
+        "business_concept": "Payer Perf.",
+        "kpi_name": "Payer Mix",
+        "silver_columns": "silver_payments.payment_amount, silver_payers.payer_type, silver_claims.payer_id",
+        "formula": "SUM(payments) GROUP BY payer_type",
+        "business_rule": "High self-pay mix → higher collection risk",
+    },
+    {
+        "business_concept": "Payer Perf.",
+        "kpi_name": "Denial Rate by Payer",
+        "silver_columns": "silver_claims.claim_status, silver_claims.payer_id, silver_payers.payer_name",
+        "formula": "Denied/Total GROUP BY payer",
+        "business_rule": "Identifies payers with problematic contracts/edits",
+    },
+    {
+        "business_concept": "Dept Perf.",
+        "kpi_name": "Department Performance",
+        "silver_columns": "silver_encounters.department, silver_payments.payment_amount, silver_claims.encounter_id",
+        "formula": "SUM(payments), COUNT(encounters) GROUP BY dept",
+        "business_rule": "Revenue and volume by clinical department",
+    },
+    {
+        "business_concept": "Provider Perf.",
+        "kpi_name": "Provider Performance",
+        "silver_columns": "silver_providers.provider_id, silver_encounters.provider_id, silver_claims.*, silver_payments.payment_amount",
+        "formula": "SUM(payments)/SUM(charges), Denied/Total GROUP BY provider",
+        "business_rule": "Identifies high-performing and underperforming providers",
+    },
+    {
+        "business_concept": "Procedure Perf.",
+        "kpi_name": "CPT Code Analysis",
+        "silver_columns": "silver_charges.cpt_code, silver_charges.charge_amount, silver_claims.claim_status, silver_payments.payment_amount",
+        "formula": "SUM(charge_amount), denial_rate GROUP BY cpt_code",
+        "business_rule": "High-volume CPTs with high denial rates need coding review",
+    },
+    {
+        "business_concept": "Recovery",
+        "kpi_name": "Underpayment Rate",
+        "silver_columns": "silver_payments.allowed_amount, silver_payments.payment_amount, silver_payers.payer_name",
+        "formula": "COUNT(paid < allowed)/COUNT(payments)×100",
+        "business_rule": "Target ≤5%; systematic underpayment signals contract issues",
+    },
+    {
+        "business_concept": "Claims Quality",
+        "kpi_name": "Clean Claim Breakdown",
+        "silver_columns": "silver_claims.fail_reason, silver_claims.is_clean_claim",
+        "formula": "COUNT(*) GROUP BY fail_reason WHERE NOT clean",
+        "business_rule": "Top fail reasons drive scrubbing rule improvements",
+    },
+    {
+        "business_concept": "Patient Resp.",
+        "kpi_name": "Patient Financial Responsibility",
+        "silver_columns": "silver_payments.allowed_amount, silver_payments.payment_amount, silver_claims.total_charge_amount, silver_payers.payer_type",
+        "formula": "SUM(charge − payment) GROUP BY payer/dept",
+        "business_rule": "High patient responsibility with low collection = bad debt risk",
+    },
+    {
+        "business_concept": "Operational",
+        "kpi_name": "Data Freshness",
+        "silver_columns": "pipeline_runs.domain, pipeline_runs.last_loaded_at, pipeline_runs.row_count",
+        "formula": "NOW() − last_loaded_at per domain",
+        "business_rule": "Stale data (>24h) triggers pipeline investigation",
+    },
 ]
 
 # Aliases for database.py imports (which expect these names without _FALLBACK suffix)
@@ -325,6 +838,7 @@ _SEMANTIC_LAYER = _SEMANTIC_LAYER_FALLBACK
 
 
 # ── Page 1: Data Catalog ──────────────────────────────────────────────
+
 
 def render_data_catalog():
     """Searchable KPI catalog and data tables reference — data pulled live from meta_kpi_catalog."""
@@ -345,10 +859,14 @@ def render_data_catalog():
     """)
     if raw.empty:
         # Fallback to static list when DB isn't ready
-        raw = pd.DataFrame(_KPI_CATALOG_FALLBACK).rename(columns={
-            "Metric": "Metric", "Category": "Category",
-            "Definition": "Definition", "Formula": "Formula",
-        })
+        raw = pd.DataFrame(_KPI_CATALOG_FALLBACK).rename(
+            columns={
+                "Metric": "Metric",
+                "Category": "Category",
+                "Definition": "Definition",
+                "Formula": "Formula",
+            }
+        )
         raw["Benchmark"] = "—"
         st.info("Live DB unavailable — showing static fallback catalog.")
 
@@ -383,6 +901,7 @@ def render_data_catalog():
 
 # ── Page 2: Data Lineage ──────────────────────────────────────────────
 
+
 def render_data_lineage():
     """Medallion Architecture data lineage from CSV sources to the dashboard."""
     st.title("Data Lineage — Medallion Architecture")
@@ -395,37 +914,42 @@ def render_data_lineage():
     )
 
     TABLE_ORDER = [
-        "payers", "patients", "providers", "encounters", "charges",
-        "claims", "payments", "denials", "adjustments", "operating_costs",
+        "payers",
+        "patients",
+        "providers",
+        "encounters",
+        "charges",
+        "claims",
+        "payments",
+        "denials",
+        "adjustments",
+        "operating_costs",
     ]
 
     GOLD_VIEWS = {
-        "gold_monthly_kpis":       ("Monthly KPIs",          ["claims", "payments"]),
-        "gold_payer_performance":  ("Payer Performance",     ["payers", "claims"]),
-        "gold_dept_performance":   ("Dept Performance",      ["encounters", "charges"]),
-        "gold_ar_aging":           ("A/R Aging",             ["claims"]),
-        "gold_denial_analysis":    ("Denial Analysis",       ["denials"]),
+        "gold_monthly_kpis": ("Monthly KPIs", ["claims", "payments"]),
+        "gold_payer_performance": ("Payer Performance", ["payers", "claims"]),
+        "gold_dept_performance": ("Dept Performance", ["encounters", "charges"]),
+        "gold_ar_aging": ("A/R Aging", ["claims"]),
+        "gold_denial_analysis": ("Denial Analysis", ["denials"]),
     }
     DASH_TABS = {
-        "Executive Summary":      ["gold_monthly_kpis"],
-        "Collections & Revenue":  ["gold_monthly_kpis"],
-        "Claims & Denials":       ["gold_denial_analysis"],
-        "A/R Aging & Cash Flow":  ["gold_ar_aging"],
-        "Payer Analysis":         ["gold_payer_performance"],
-        "Dept Performance":       ["gold_dept_performance"],
+        "Executive Summary": ["gold_monthly_kpis"],
+        "Collections & Revenue": ["gold_monthly_kpis"],
+        "Claims & Denials": ["gold_denial_analysis"],
+        "A/R Aging & Cash Flow": ["gold_ar_aging"],
+        "Payer Analysis": ["gold_payer_performance"],
+        "Dept Performance": ["gold_dept_performance"],
     }
 
     # Source system names from DB
-    _ss_df = _query_meta(
-        "SELECT entity_id, COALESCE(source_system, '') AS source_system "
-        "FROM meta_kg_nodes"
-    )
+    _ss_df = _query_meta("SELECT entity_id, COALESCE(source_system, '') AS source_system FROM meta_kg_nodes")
     _csv_source = {} if _ss_df.empty else dict(zip(_ss_df["entity_id"], _ss_df["source_system"]))
 
     def _sanitize_ss_id(name: str) -> str:
         return "ss_" + name.replace(" ", "_").replace("/", "_").replace("&", "and")
 
-    _unique_ss: dict[str, str] = {}   # display_name → node_id
+    _unique_ss: dict[str, str] = {}  # display_name → node_id
     for _t in TABLE_ORDER:
         _sname = _csv_source.get(_t, "")
         if _sname and _sname not in _unique_ss:
@@ -436,94 +960,135 @@ def render_data_lineage():
         _unique_ss = {"Source Systems": "ss_Source_Systems"}
 
     dot = graphviz.Digraph("lineage", format="svg")
-    dot.attr(rankdir="LR", bgcolor="white", fontname="Helvetica",
-             nodesep="0.25", ranksep="1.2", splines="polyline")
-    dot.attr("node", fontname="Helvetica", fontsize="10", style="filled",
-             penwidth="1.5")
+    dot.attr(rankdir="LR", bgcolor="white", fontname="Helvetica", nodesep="0.25", ranksep="1.2", splines="polyline")
+    dot.attr("node", fontname="Helvetica", fontsize="10", style="filled", penwidth="1.5")
     dot.attr("edge", arrowsize="0.7", color="#888888")
 
     # ── Source Systems cluster ───────────────────────────────────────
     with dot.subgraph(name="cluster_source_systems") as c:
-        c.attr(label="SOURCE SYSTEMS", style="rounded",
-               color="#2d6a4f", fontcolor="#1b4332", fontsize="11",
-               bgcolor="#f0faf4", penwidth="1.5")
+        c.attr(
+            label="SOURCE SYSTEMS",
+            style="rounded",
+            color="#2d6a4f",
+            fontcolor="#1b4332",
+            fontsize="11",
+            bgcolor="#f0faf4",
+            penwidth="1.5",
+        )
         for _sname, _nid in _unique_ss.items():
-            c.node(_nid, label=_sname,
-                   shape="component", fillcolor="#d8f3dc", color="#2d6a4f")
+            c.node(_nid, label=_sname, shape="component", fillcolor="#d8f3dc", color="#2d6a4f")
 
     # ── CSV Source cluster ───────────────────────────────────────────
     with dot.subgraph(name="cluster_csv") as c:
-        c.attr(label="CSV SOURCE FILES", style="rounded,dashed",
-               color="#5b8dee", fontcolor="#1a3a8a", fontsize="11",
-               bgcolor="#f0f5ff", penwidth="1.5")
+        c.attr(
+            label="CSV SOURCE FILES",
+            style="rounded,dashed",
+            color="#5b8dee",
+            fontcolor="#1a3a8a",
+            fontsize="11",
+            bgcolor="#f0f5ff",
+            penwidth="1.5",
+        )
         for t in TABLE_ORDER:
             sys_name = _csv_source.get(t, "")
-            c.node(f"csv_{t}", label=f"{t}.csv",
-                   shape="note", fillcolor="#e8f0fe", color="#5b8dee",
-                   tooltip=f"Source: {sys_name}")
+            c.node(
+                f"csv_{t}",
+                label=f"{t}.csv",
+                shape="note",
+                fillcolor="#e8f0fe",
+                color="#5b8dee",
+                tooltip=f"Source: {sys_name}",
+            )
 
     # ── Bronze cluster ───────────────────────────────────────────────
     with dot.subgraph(name="cluster_bronze") as c:
-        c.attr(label="BRONZE LAYER  (raw TEXT)", style="rounded",
-               color="#CD7F32", fontcolor="#8B4513", fontsize="11",
-               bgcolor="#fdf5ed", penwidth="1.5")
+        c.attr(
+            label="BRONZE LAYER  (raw TEXT)",
+            style="rounded",
+            color="#CD7F32",
+            fontcolor="#8B4513",
+            fontsize="11",
+            bgcolor="#fdf5ed",
+            penwidth="1.5",
+        )
         for t in TABLE_ORDER:
-            c.node(f"bronze_{t}", label=f"bronze_{t}",
-                   shape="box3d", fillcolor="#f5e6d0", color="#CD7F32")
+            c.node(f"bronze_{t}", label=f"bronze_{t}", shape="box3d", fillcolor="#f5e6d0", color="#CD7F32")
 
     # ── Silver cluster ───────────────────────────────────────────────
     with dot.subgraph(name="cluster_silver") as c:
-        c.attr(label="SILVER LAYER  (typed + FK)", style="rounded",
-               color="#606060", fontcolor="#404040", fontsize="11",
-               bgcolor="#f5f5f5", penwidth="1.5")
+        c.attr(
+            label="SILVER LAYER  (typed + FK)",
+            style="rounded",
+            color="#606060",
+            fontcolor="#404040",
+            fontsize="11",
+            bgcolor="#f5f5f5",
+            penwidth="1.5",
+        )
         for t in TABLE_ORDER:
-            c.node(f"silver_{t}", label=f"silver_{t}",
-                   shape="box", fillcolor="#e8e8e8", color="#606060",
-                   style="filled,rounded")
+            c.node(
+                f"silver_{t}",
+                label=f"silver_{t}",
+                shape="box",
+                fillcolor="#e8e8e8",
+                color="#606060",
+                style="filled,rounded",
+            )
 
     # ── Gold cluster ─────────────────────────────────────────────────
     with dot.subgraph(name="cluster_gold") as c:
-        c.attr(label="GOLD LAYER  (SQL views)", style="rounded",
-               color="#DAA520", fontcolor="#7B5900", fontsize="11",
-               bgcolor="#fffbe6", penwidth="1.5")
+        c.attr(
+            label="GOLD LAYER  (SQL views)",
+            style="rounded",
+            color="#DAA520",
+            fontcolor="#7B5900",
+            fontsize="11",
+            bgcolor="#fffbe6",
+            penwidth="1.5",
+        )
         for gid, (glabel, _) in GOLD_VIEWS.items():
-            c.node(gid, label=glabel,
-                   shape="diamond", fillcolor="#fff3c4", color="#DAA520",
-                   style="filled")
+            c.node(gid, label=glabel, shape="diamond", fillcolor="#fff3c4", color="#DAA520", style="filled")
 
     # ── Enterprise Services cluster ──────────────────────────────────
     with dot.subgraph(name="cluster_services") as c:
-        c.attr(label="ENTERPRISE SERVICES", style="rounded",
-               color="#9561e2", fontcolor="#5b21b6", fontsize="11",
-               bgcolor="#f5f3ff", penwidth="1.5")
-        c.node("cube_svc", "Cube\nSemantic Layer",
-               shape="box3d", fillcolor="#ede9fe", color="#9561e2")
-        c.node("neo4j_svc", "Neo4j\nKnowledge Graph",
-               shape="cylinder", fillcolor="#dcfce7", color="#38c172")
+        c.attr(
+            label="ENTERPRISE SERVICES",
+            style="rounded",
+            color="#9561e2",
+            fontcolor="#5b21b6",
+            fontsize="11",
+            bgcolor="#f5f3ff",
+            penwidth="1.5",
+        )
+        c.node("cube_svc", "Cube\nSemantic Layer", shape="box3d", fillcolor="#ede9fe", color="#9561e2")
+        c.node("neo4j_svc", "Neo4j\nKnowledge Graph", shape="cylinder", fillcolor="#dcfce7", color="#38c172")
 
     # ── Dashboard cluster ────────────────────────────────────────────
     with dot.subgraph(name="cluster_dash") as c:
-        c.attr(label="DASHBOARD TABS", style="rounded",
-               color="#f66d9b", fontcolor="#9b1b50", fontsize="11",
-               bgcolor="#fff0f5", penwidth="1.5")
+        c.attr(
+            label="DASHBOARD TABS",
+            style="rounded",
+            color="#f66d9b",
+            fontcolor="#9b1b50",
+            fontsize="11",
+            bgcolor="#fff0f5",
+            penwidth="1.5",
+        )
         for tab_label in DASH_TABS:
             safe_id = "tab_" + tab_label.replace(" ", "_").replace("&", "and")
-            c.node(safe_id, label=tab_label,
-                   shape="tab", fillcolor="#fce4ec", color="#f66d9b")
+            c.node(safe_id, label=tab_label, shape="tab", fillcolor="#fce4ec", color="#f66d9b")
 
     # ── Edges: Source Systems → CSV ─────────────────────────────────
     if not _ss_fallback:
         for t in TABLE_ORDER:
             sname = _csv_source.get(t, "")
             if sname and sname in _unique_ss:
-                dot.edge(_unique_ss[sname], f"csv_{t}",
-                         color="#2d6a4f88", style="dashed")
+                dot.edge(_unique_ss[sname], f"csv_{t}", color="#2d6a4f88", style="dashed")
 
     # ── Edges: CSV → Bronze → Silver ────────────────────────────────
     for t in TABLE_ORDER:
         dot.edge(f"csv_{t}", f"bronze_{t}", color="#5b8dee88", style="dashed")
-        dot.edge(f"bronze_{t}", f"silver_{t}", label="  ETL",
-                 fontsize="8", fontcolor="#888888", color="#CD7F3288")
+        dot.edge(f"bronze_{t}", f"silver_{t}", label="  ETL", fontsize="8", fontcolor="#888888", color="#CD7F3288")
 
     # ── Edges: Silver → Gold ─────────────────────────────────────────
     for gid, (_, silver_sources) in GOLD_VIEWS.items():
@@ -533,8 +1098,7 @@ def render_data_lineage():
     # ── Edges: Silver → Enterprise Services ────────────────────────
     dot.edge("silver_claims", "cube_svc", label="  measures", color="#9561e288")
     dot.edge("silver_payments", "cube_svc", color="#9561e288")
-    dot.edge("silver_claims", "neo4j_svc", label="  schema", color="#38c17288",
-             style="dashed")
+    dot.edge("silver_claims", "neo4j_svc", label="  schema", color="#38c17288", style="dashed")
 
     # ── Edges: Gold → Dashboard ──────────────────────────────────────
     for tab_label, gold_sources in DASH_TABS.items():
@@ -543,26 +1107,23 @@ def render_data_lineage():
             dot.edge(gid, safe_id, color="#f66d9b88")
 
     # ── Edges: Enterprise Services → Dashboard ──────────────────────
-    dot.edge("cube_svc", "tab_Executive_Summary", label="  KPIs",
-             color="#9561e288")
-    dot.edge("neo4j_svc", "tab_Executive_Summary", label="  context",
-             color="#38c17288", style="dashed")
+    dot.edge("cube_svc", "tab_Executive_Summary", label="  KPIs", color="#9561e288")
+    dot.edge("neo4j_svc", "tab_Executive_Summary", label="  context", color="#38c17288", style="dashed")
 
     st.graphviz_chart(dot, use_container_width=True)
 
     # ── Source system key ──────────────────────────────────────────────
     st.subheader("Source System Key")
-    st.caption("Each CSV file originates from a real-world source system. "
-               "Node colours in the diagram above match the system category.")
+    st.caption(
+        "Each CSV file originates from a real-world source system. "
+        "Node colours in the diagram above match the system category."
+    )
     seen: dict = {}
     for tbl in TABLE_ORDER:
         sys_name = _csv_source.get(tbl, "Unknown")
         seen.setdefault(sys_name, []).append(f"{tbl}.csv")
     st.dataframe(
-        pd.DataFrame([
-            {"Source System": sys, "CSV Files": ", ".join(files)}
-            for sys, files in sorted(seen.items())
-        ]),
+        pd.DataFrame([{"Source System": sys, "CSV Files": ", ".join(files)} for sys, files in sorted(seen.items())]),
         use_container_width=True,
         hide_index=True,
     )
@@ -573,85 +1134,85 @@ def render_data_lineage():
     st.subheader("Medallion Pipeline Stages")
     pipeline_table = [
         {
-            "Layer":       "Source",
-            "Stage":       "0. Source Systems",
-            "Component":   "EHR, Clearinghouse, Payer Master, Billing System, ERP/Finance",
-            "Input":       "—",
-            "Output":      "Raw data exports → CSV files",
+            "Layer": "Source",
+            "Stage": "0. Source Systems",
+            "Component": "EHR, Clearinghouse, Payer Master, Billing System, ERP/Finance",
+            "Input": "—",
+            "Output": "Raw data exports → CSV files",
             "Description": "Operational systems that originate patient, payer, charge, and "
-                           "payment data. Each exports one or more CSV files into the "
-                           "data/ directory.",
+            "payment data. Each exports one or more CSV files into the "
+            "data/ directory.",
         },
         {
-            "Layer":       "Source",
-            "Stage":       "1. CSV Ingest",
-            "Component":   "data/*.csv (10 files)",
-            "Input":       "—",
-            "Output":      "Raw CSV rows",
+            "Layer": "Source",
+            "Stage": "1. CSV Ingest",
+            "Component": "data/*.csv (10 files)",
+            "Input": "—",
+            "Output": "Raw CSV rows",
             "Description": "Original source files; loaded once per database init.",
         },
         {
-            "Layer":       "Bronze",
-            "Stage":       "2. Raw Landing",
-            "Component":   "database.py → load_csv_to_bronze()",
-            "Input":       "CSV files",
-            "Output":      "bronze_* tables (all TEXT)",
+            "Layer": "Bronze",
+            "Stage": "2. Raw Landing",
+            "Component": "database.py → load_csv_to_bronze()",
+            "Input": "CSV files",
+            "Output": "bronze_* tables (all TEXT)",
             "Description": "Data lands as-is. All columns TEXT. _loaded_at timestamp records ingestion time.",
         },
         {
-            "Layer":       "Silver",
-            "Stage":       "3. ETL Transform",
-            "Component":   "database.py → _etl_bronze_to_silver()",
-            "Input":       "bronze_* tables",
-            "Output":      "silver_* tables (typed)",
+            "Layer": "Silver",
+            "Stage": "3. ETL Transform",
+            "Component": "database.py → _etl_bronze_to_silver()",
+            "Input": "bronze_* tables",
+            "Output": "silver_* tables (typed)",
             "Description": "CAST to REAL/INTEGER, normalise booleans ('True'→1), enforce FK constraints, skip NULL PKs.",
         },
         {
-            "Layer":       "Gold",
-            "Stage":       "4. Gold Views",
-            "Component":   "database.py → gold_* SQL VIEWs (5 views)",
-            "Input":       "silver_* tables",
-            "Output":      "Pre-aggregated KPI views",
+            "Layer": "Gold",
+            "Stage": "4. Gold Views",
+            "Component": "database.py → gold_* SQL VIEWs (5 views)",
+            "Input": "silver_* tables",
+            "Output": "Pre-aggregated KPI views",
             "Description": "SQL VIEWs aggregate Silver by month, payer, dept, aging bucket, denial code.",
         },
         {
-            "Layer":       "Silver",
-            "Stage":       "5. Validate",
-            "Component":   "validators.py → validate_all(db_path)",
-            "Input":       "silver_* tables (via SQL)",
-            "Output":      "Issue list",
+            "Layer": "Silver",
+            "Stage": "5. Validate",
+            "Component": "validators.py → validate_all(db_path)",
+            "Input": "silver_* tables (via SQL)",
+            "Output": "Issue list",
             "Description": "6 SQL COUNT assertions directly against Silver tables; issues shown in sidebar Data Quality panel.",
         },
         {
-            "Layer":       "Application",
-            "Stage":       "6. Build FilterParams",
-            "Component":   "app.py sidebar widgets",
-            "Input":       "User selections (date, payer, dept, enc type)",
-            "Output":      "FilterParams dataclass",
+            "Layer": "Application",
+            "Stage": "6. Build FilterParams",
+            "Component": "app.py sidebar widgets",
+            "Input": "User selections (date, payer, dept, enc type)",
+            "Output": "FilterParams dataclass",
             "Description": "Packages 4 filter dimensions into a typed dataclass; passed to all 17 metric functions.",
         },
         {
-            "Layer":       "Silver",
-            "Stage":       "7. KPI Metrics",
-            "Component":   "metrics.py → query_*(FilterParams)",
-            "Input":       "FilterParams + silver_* tables (via parameterized SQL)",
-            "Output":      "(scalar, DataFrame) or DataFrame per KPI",
+            "Layer": "Silver",
+            "Stage": "7. KPI Metrics",
+            "Component": "metrics.py → query_*(FilterParams)",
+            "Input": "FilterParams + silver_* tables (via parameterized SQL)",
+            "Output": "(scalar, DataFrame) or DataFrame per KPI",
             "Description": "17 SQL queries using build_filter_cte() CTE pattern; filters applied at the database level.",
         },
         {
-            "Layer":       "Application",
-            "Stage":       "8. Sidebar Widgets",
-            "Component":   "data_loader.py → load_all_data()",
-            "Input":       "silver_* tables",
-            "Output":      "Payer / dept / enc-type dropdown options",
+            "Layer": "Application",
+            "Stage": "8. Sidebar Widgets",
+            "Component": "data_loader.py → load_all_data()",
+            "Input": "silver_* tables",
+            "Output": "Payer / dept / enc-type dropdown options",
             "Description": "Loads minimal Silver data to populate sidebar filter dropdowns; cached by @st.cache_data.",
         },
         {
-            "Layer":       "Presentation",
-            "Stage":       "9. Visualize",
-            "Component":   "app.py tabs 1–6",
-            "Input":       "Metric results",
-            "Output":      "Plotly charts, KPI scorecards",
+            "Layer": "Presentation",
+            "Stage": "9. Visualize",
+            "Component": "app.py tabs 1–6",
+            "Input": "Metric results",
+            "Output": "Plotly charts, KPI scorecards",
             "Description": "6 dashboard tabs render charts and KPI cards from metric outputs.",
         },
     ]
@@ -660,16 +1221,20 @@ def render_data_lineage():
 
 # ── Page 3: Knowledge Graph ───────────────────────────────────────────
 
+
 def render_knowledge_graph():
     """Interactive entity-relationship diagram — sourced from Neo4j, falls back to DuckDB."""
     st.title("Knowledge Graph")
-    st.caption("Entity relationships across the 10 data tables. Powered by Neo4j (with DuckDB fallback).")
+    st.caption(
+        "Entity relationships across the 10 data tables (11 foreign-key relationships). Powered by Neo4j (with DuckDB fallback)."
+    )
 
     # ── Try Neo4j first, fall back to DuckDB ─────────────────────────
     neo4j_nodes = None
     neo4j_edges = None
     try:
         from src.neo4j_client import get_kg_edges, get_kg_nodes
+
         neo4j_nodes = get_kg_nodes()
         neo4j_edges = get_kg_edges()
         _using_neo4j = neo4j_nodes is not None
@@ -679,35 +1244,31 @@ def render_knowledge_graph():
     if neo4j_nodes:
         desc_map = {n["entity_id"]: n["description"] for n in neo4j_nodes}
     else:
-        nodes_meta = _query_meta(
-            "SELECT entity_id, silver_table, description FROM meta_kg_nodes"
-        )
-        desc_map = (
-            {row.entity_id: row.description for _, row in nodes_meta.iterrows()}
-            if not nodes_meta.empty else {}
-        )
+        nodes_meta = _query_meta("SELECT entity_id, silver_table, description FROM meta_kg_nodes")
+        desc_map = {row.entity_id: row.description for _, row in nodes_meta.iterrows()} if not nodes_meta.empty else {}
 
     if neo4j_edges:
         live_edges = [
-            {"source": e["parent_entity"], "target": e["child_entity"],
-             "label": f"{e['cardinality']}\\n({e['join_column']})"}
+            {
+                "source": e["parent_entity"],
+                "target": e["child_entity"],
+                "label": f"{e['cardinality']}\\n({e['join_column']})",
+            }
             for e in neo4j_edges
         ]
     else:
-        edges_meta = _query_meta(
-            "SELECT parent_entity, child_entity, join_column, cardinality FROM meta_kg_edges"
-        )
+        edges_meta = _query_meta("SELECT parent_entity, child_entity, join_column, cardinality FROM meta_kg_edges")
         if not edges_meta.empty:
             live_edges = [
-                {"source": row.parent_entity, "target": row.child_entity,
-                 "label": f"{row.cardinality}\\n({row.join_column})"}
+                {
+                    "source": row.parent_entity,
+                    "target": row.child_entity,
+                    "label": f"{row.cardinality}\\n({row.join_column})",
+                }
                 for _, row in edges_meta.iterrows()
             ]
         else:
-            live_edges = [
-                {**e, "label": e.get("label", "").replace(" (", "\\n(")}
-                for e in _KG_EDGES
-            ]
+            live_edges = [{**e, "label": e.get("label", "").replace(" (", "\\n(")} for e in _KG_EDGES]
 
     if _using_neo4j:
         st.success("Connected to Neo4j", icon="✅")
@@ -716,44 +1277,67 @@ def render_knowledge_graph():
 
     # ── Category → node grouping ─────────────────────────────────────
     _GROUPS = {
-        "Reference":     {"nodes": ["payers", "patients", "providers"],
-                          "color": "#dbeafe", "border": "#5b8dee", "fontcolor": "#1a3a8a"},
-        "Transactional": {"nodes": ["encounters", "charges", "claims",
-                                     "payments", "denials", "adjustments"],
-                          "color": "#dcfce7", "border": "#38c172", "fontcolor": "#166534"},
-        "Operational":   {"nodes": ["operating_costs"],
-                          "color": "#fef3c7", "border": "#e8a838", "fontcolor": "#92400e"},
+        "Reference": {
+            "nodes": ["payers", "patients", "providers"],
+            "color": "#dbeafe",
+            "border": "#5b8dee",
+            "fontcolor": "#1a3a8a",
+        },
+        "Transactional": {
+            "nodes": ["encounters", "charges", "claims", "payments", "denials", "adjustments"],
+            "color": "#dcfce7",
+            "border": "#38c172",
+            "fontcolor": "#166534",
+        },
+        "Operational": {"nodes": ["operating_costs"], "color": "#fef3c7", "border": "#e8a838", "fontcolor": "#92400e"},
     }
 
     dot = graphviz.Digraph("kg", format="svg")
-    dot.attr(rankdir="TB", bgcolor="white", fontname="Helvetica",
-             nodesep="0.3", ranksep="0.5", splines="ortho",
-             size="10,6", ratio="compress")
-    dot.attr("node", fontname="Helvetica", fontsize="9", style="filled,rounded",
-             shape="box", penwidth="1.5", width="1.2", height="0.35")
-    dot.attr("edge", fontname="Helvetica", fontsize="7", color="#555555",
-             arrowsize="0.6", penwidth="1.0")
+    dot.attr(
+        rankdir="TB",
+        bgcolor="white",
+        fontname="Helvetica",
+        nodesep="0.3",
+        ranksep="0.5",
+        splines="ortho",
+        size="10,6",
+        ratio="compress",
+    )
+    dot.attr(
+        "node",
+        fontname="Helvetica",
+        fontsize="9",
+        style="filled,rounded",
+        shape="box",
+        penwidth="1.5",
+        width="1.2",
+        height="0.35",
+    )
+    dot.attr("edge", fontname="Helvetica", fontsize="7", color="#555555", arrowsize="0.6", penwidth="1.0")
 
     # Create subgraph clusters per category
     for group_name, cfg in _GROUPS.items():
         with dot.subgraph(name=f"cluster_{group_name}") as c:
-            c.attr(label=f"  {group_name}  ", style="rounded,filled",
-                   color=cfg["border"], fontcolor=cfg["fontcolor"],
-                   fontsize="11", bgcolor=cfg["color"], penwidth="2")
+            c.attr(
+                label=f"  {group_name}  ",
+                style="rounded,filled",
+                color=cfg["border"],
+                fontcolor=cfg["fontcolor"],
+                fontsize="11",
+                bgcolor=cfg["color"],
+                penwidth="2",
+            )
             for nid in cfg["nodes"]:
                 node_data = next((n for n in _KG_NODES if n["id"] == nid), None)
                 if not node_data:
                     continue
                 label = f"silver_{nid}"
                 tooltip = desc_map.get(nid, node_data.get("hover", ""))
-                c.node(nid, label=label, fillcolor="white",
-                       color=cfg["border"], tooltip=tooltip)
+                c.node(nid, label=label, fillcolor="white", color=cfg["border"], tooltip=tooltip)
 
     # Draw edges with cardinality labels
     for edge in live_edges:
-        dot.edge(edge["source"], edge["target"],
-                 label=f"  {edge['label']}  ",
-                 fontcolor="#555555")
+        dot.edge(edge["source"], edge["target"], label=f"  {edge['label']}  ", fontcolor="#555555")
 
     st.graphviz_chart(dot, use_container_width=True)
 
@@ -769,12 +1353,18 @@ def render_knowledge_graph():
     # ── Relationships table ─────────────────────────────────────────────
     st.subheader("Relationships")
     if neo4j_edges:
-        rel_df = pd.DataFrame([
-            {"Parent Table": e["parent_entity"], "Child Table": e["child_entity"],
-             "Join Column": e["join_column"], "Cardinality": e["cardinality"],
-             "Business Meaning": e["business_meaning"]}
-            for e in neo4j_edges
-        ])
+        rel_df = pd.DataFrame(
+            [
+                {
+                    "Parent Table": e["parent_entity"],
+                    "Child Table": e["child_entity"],
+                    "Join Column": e["join_column"],
+                    "Cardinality": e["cardinality"],
+                    "Business Meaning": e["business_meaning"],
+                }
+                for e in neo4j_edges
+            ]
+        )
     else:
         rel_df = _query_meta("""
             SELECT parent_entity   AS "Parent Table",
@@ -786,16 +1376,23 @@ def render_knowledge_graph():
             ORDER  BY parent_entity, child_entity
         """)
         if rel_df.empty:
-            rel_df = pd.DataFrame([
-                {"Parent Table": r["parent_table"], "Child Table": r["child_table"],
-                 "Join Column": r["join_column"], "Cardinality": r["cardinality"],
-                 "Business Meaning": r["business_meaning"]}
-                for r in _KG_RELATIONSHIPS
-            ])
+            rel_df = pd.DataFrame(
+                [
+                    {
+                        "Parent Table": r["parent_table"],
+                        "Child Table": r["child_table"],
+                        "Join Column": r["join_column"],
+                        "Cardinality": r["cardinality"],
+                        "Business Meaning": r["business_meaning"],
+                    }
+                    for r in _KG_RELATIONSHIPS
+                ]
+            )
     st.dataframe(rel_df, use_container_width=True, hide_index=True)
 
 
 # ── Page 4: Semantic Layer ────────────────────────────────────────────
+
 
 def render_semantic_layer():
     """Business concept → KPI → raw column mapping. Powered by Cube with DuckDB fallback."""
@@ -806,6 +1403,7 @@ def render_semantic_layer():
     _using_cube = False
     try:
         from src.cube_client import get_semantic_mappings, is_cube_available
+
         _using_cube = is_cube_available()
     except Exception:
         pass
@@ -816,45 +1414,55 @@ def render_semantic_layer():
     st.subheader("Business Concept Map")
 
     _CONCEPT_KPIS = {
-        "Revenue":           {"color": "#e3342f", "bg": "#fef2f2",
-                              "kpis": ["Bad Debt Rate", "Avg Reimbursement"]},
-        "Collections":       {"color": "#e8a838", "bg": "#fffbeb",
-                              "kpis": ["NCR", "GCR", "Cost to Collect"]},
-        "Claims Quality":    {"color": "#38c172", "bg": "#f0fdf4",
-                              "kpis": ["Clean Claim Rate", "Denial Rate",
-                                       "First-Pass Rate", "Charge Lag"]},
-        "A/R Health":        {"color": "#5b8dee", "bg": "#eff6ff",
-                              "kpis": ["Days in A/R", "A/R Aging",
-                                       "Payment Accuracy"]},
-        "Recovery":          {"color": "#20c997", "bg": "#ecfdf5",
-                              "kpis": ["Appeal Success Rate", "Denial Reasons"]},
-        "Payer Perf.":       {"color": "#9561e2", "bg": "#f5f3ff",
-                              "kpis": ["Payer Mix", "Denial Rate by Payer"]},
-        "Dept Perf.":        {"color": "#f66d9b", "bg": "#fdf2f8",
-                              "kpis": ["Dept Performance"]},
+        "Revenue": {"color": "#e3342f", "bg": "#fef2f2", "kpis": ["Bad Debt Rate", "Avg Reimbursement"]},
+        "Collections": {
+            "color": "#e8a838",
+            "bg": "#fffbeb",
+            "kpis": ["NCR", "GCR", "Cost to Collect", "Patient Responsibility"],
+        },
+        "Claims Quality": {
+            "color": "#38c172",
+            "bg": "#f0fdf4",
+            "kpis": ["Clean Claim Rate", "Denial Rate", "First-Pass Rate", "Charge Lag", "Scrubbing Breakdown"],
+        },
+        "A/R Health": {"color": "#5b8dee", "bg": "#eff6ff", "kpis": ["Days in A/R", "A/R Aging", "Payment Accuracy"]},
+        "Recovery": {
+            "color": "#20c997",
+            "bg": "#ecfdf5",
+            "kpis": ["Appeal Success Rate", "Denial Reasons", "Underpayment Rate"],
+        },
+        "Payer Perf.": {"color": "#9561e2", "bg": "#f5f3ff", "kpis": ["Payer Mix", "Denial Rate by Payer"]},
+        "Dept Perf.": {"color": "#f66d9b", "bg": "#fdf2f8", "kpis": ["Dept Performance"]},
+        "Provider Perf.": {"color": "#6366f1", "bg": "#eef2ff", "kpis": ["Provider Scorecard"]},
+        "Procedure Perf.": {"color": "#0891b2", "bg": "#ecfeff", "kpis": ["CPT Code Analysis"]},
+        "Operational": {"color": "#78716c", "bg": "#fafaf9", "kpis": ["Data Freshness"]},
     }
 
     dot = graphviz.Digraph("semantic", format="svg")
-    dot.attr(rankdir="TB", bgcolor="white", fontname="Helvetica",
-             nodesep="0.4", ranksep="0.6", splines="polyline")
-    dot.attr("node", fontname="Helvetica", fontsize="10", style="filled,rounded",
-             penwidth="1.5")
+    dot.attr(rankdir="TB", bgcolor="white", fontname="Helvetica", nodesep="0.4", ranksep="0.6", splines="polyline")
+    dot.attr("node", fontname="Helvetica", fontsize="10", style="filled,rounded", penwidth="1.5")
     dot.attr("edge", arrowsize="0.7", penwidth="1.2")
 
     for concept, cfg in _CONCEPT_KPIS.items():
         # Concept node — large, colored
         cid = f"concept_{concept}"
-        dot.node(cid, label=concept, shape="box",
-                 fillcolor=cfg["bg"], color=cfg["color"],
-                 fontcolor=cfg["color"], fontsize="12",
-                 penwidth="2.5", width="1.8", height="0.5")
+        dot.node(
+            cid,
+            label=concept,
+            shape="box",
+            fillcolor=cfg["bg"],
+            color=cfg["color"],
+            fontcolor=cfg["color"],
+            fontsize="12",
+            penwidth="2.5",
+            width="1.8",
+            height="0.5",
+        )
 
         # KPI nodes — smaller, white with colored border
         for kpi in cfg["kpis"]:
             kid = f"kpi_{kpi}"
-            dot.node(kid, label=kpi, shape="ellipse",
-                     fillcolor="white", color=cfg["color"],
-                     fontsize="9")
+            dot.node(kid, label=kpi, shape="ellipse", fillcolor="white", color=cfg["color"], fontsize="9")
             dot.edge(cid, kid, color=cfg["color"] + "99")
 
     st.subheader("Business Concepts → KPIs")
@@ -869,12 +1477,18 @@ def render_semantic_layer():
         try:
             mappings = get_semantic_mappings()
             if mappings:
-                sem_df = pd.DataFrame([
-                    {"Business Concept": m["business_concept"], "KPI": m["kpi_name"],
-                     "Silver Columns": m["silver_columns"], "Transformation": m["formula"],
-                     "Business Rule": m["business_rule"]}
-                    for m in mappings
-                ])
+                sem_df = pd.DataFrame(
+                    [
+                        {
+                            "Business Concept": m["business_concept"],
+                            "KPI": m["kpi_name"],
+                            "Silver Columns": m["silver_columns"],
+                            "Transformation": m["formula"],
+                            "Business Rule": m["business_rule"],
+                        }
+                        for m in mappings
+                    ]
+                )
         except Exception:
             pass
     if sem_df.empty:
@@ -888,12 +1502,18 @@ def render_semantic_layer():
             ORDER  BY business_concept, kpi_name
         """)
     if sem_df.empty:
-        sem_df = pd.DataFrame([
-            {"Business Concept": r["business_concept"], "KPI": r["kpi_name"],
-             "Silver Columns": r["silver_columns"], "Transformation": r["formula"],
-             "Business Rule": r["business_rule"]}
-            for r in _SEMANTIC_LAYER_FALLBACK
-        ])
+        sem_df = pd.DataFrame(
+            [
+                {
+                    "Business Concept": r["business_concept"],
+                    "KPI": r["kpi_name"],
+                    "Silver Columns": r["silver_columns"],
+                    "Transformation": r["formula"],
+                    "Business Rule": r["business_rule"],
+                }
+                for r in _SEMANTIC_LAYER_FALLBACK
+            ]
+        )
     st.dataframe(sem_df, use_container_width=True, hide_index=True)
 
     st.divider()
@@ -922,19 +1542,20 @@ Sidebar Selections
                                  [AND e.encounter_type = ?]    -- when enc-type filter active
                            )
         │
-        ▼  (CTE reused by all 17 query_* functions)
+        ▼  (CTE reused by all 26 query_* functions)
   silver_payments    (JOIN filtered_claims ON claim_id)
   silver_denials     (JOIN filtered_claims ON claim_id)
   silver_adjustments (JOIN filtered_claims ON claim_id)
   silver_encounters  (JOIN filtered_claims ON encounter_id)
   silver_charges     (via silver_encounters ON encounter_id)
 
-All 23 query_* functions use this CTE — filters applied at the database level, not in memory.
+All 26 query_* functions use this CTE — filters applied at the database level, not in memory.
 ```
 """)
 
 
 # ── Page 5: AI Architecture ───────────────────────────────────────────
+
 
 def render_ai_architecture():
     """Process diagram: how the AI chat tab answers RCM questions."""
@@ -959,57 +1580,109 @@ Every AI response follows a **three-stage pipeline**:
     st.subheader("Process Flow Diagram")
 
     dot = graphviz.Digraph("ai_arch", format="svg")
-    dot.attr(rankdir="TB", bgcolor="white", fontname="Helvetica",
-             nodesep="0.5", ranksep="0.7", splines="ortho", compound="true")
-    dot.attr("node", fontname="Helvetica", fontsize="10", style="filled,rounded",
-             penwidth="1.5")
-    dot.attr("edge", fontname="Helvetica", fontsize="8", penwidth="1.2",
-             arrowsize="0.8")
+    dot.attr(
+        rankdir="TB",
+        bgcolor="white",
+        fontname="Helvetica",
+        nodesep="0.5",
+        ranksep="0.7",
+        splines="ortho",
+        compound="true",
+    )
+    dot.attr("node", fontname="Helvetica", fontsize="10", style="filled,rounded", penwidth="1.5")
+    dot.attr("edge", fontname="Helvetica", fontsize="8", penwidth="1.2", arrowsize="0.8")
 
     # ── Context Assembly cluster ─────────────────────────────────────
     with dot.subgraph(name="cluster_context") as c:
-        c.attr(label="CONTEXT ASSEMBLY", style="rounded,filled",
-               color="#5b8dee", fontcolor="#1a3a8a", fontsize="12",
-               bgcolor="#eff6ff", penwidth="2")
-        c.node("cube_api", "Cube Semantic Layer\n(measures, dimensions, joins)",
-               shape="box3d", fillcolor="#fef3c7", color="#e8a838")
-        c.node("neo4j_db", "Neo4j Knowledge Graph\n(10 entities, 9 FKs)",
-               shape="cylinder", fillcolor="#dcfce7", color="#38c172")
-        c.node("meta_kpi", "meta_kpi_catalog\n(23 KPI definitions)",
-               shape="cylinder", fillcolor="#ede9fe", color="#9561e2")
-        c.node("live_kpis", "Live KPI Snapshot\n(current filter values)",
-               shape="box", fillcolor="#fef3c7", color="#e8a838")
-        c.node("sys_prompt", "System Prompt",
-               shape="box", fillcolor="#dbeafe", color="#5b6af0",
-               fontsize="12", penwidth="2.5")
+        c.attr(
+            label="CONTEXT ASSEMBLY",
+            style="rounded,filled",
+            color="#5b8dee",
+            fontcolor="#1a3a8a",
+            fontsize="12",
+            bgcolor="#eff6ff",
+            penwidth="2",
+        )
+        c.node(
+            "cube_api",
+            "Cube Semantic Layer\n(measures, dimensions, joins)",
+            shape="box3d",
+            fillcolor="#fef3c7",
+            color="#e8a838",
+        )
+        c.node(
+            "neo4j_db",
+            "Neo4j Knowledge Graph\n(10 entities, 11 FKs)",
+            shape="cylinder",
+            fillcolor="#dcfce7",
+            color="#38c172",
+        )
+        c.node(
+            "meta_kpi", "meta_kpi_catalog\n(23 KPI definitions)", shape="cylinder", fillcolor="#ede9fe", color="#9561e2"
+        )
+        c.node(
+            "live_kpis", "Live KPI Snapshot\n(current filter values)", shape="box", fillcolor="#fef3c7", color="#e8a838"
+        )
+        c.node(
+            "sys_prompt",
+            "System Prompt",
+            shape="box",
+            fillcolor="#dbeafe",
+            color="#5b6af0",
+            fontsize="12",
+            penwidth="2.5",
+        )
 
     # ── LLM Engine cluster ───────────────────────────────────────────
     with dot.subgraph(name="cluster_llm") as c:
-        c.attr(label="LLM ENGINE", style="rounded,filled",
-               color="#38c172", fontcolor="#166534", fontsize="12",
-               bgcolor="#f0fdf4", penwidth="2")
-        c.node("user_q", "User Question",
-               shape="parallelogram", fillcolor="#dbeafe", color="#5b8dee")
-        c.node("llm", "OpenRouter LLM\n(model selection)",
-               shape="hexagon", fillcolor="#bbf7d0", color="#38c172",
-               fontsize="12", penwidth="2.5", width="2")
-        c.node("final_ans", "Final Answer",
-               shape="parallelogram", fillcolor="#dbeafe", color="#5b8dee")
+        c.attr(
+            label="LLM ENGINE",
+            style="rounded,filled",
+            color="#38c172",
+            fontcolor="#166534",
+            fontsize="12",
+            bgcolor="#f0fdf4",
+            penwidth="2",
+        )
+        c.node("user_q", "User Question", shape="parallelogram", fillcolor="#dbeafe", color="#5b8dee")
+        c.node(
+            "llm",
+            "OpenRouter LLM\n(model selection)",
+            shape="hexagon",
+            fillcolor="#bbf7d0",
+            color="#38c172",
+            fontsize="12",
+            penwidth="2.5",
+            width="2",
+        )
+        c.node("final_ans", "Final Answer", shape="parallelogram", fillcolor="#dbeafe", color="#5b8dee")
 
     # ── SQL Tool Loop cluster ────────────────────────────────────────
     with dot.subgraph(name="cluster_tool") as c:
-        c.attr(label="SQL TOOL LOOP  (up to 8 iterations)", style="rounded,filled",
-               color="#f56b00", fontcolor="#7a3000", fontsize="12",
-               bgcolor="#fff7ed", penwidth="2")
-        c.node("run_sql", "run_sql() Tool\n(read-only SELECT/WITH)",
-               shape="box", fillcolor="#fed7aa", color="#f56b00",
-               penwidth="2.5")
-        c.node("silver_db", "silver_* Tables\n(10 typed tables)",
-               shape="cylinder", fillcolor="#e8e8e8", color="#7a7a7a")
-        c.node("gold_db", "gold_* Views\n(5 aggregated views)",
-               shape="cylinder", fillcolor="#fff3c4", color="#B8860B")
-        c.node("meta_db", "meta_* Tables\n(4 AI-queryable tables)",
-               shape="cylinder", fillcolor="#ede9fe", color="#9561e2")
+        c.attr(
+            label="SQL TOOL LOOP  (up to 8 iterations)",
+            style="rounded,filled",
+            color="#f56b00",
+            fontcolor="#7a3000",
+            fontsize="12",
+            bgcolor="#fff7ed",
+            penwidth="2",
+        )
+        c.node(
+            "run_sql",
+            "run_sql() Tool\n(read-only SELECT/WITH)",
+            shape="box",
+            fillcolor="#fed7aa",
+            color="#f56b00",
+            penwidth="2.5",
+        )
+        c.node(
+            "silver_db", "silver_* Tables\n(10 typed tables)", shape="cylinder", fillcolor="#e8e8e8", color="#7a7a7a"
+        )
+        c.node("gold_db", "gold_* Views\n(5 aggregated views)", shape="cylinder", fillcolor="#fff3c4", color="#B8860B")
+        c.node(
+            "meta_db", "meta_* Tables\n(4 AI-queryable tables)", shape="cylinder", fillcolor="#ede9fe", color="#9561e2"
+        )
 
     # ── Edges: Context assembly ──────────────────────────────────────
     # ── Edges: Context assembly ──────────────────────────────────────
@@ -1025,14 +1698,12 @@ Every AI response follows a **three-stage pipeline**:
 
     # ── Edges: Tool calling loop ─────────────────────────────────────
     dot.edge("llm", "run_sql", label="tool call →", color="#38c172")
-    dot.edge("run_sql", "llm", label="← results", color="#f56b00",
-             style="dashed")
+    dot.edge("run_sql", "llm", label="← results", color="#f56b00", style="dashed")
 
     # ── Edges: Database access ───────────────────────────────────────
     dot.edge("run_sql", "silver_db", label="SELECT", color="#7a7a7a")
     dot.edge("run_sql", "gold_db", label="SELECT", color="#B8860B")
-    dot.edge("meta_db", "sys_prompt", label="DuckDB fallback",
-             color="#9561e2", style="dashed")
+    dot.edge("meta_db", "sys_prompt", label="DuckDB fallback", color="#9561e2", style="dashed")
 
     st.graphviz_chart(dot, use_container_width=True)
 
@@ -1049,7 +1720,7 @@ Every AI response follows a **three-stage pipeline**:
 | Source | Content passed to LLM | Fallback |
 |--------|----------------------|----------|
 | **Cube** semantic layer | Measures, dimensions, joins, business rules | DuckDB `meta_semantic_layer` |
-| **Neo4j** knowledge graph | 10 entities, 9 FK relationships, schema descriptions | DuckDB `meta_kg_nodes` / `meta_kg_edges` |
+| **Neo4j** knowledge graph | 10 entities, 11 FK relationships, schema descriptions | DuckDB `meta_kg_nodes` / `meta_kg_edges` |
 | DuckDB `meta_kpi_catalog` | 23 KPI names, formulas, categories, benchmarks | Static Python fallback |
 
 The **live KPI snapshot** appends current metric values and active sidebar
@@ -1136,12 +1807,11 @@ selections are automatically reflected in the AI's context.
 
 # ── Page 6: Data Validation ───────────────────────────────────────────
 
+
 def render_data_validation(issues: list[dict]):
     """Data validation results page — displays output from the 6 Silver-layer checks."""
     st.title("Data Validation")
-    st.caption(
-        "Results from 6 automated quality checks run against the Silver layer on every app startup."
-    )
+    st.caption("Results from 6 automated quality checks run against the Silver layer on every app startup.")
 
     # ── Summary scorecards ────────────────────────────────────────────
     total_checks = 6
@@ -1155,8 +1825,12 @@ def render_data_validation(issues: list[dict]):
     with col2:
         st.metric("Issues Found", issue_count)
     with col3:
-        st.metric("Errors", error_count, delta=None if error_count == 0 else f"{error_count} critical",
-                   delta_color="off" if error_count == 0 else "inverse")
+        st.metric(
+            "Errors",
+            error_count,
+            delta=None if error_count == 0 else f"{error_count} critical",
+            delta_color="off" if error_count == 0 else "inverse",
+        )
     with col4:
         st.metric("Warnings", warning_count)
 
@@ -1173,24 +1847,29 @@ def render_data_validation(issues: list[dict]):
 
         # Build DataFrame
         issues_df = pd.DataFrame(issues)
-        issues_df["Level"] = issues_df["level"].map(
-            {"error": "🔴 Error", "warning": "🟡 Warning"}
-        ).fillna(issues_df["level"])
-        issues_df = issues_df.rename(columns={
-            "table": "Table", "message": "Message",
-        })[["Level", "Table", "Message"]]
+        issues_df["Level"] = (
+            issues_df["level"].map({"error": "🔴 Error", "warning": "🟡 Warning"}).fillna(issues_df["level"])
+        )
+        issues_df = issues_df.rename(
+            columns={
+                "table": "Table",
+                "message": "Message",
+            }
+        )[["Level", "Table", "Message"]]
 
         # Filters
         col_f1, col_f2 = st.columns(2)
         with col_f1:
             level_filter = st.selectbox(
-                "Filter by level", ["All", "🔴 Error", "🟡 Warning"],
+                "Filter by level",
+                ["All", "🔴 Error", "🟡 Warning"],
                 key="dv_level_filter",
             )
         with col_f2:
             tables = ["All"] + sorted(issues_df["Table"].unique().tolist())
             table_filter = st.selectbox(
-                "Filter by table", tables,
+                "Filter by table",
+                tables,
                 key="dv_table_filter",
             )
 
@@ -1211,44 +1890,46 @@ def render_data_validation(issues: list[dict]):
     st.subheader("Validation Checks Reference")
     st.caption("These 6 checks run automatically against Silver-layer tables on every app startup.")
 
-    checks_ref = pd.DataFrame([
-        {
-            "Check": "Negative Amounts",
-            "Level": "Warning",
-            "Tables Checked": "silver_claims, silver_payments, silver_denials, silver_adjustments, silver_operating_costs",
-            "Description": "Flags monetary columns (charges, payments, denied amounts, adjustments, RCM costs) that contain negative values.",
-        },
-        {
-            "Check": "Orphaned Foreign Keys",
-            "Level": "Warning",
-            "Tables Checked": "silver_payments, silver_denials, silver_adjustments, silver_claims, silver_encounters",
-            "Description": "Detects rows where a foreign-key column references an ID that does not exist in the parent table.",
-        },
-        {
-            "Check": "Required Nulls",
-            "Level": "Error",
-            "Tables Checked": "silver_claims, silver_payments, silver_denials, silver_adjustments, silver_encounters, silver_payers",
-            "Description": "Flags NULL values in columns that are required for business logic (primary keys, amounts, statuses).",
-        },
-        {
-            "Check": "Date Ranges",
-            "Level": "Warning",
-            "Tables Checked": "silver_claims, silver_payments, silver_denials, silver_encounters, silver_charges",
-            "Description": "Flags date columns with values outside the plausible range (2020-01-01 to 2030-12-31).",
-        },
-        {
-            "Check": "Claim Status Values",
-            "Level": "Warning",
-            "Tables Checked": "silver_claims",
-            "Description": "Flags claim_status values not in the expected set: Paid, Denied, Appealed, Pending, Partially Paid.",
-        },
-        {
-            "Check": "Boolean Columns",
-            "Level": "Warning",
-            "Tables Checked": "silver_claims, silver_payments",
-            "Description": "Flags boolean columns (is_clean_claim, is_accurate_payment) containing NULL instead of 0 or 1.",
-        },
-    ])
+    checks_ref = pd.DataFrame(
+        [
+            {
+                "Check": "Negative Amounts",
+                "Level": "Warning",
+                "Tables Checked": "silver_claims, silver_payments, silver_denials, silver_adjustments, silver_operating_costs",
+                "Description": "Flags monetary columns (charges, payments, denied amounts, adjustments, RCM costs) that contain negative values.",
+            },
+            {
+                "Check": "Orphaned Foreign Keys",
+                "Level": "Warning",
+                "Tables Checked": "silver_payments, silver_denials, silver_adjustments, silver_claims, silver_encounters",
+                "Description": "Detects rows where a foreign-key column references an ID that does not exist in the parent table.",
+            },
+            {
+                "Check": "Required Nulls",
+                "Level": "Error",
+                "Tables Checked": "silver_claims, silver_payments, silver_denials, silver_adjustments, silver_encounters, silver_payers",
+                "Description": "Flags NULL values in columns that are required for business logic (primary keys, amounts, statuses).",
+            },
+            {
+                "Check": "Date Ranges",
+                "Level": "Warning",
+                "Tables Checked": "silver_claims, silver_payments, silver_denials, silver_encounters, silver_charges",
+                "Description": "Flags date columns with values outside the plausible range (2020-01-01 to 2030-12-31).",
+            },
+            {
+                "Check": "Claim Status Values",
+                "Level": "Warning",
+                "Tables Checked": "silver_claims",
+                "Description": "Flags claim_status values not in the expected set: Paid, Denied, Appealed, Pending, Partially Paid.",
+            },
+            {
+                "Check": "Boolean Columns",
+                "Level": "Warning",
+                "Tables Checked": "silver_claims, silver_payments",
+                "Description": "Flags boolean columns (is_clean_claim, is_accurate_payment) containing NULL instead of 0 or 1.",
+            },
+        ]
+    )
     st.dataframe(checks_ref, use_container_width=True, hide_index=True)
 
 
@@ -1256,12 +1937,14 @@ def render_data_validation(issues: list[dict]):
 # BUSINESS PROCESSES — Revenue Cycle Process Map
 # ===========================================================================
 
+
 def _fetch_process_kpis() -> dict:
     """Fetch live KPI values for each revenue cycle process step.
 
     Returns a dict of metric_name → value (or None if unavailable).
     Each query is wrapped individually so one failure doesn't block the rest.
     """
+
     def _val(sql):
         df = _query_meta(sql)
         if df.empty:
@@ -1274,12 +1957,8 @@ def _fetch_process_kpis() -> dict:
         return v
 
     return {
-        "encounter_count": _val(
-            "SELECT COUNT(*) FROM silver_encounters"
-        ),
-        "patient_count": _val(
-            "SELECT COUNT(DISTINCT patient_id) FROM silver_encounters"
-        ),
+        "encounter_count": _val("SELECT COUNT(*) FROM silver_encounters"),
+        "patient_count": _val("SELECT COUNT(DISTINCT patient_id) FROM silver_encounters"),
         "charge_lag_days": _val(
             "SELECT ROUND(AVG(date_diff('day', CAST(service_date AS DATE), "
             "CAST(post_date AS DATE))), 1) "
@@ -1291,9 +1970,7 @@ def _fetch_process_kpis() -> dict:
             "* SUM(CASE WHEN is_clean_claim = 1 THEN 1 ELSE 0 END) "
             "/ NULLIF(COUNT(*), 0), 1) FROM silver_claims"
         ),
-        "total_claims": _val(
-            "SELECT COUNT(*) FROM silver_claims"
-        ),
+        "total_claims": _val("SELECT COUNT(*) FROM silver_claims"),
         "first_pass_rate": _val(
             "SELECT ROUND(100.0 "
             "* SUM(CASE WHEN claim_status = 'Paid' THEN 1 ELSE 0 END) "
@@ -1448,14 +2125,14 @@ def render_business_processes():
     st.subheader("Revenue Cycle Process Map")
 
     # -- Colour palette --
-    _BLUE = "#bbdefb"       # Front-end (patient access, charge capture)
-    _GREEN = "#c8e6c9"      # Mid-cycle (scrubbing, submission)
-    _ORANGE = "#ffe0b2"     # Back-end (payment, denial, A/R)
-    _PURPLE = "#e1bee7"     # Patient-facing (collections)
-    _YELLOW = "#fff9c4"     # Decision diamonds
+    _BLUE = "#bbdefb"  # Front-end (patient access, charge capture)
+    _GREEN = "#c8e6c9"  # Mid-cycle (scrubbing, submission)
+    _ORANGE = "#ffe0b2"  # Back-end (payment, denial, A/R)
+    _PURPLE = "#e1bee7"  # Patient-facing (collections)
+    _YELLOW = "#fff9c4"  # Decision diamonds
     _RED_LIGHT = "#ffcdd2"  # Rework / exception
-    _GRAY = "#e0e0e0"       # Terminal / write-off
-    _TEAL = "#b2dfdb"       # Reporting / analytics
+    _GRAY = "#e0e0e0"  # Terminal / write-off
+    _TEAL = "#b2dfdb"  # Reporting / analytics
 
     dot = graphviz.Digraph("rcm_process", format="svg")
     dot.attr(
@@ -1473,97 +2150,129 @@ def render_business_processes():
     def _proc(node_id, label, kpi_text, color, **kwargs):
         full_label = f"{label}\\n\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\\n{kpi_text}"
         dot.node(
-            node_id, full_label,
-            shape="box", style="filled,rounded", fillcolor=color,
-            width="2.4", **kwargs,
+            node_id,
+            full_label,
+            shape="box",
+            style="filled,rounded",
+            fillcolor=color,
+            width="2.4",
+            **kwargs,
         )
 
     def _decision(node_id, label):
         dot.node(
-            node_id, label,
-            shape="diamond", style="filled", fillcolor=_YELLOW,
-            width="1.3", height="0.9", fontsize="9",
+            node_id,
+            label,
+            shape="diamond",
+            style="filled",
+            fillcolor=_YELLOW,
+            width="1.3",
+            height="0.9",
+            fontsize="9",
         )
 
     # ── Process Nodes ───────────────────────────────────────────────
 
     # Front-end
     _proc(
-        "patient_access", "Patient Access",
-        f"{_kpi_str(kpis.get('encounter_count'))} encounters  |  "
-        f"{_kpi_str(kpis.get('patient_count'))} patients",
+        "patient_access",
+        "Patient Access",
+        f"{_kpi_str(kpis.get('encounter_count'))} encounters  |  {_kpi_str(kpis.get('patient_count'))} patients",
         _BLUE,
     )
     _proc(
-        "charge_capture", "Charge Capture & Coding",
+        "charge_capture",
+        "Charge Capture & Coding",
         f"Charge Lag: {_kpi_str(kpis.get('charge_lag_days'))} days",
         _BLUE,
     )
 
     # Mid-cycle
     _proc(
-        "claim_scrubbing", "Claim Scrubbing",
+        "claim_scrubbing",
+        "Claim Scrubbing",
         f"Clean Claim Rate: {_kpi_str(kpis.get('clean_claim_rate'))}%",
         _GREEN,
     )
     _proc(
-        "claims_submission", "Claims Submission",
-        f"{_kpi_str(kpis.get('total_claims'))} claims  |  "
-        f"First-Pass: {_kpi_str(kpis.get('first_pass_rate'))}%",
+        "claims_submission",
+        "Claims Submission",
+        f"{_kpi_str(kpis.get('total_claims'))} claims  |  First-Pass: {_kpi_str(kpis.get('first_pass_rate'))}%",
         _GREEN,
     )
     dot.node(
-        "payer_adjudication", "Payer Adjudication\\n(Insurance Review & Pricing)",
-        shape="box", style="filled,rounded", fillcolor=_GREEN, width="2.4",
+        "payer_adjudication",
+        "Payer Adjudication\\n(Insurance Review & Pricing)",
+        shape="box",
+        style="filled,rounded",
+        fillcolor=_GREEN,
+        width="2.4",
     )
 
     # Back-end
     _proc(
-        "payment_posting", "Payment Posting",
-        f"GCR: {_kpi_str(kpis.get('gcr'))}%  |  "
-        f"Accuracy: {_kpi_str(kpis.get('payment_accuracy'))}%",
+        "payment_posting",
+        "Payment Posting",
+        f"GCR: {_kpi_str(kpis.get('gcr'))}%  |  Accuracy: {_kpi_str(kpis.get('payment_accuracy'))}%",
         _ORANGE,
     )
     _proc(
-        "denial_mgmt", "Denial Management",
+        "denial_mgmt",
+        "Denial Management",
         f"Denial Rate: {_kpi_str(kpis.get('denial_rate'))}%  |  "
         f"Appeal Win: {_kpi_str(kpis.get('appeal_success_rate'))}%",
         _ORANGE,
     )
     _proc(
-        "ar_followup", "A/R Follow-Up",
+        "ar_followup",
+        "A/R Follow-Up",
         f"Days in A/R: {_kpi_str(kpis.get('days_in_ar'))}",
         _ORANGE,
     )
     _proc(
-        "underpayment_recovery", "Underpayment Recovery",
+        "underpayment_recovery",
+        "Underpayment Recovery",
         f"Underpayment Rate: {_kpi_str(kpis.get('underpayment_rate'))}%",
         _ORANGE,
     )
 
     # Patient-facing
     _proc(
-        "patient_collections", "Patient Collections",
+        "patient_collections",
+        "Patient Collections",
         f"Patient Resp: {_kpi_str(kpis.get('patient_resp_rate'))}%",
         _PURPLE,
     )
 
     # Rework & terminal
     dot.node(
-        "rework", "Rework & Correct\\n(Fix Errors)",
-        shape="box", style="filled,rounded", fillcolor=_RED_LIGHT, width="1.8",
+        "rework",
+        "Rework & Correct\\n(Fix Errors)",
+        shape="box",
+        style="filled,rounded",
+        fillcolor=_RED_LIGHT,
+        width="1.8",
     )
     dot.node(
-        "write_off", "Write-Off",
-        shape="box", style="filled,rounded", fillcolor=_GRAY, width="1.4",
+        "write_off",
+        "Write-Off",
+        shape="box",
+        style="filled,rounded",
+        fillcolor=_GRAY,
+        width="1.4",
     )
     dot.node(
-        "revenue_complete", "Revenue\\nRecognized",
-        shape="doubleoctagon", style="filled", fillcolor="#a5d6a7",
-        width="1.6", fontsize="11",
+        "revenue_complete",
+        "Revenue\\nRecognized",
+        shape="doubleoctagon",
+        style="filled",
+        fillcolor="#a5d6a7",
+        width="1.6",
+        fontsize="11",
     )
     _proc(
-        "reporting", "Reporting & Analytics",
+        "reporting",
+        "Reporting & Analytics",
         "Executive Summary  |  Forecasting",
         _TEAL,
     )
@@ -1617,8 +2326,11 @@ def render_business_processes():
     # Dirty claim → rework → back to scrubbing
     dot.edge("d_clean", "rework", label="  No  ", **_exc)
     dot.edge(
-        "rework", "claim_scrubbing",
-        label="  Correct & Resubmit  ", style="dashed", color="#c62828",
+        "rework",
+        "claim_scrubbing",
+        label="  Correct & Resubmit  ",
+        style="dashed",
+        color="#c62828",
         constraint="false",
     )
 
@@ -1626,8 +2338,11 @@ def render_business_processes():
     dot.edge("d_result", "denial_mgmt", label="  Denied  ", **_branch)
     dot.edge("denial_mgmt", "d_appeal", **_branch)
     dot.edge(
-        "d_appeal", "claims_submission",
-        label="  Yes  ", style="dashed", color="#e65100",
+        "d_appeal",
+        "claims_submission",
+        label="  Yes  ",
+        style="dashed",
+        color="#e65100",
         constraint="false",
     )
     dot.edge("d_appeal", "write_off", label="  No  ", color="#757575")
@@ -1715,4 +2430,3 @@ def render_business_processes():
         use_container_width=True,
         hide_index=True,
     )
-

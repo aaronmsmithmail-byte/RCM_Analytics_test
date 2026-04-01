@@ -4,7 +4,6 @@ Covers SQL validation (read-only enforcement), row truncation, NaN handling,
 error paths, and the LLM result formatter.
 """
 
-
 import duckdb
 import pytest
 
@@ -14,6 +13,7 @@ from src.database import create_tables
 # ===========================================================================
 # Shared fixtures
 # ===========================================================================
+
 
 @pytest.fixture
 def db(tmp_path):
@@ -49,6 +49,7 @@ def db(tmp_path):
 # SQL validation — read-only enforcement
 # ===========================================================================
 
+
 class TestExecuteSqlToolValidation:
     """Only SELECT and WITH queries should be allowed."""
 
@@ -64,28 +65,20 @@ class TestExecuteSqlToolValidation:
         assert result["rows"][0][0] == 3
 
     def test_insert_rejected(self, db):
-        result = execute_sql_tool(
-            "INSERT INTO silver_payers VALUES ('X','X','X',0,'X')", db_path=db
-        )
+        result = execute_sql_tool("INSERT INTO silver_payers VALUES ('X','X','X',0,'X')", db_path=db)
         assert "error" in result
         assert "SELECT" in result["error"]
 
     def test_update_rejected(self, db):
-        result = execute_sql_tool(
-            "UPDATE silver_claims SET billed_amount=0", db_path=db
-        )
+        result = execute_sql_tool("UPDATE silver_claims SET billed_amount=0", db_path=db)
         assert "error" in result
 
     def test_delete_rejected(self, db):
-        result = execute_sql_tool(
-            "DELETE FROM silver_claims", db_path=db
-        )
+        result = execute_sql_tool("DELETE FROM silver_claims", db_path=db)
         assert "error" in result
 
     def test_drop_rejected(self, db):
-        result = execute_sql_tool(
-            "DROP TABLE silver_claims", db_path=db
-        )
+        result = execute_sql_tool("DROP TABLE silver_claims", db_path=db)
         assert "error" in result
 
     def test_case_insensitive_select(self, db):
@@ -112,6 +105,7 @@ class TestExecuteSqlToolValidation:
 # Result shape and row truncation
 # ===========================================================================
 
+
 class TestExecuteSqlToolResults:
     """Verify result dict structure, truncation, and NaN handling."""
 
@@ -121,9 +115,7 @@ class TestExecuteSqlToolResults:
             assert key in result
 
     def test_columns_match_query(self, db):
-        result = execute_sql_tool(
-            "SELECT claim_id, total_charge_amount FROM silver_claims", db_path=db
-        )
+        result = execute_sql_tool("SELECT claim_id, total_charge_amount FROM silver_claims", db_path=db)
         assert result["columns"] == ["claim_id", "total_charge_amount"]
 
     def test_row_count_matches_rows(self, db):
@@ -150,9 +142,7 @@ class TestExecuteSqlToolResults:
         assert "error" in result
 
     def test_empty_result_set(self, db):
-        result = execute_sql_tool(
-            "SELECT * FROM silver_claims WHERE 1=0", db_path=db
-        )
+        result = execute_sql_tool("SELECT * FROM silver_claims WHERE 1=0", db_path=db)
         assert result["row_count"] == 0
         assert result["rows"] == []
         assert result["truncated"] is False
@@ -161,6 +151,7 @@ class TestExecuteSqlToolResults:
 # ===========================================================================
 # _format_result_for_llm
 # ===========================================================================
+
 
 class TestFormatResultForLlm:
     """Verify the CSV-style formatting sent back to the LLM."""
