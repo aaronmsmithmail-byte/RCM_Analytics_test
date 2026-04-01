@@ -146,7 +146,7 @@ def execute_sql_tool(query: str, db_path=None) -> dict:
 
     from src.database import get_connection
 
-    conn = get_connection(db_path)
+    conn = get_connection(db_path, read_only=True)
     try:
         df = conn.execute(query).df()
         total_rows = len(df)
@@ -224,7 +224,7 @@ def _get_meta_context(db_path=None) -> str:
         neo4j_nodes = None
         neo4j_edges = None
 
-    conn = get_connection(db_path)
+    conn = get_connection(db_path, read_only=True)
 
     if neo4j_nodes:
         nodes = [(n["entity_id"], n["entity_group"], n["silver_table"], n["description"]) for n in neo4j_nodes]

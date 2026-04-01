@@ -34,7 +34,7 @@ def _query_meta(sql: str) -> pd.DataFrame:
     """
     from src.database import get_connection
 
-    conn = get_connection()
+    conn = get_connection(read_only=True)
     try:
         return conn.execute(sql).df()
     except Exception:

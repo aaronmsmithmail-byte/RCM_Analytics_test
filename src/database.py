@@ -1172,7 +1172,7 @@ def query_to_dataframe(sql, params=None, db_path=None):
     Returns:
         pd.DataFrame with query results.
     """
-    conn = get_connection(db_path, read_only=False)
+    conn = get_connection(db_path, read_only=True)
     try:
         if params:
             return conn.execute(sql, params).df()
@@ -1193,7 +1193,7 @@ def get_table_info(table_name, db_path=None):
     Returns:
         list of tuples: (column_name, data_type, is_nullable, key, default, extra).
     """
-    conn = get_connection(db_path)
+    conn = get_connection(db_path, read_only=True)
     try:
         cursor = conn.execute(f"DESCRIBE {table_name}")
         return cursor.fetchall()
