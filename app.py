@@ -252,21 +252,21 @@ st.markdown("""
     .brand-header {
         display: flex;
         align-items: center;
-        gap: 14px;
-        margin-bottom: 2px;
+        gap: 18px;
+        margin-bottom: 4px;
     }
     .brand-logo {
-        width: 56px;
-        height: 56px;
-        border-radius: 14px;
+        width: 72px;
+        height: 72px;
+        border-radius: 18px;
         background: linear-gradient(135deg, #1E6FBF 0%, #6366F1 60%, #14B8A6 100%);
         display: flex;
         align-items: center;
         justify-content: center;
-        font-size: 1.7rem;
+        font-size: 2.2rem;
         color: white;
         flex-shrink: 0;
-        box-shadow: 0 4px 14px rgba(30,111,191,0.3);
+        box-shadow: 0 6px 20px rgba(30,111,191,0.35);
     }
     .brand-text {
         display: flex;
@@ -274,10 +274,10 @@ st.markdown("""
         gap: 0px;
     }
     .brand-name {
-        font-size: 2.6rem;
+        font-size: 3.8rem;
         font-weight: 800;
         letter-spacing: -0.04em;
-        line-height: 1.1;
+        line-height: 1.05;
         margin: 0;
         background: linear-gradient(135deg, #1E6FBF 0%, #6366F1 60%, #14B8A6 100%);
         -webkit-background-clip: text;
@@ -285,11 +285,11 @@ st.markdown("""
         background-clip: text;
     }
     .brand-tagline {
-        font-size: 0.88rem;
+        font-size: 1.05rem;
         color: #64748b;
         font-weight: 500;
         letter-spacing: 0.03em;
-        margin: 2px 0 0 0;
+        margin: 4px 0 0 0;
     }
     .sidebar-section-label {
         font-size: 0.7rem;
