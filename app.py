@@ -133,7 +133,7 @@ from src.validators import validate_all  # Data integrity checks
 # It configures the browser tab title, favicon, and default layout.
 # "wide" layout uses the full browser width instead of a centered column.
 st.set_page_config(
-    page_title="Healthcare RCM Analytics",
+    page_title="RevCycle IQ",
     page_icon="🏥",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -248,27 +248,48 @@ st.markdown("""
     /* Remove the default tab underline indicator */
     .stTabs [data-baseweb="tab-highlight"] { display: none; }
 
-    /* ── Sidebar brand header ── */
-    .sidebar-brand {
-        background: linear-gradient(135deg, #1A2332 0%, #1E6FBF 100%);
-        border-radius: 10px;
-        padding: 14px 16px;
-        margin-bottom: 4px;
+    /* ── Main brand header ── */
+    .brand-header {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        margin-bottom: 2px;
     }
-    .sidebar-brand-title {
-        font-size: 1rem;
-        font-weight: 700;
-        color: #ffffff;
-        letter-spacing: -0.01em;
+    .brand-logo {
+        width: 46px;
+        height: 46px;
+        border-radius: 12px;
+        background: linear-gradient(135deg, #1E6FBF 0%, #6366F1 60%, #14B8A6 100%);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.5rem;
+        color: white;
+        flex-shrink: 0;
+        box-shadow: 0 2px 8px rgba(30,111,191,0.25);
+    }
+    .brand-text {
+        display: flex;
+        flex-direction: column;
+        gap: 0px;
+    }
+    .brand-name {
+        font-size: 1.65rem;
+        font-weight: 800;
+        letter-spacing: -0.03em;
+        line-height: 1.15;
         margin: 0;
+        background: linear-gradient(135deg, #1E6FBF 0%, #6366F1 60%, #14B8A6 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
     }
-    .sidebar-brand-sub {
-        font-size: 0.7rem;
-        color: rgba(255,255,255,0.6);
-        margin: 2px 0 0 0;
+    .brand-tagline {
+        font-size: 0.78rem;
+        color: #64748b;
         font-weight: 500;
-        letter-spacing: 0.04em;
-        text-transform: uppercase;
+        letter-spacing: 0.02em;
+        margin: 0;
     }
     .sidebar-section-label {
         font-size: 0.7rem;
@@ -680,13 +701,7 @@ _validation_issues = validate_all()   # reads directly from Silver tables
 #
 # All filters are applied BEFORE any metrics are calculated, so the
 # KPIs always reflect the filtered subset of data.
-st.sidebar.markdown("""
-<div class="sidebar-brand">
-    <p class="sidebar-brand-title">🏥 RCM Analytics</p>
-    <p class="sidebar-brand-sub">Healthcare Revenue Cycle</p>
-</div>
-<p class="sidebar-section-label">Filters</p>
-""", unsafe_allow_html=True)
+st.sidebar.markdown('<p class="sidebar-section-label">Filters</p>', unsafe_allow_html=True)
 
 # Date range filter — lets users focus on a specific time period
 min_date = claims["date_of_service"].min().date()
@@ -899,7 +914,15 @@ elif _active == "feature_backlog":
     st.stop()
 
 # ── Header ───────────────────────────────────────────────────────────
-st.title("Healthcare RCM Analytics Dashboard")
+st.markdown("""
+<div class="brand-header">
+    <div class="brand-logo">⚕</div>
+    <div class="brand-text">
+        <p class="brand-name">RevCycle IQ</p>
+        <p class="brand-tagline">Healthcare Revenue Cycle Analytics</p>
+    </div>
+</div>
+""", unsafe_allow_html=True)
 st.caption(f"Analyzing {len(f_claims):,} claims | {len(f_encounters):,} encounters | Date range: {start_dt.strftime('%b %Y')} to {end_dt.strftime('%b %Y')}")
 st.markdown('<div class="page-header-accent"></div>', unsafe_allow_html=True)
 
@@ -2835,4 +2858,4 @@ if _validation_issues:
             st.markdown(f"{icon} **{issue['table']}**: {issue['message']}")
 
 st.sidebar.divider()
-st.sidebar.caption("Healthcare RCM Analytics Dashboard v1.0")
+st.sidebar.caption("RevCycle IQ v1.0")
