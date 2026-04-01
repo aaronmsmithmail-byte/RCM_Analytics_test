@@ -4,7 +4,7 @@ A comprehensive Streamlit web application for monitoring and analyzing Healthcar
 
 ## Overview
 
-This dashboard provides healthcare organizations with interactive visualizations across twelve analytical tabs plus five metadata pages:
+This dashboard provides healthcare organizations with interactive visualizations across twelve analytical tabs plus six metadata pages:
 
 | Tab | Description |
 |-----|-------------|
@@ -21,7 +21,7 @@ This dashboard provides healthcare organizations with interactive visualizations
 | **Patient Responsibility** | Patient-owed portion (co-pay/deductible/coinsurance) by payer, department, and encounter type |
 | **AI Assistant** | Natural-language chat interface — asks questions, queries the database live via tool calling, and explains results in plain language |
 
-**Metadata pages** (sidebar navigation): Data Catalog · Data Lineage · Knowledge Graph · Semantic Layer · AI Architecture
+**Metadata pages** (sidebar navigation): Data Catalog · Data Lineage · Knowledge Graph · Semantic Layer · AI Architecture · Business Processes
 
 Every data tab includes **CSV and Excel export buttons**. A **KPI alert system** in the sidebar flags threshold breaches in real time, and a **data pipeline freshness panel** shows the last ETL run time and status for each of the 10 data domains.
 
@@ -207,7 +207,7 @@ RCM_Analytics_test/
 │   ├── database.py          # Medallion schema, ETL, build_filter_cte(), schema migration
 │   ├── data_loader.py       # Sidebar widget population helpers
 │   ├── metadata_pages.py    # Data Catalog, Data Lineage, Knowledge Graph, Semantic Layer,
-│   │                        #   AI Architecture (process flow diagram)
+│   │                        #   AI Architecture, Business Processes (6 metadata pages)
 │   ├── metrics.py           # SQL-based KPI engine (23 query_* functions + FilterParams)
 │   ├── ai_chat.py           # AI Assistant backend: TOOL_SCHEMA, execute_sql_tool(),
 │   │                        #   run_agentic_turn(), build_system_prompt()
@@ -364,6 +364,7 @@ A conversational interface backed by an **agentic tool-calling loop**:
 - **Knowledge Graph** — Entity-relationship diagram of the Silver-layer data model
 - **Semantic Layer** — Business concept → KPI → source table/column mapping for every metric
 - **AI Architecture** — Interactive process flow diagram showing how the AI chat tab assembles context from the semantic layer and knowledge graph, routes through the LLM, and executes live SQL queries to answer questions
+- **Business Processes** — Revenue cycle process map with decision points (clean claim?, payer decision?, appeal?) and live KPI annotations at each step, linking business processes to the dashboard tabs that measure them
 
 ---
 
@@ -431,7 +432,7 @@ A GitHub Actions workflow (`.github/workflows/test.yml`) runs automatically on e
 pytest tests/ -v
 ```
 
-**318 tests total** — 151 metric tests (`test_metrics.py`), 40 validator tests (`test_validators.py`), 22 ETL pipeline tests (`test_etl_pipeline.py`), 22 AI SQL tool tests (`test_ai_chat_sql.py`), 19 data loader tests (`test_data_loader.py`), 15 AI prompt tests (`test_ai_chat_prompt.py`), 15 database tests (`test_database.py`), 13 app utility tests (`test_app_utils.py`), 11 AI agentic loop tests (`test_ai_chat_agentic.py`), and 10 AI config tests (`test_ai_chat_config.py`). The metric, validator, and database suites use DuckDB `tmp_path` fixtures that spin up an isolated in-memory database per test, insert representative Silver-layer rows, and assert on SQL query results. The ETL tests verify CSV→Bronze loading, Bronze→Silver type casting, boolean conversion, NULL/empty PK filtering, and duplicate handling. The data loader tests cover date parsing, boolean parsing, column validation, and full Silver/Gold integration loading. The app utility tests cover CSV/Excel export and linear trend forecasting. The AI prompt tests verify system prompt construction from meta_* tables and KPI snapshot injection. The AI agentic loop tests use mocked OpenAI clients to verify tool-calling flow, message history mutation, max iteration limits, and API key validation. The AI SQL tool tests verify read-only enforcement, result structure, NaN→None conversion, and the LLM result formatter. The AI config tests use `importlib.reload()` to verify env var parsing, bounds clamping, and non-numeric fallback behaviour for `AI_MAX_ROWS` and `AI_MAX_ITERATIONS`.
+**344 tests total** — 151 metric tests (`test_metrics.py`), 40 validator tests (`test_validators.py`), 22 ETL pipeline tests (`test_etl_pipeline.py`), 22 AI SQL tool tests (`test_ai_chat_sql.py`), 19 data loader tests (`test_data_loader.py`), 15 AI prompt tests (`test_ai_chat_prompt.py`), 15 database tests (`test_database.py`), 13 app utility tests (`test_app_utils.py`), 11 AI agentic loop tests (`test_ai_chat_agentic.py`), 10 AI config tests (`test_ai_chat_config.py`), 9 Cube client tests (`test_cube_client.py`), and 7 Neo4j client tests (`test_neo4j_client.py`). The metric, validator, and database suites use DuckDB `tmp_path` fixtures that spin up an isolated in-memory database per test, insert representative Silver-layer rows, and assert on SQL query results. The ETL tests verify CSV→Bronze loading, Bronze→Silver type casting, boolean conversion, NULL/empty PK filtering, and duplicate handling. The data loader tests cover date parsing, boolean parsing, column validation, and full Silver/Gold integration loading. The app utility tests cover CSV/Excel export and linear trend forecasting. The AI prompt tests verify system prompt construction from meta_* tables and KPI snapshot injection. The AI agentic loop tests use mocked OpenAI clients to verify tool-calling flow, message history mutation, max iteration limits, and API key validation. The AI SQL tool tests verify read-only enforcement, result structure, NaN→None conversion, and the LLM result formatter. The AI config tests use `importlib.reload()` to verify env var parsing, bounds clamping, and non-numeric fallback behaviour for `AI_MAX_ROWS` and `AI_MAX_ITERATIONS`.
 
 ---
 

@@ -23,7 +23,7 @@ CSV files → Bronze (raw TEXT) → Silver (typed + FK) → Gold (aggregated vie
 | `src/metrics.py` | All 26 `query_*` KPI functions + `FilterParams` dataclass (Cube → DuckDB fallback) |
 | `src/cube_client.py` | Cube REST API client — semantic metadata + metric queries |
 | `src/neo4j_client.py` | Neo4j Cypher client — knowledge graph nodes + edges |
-| `src/metadata_pages.py` | Five sidebar metadata pages — sourced from Cube/Neo4j with DuckDB fallback |
+| `src/metadata_pages.py` | Six sidebar metadata pages — sourced from Cube/Neo4j with DuckDB fallback |
 | `src/ai_chat.py` | AI tab backend: `build_system_prompt()`, `execute_sql_tool()`, `run_agentic_turn()` |
 | `src/validators.py` | SQL COUNT-based data quality assertions |
 | `app.py` | Streamlit app: 12 tabs + sidebar + metadata page router |
@@ -115,6 +115,16 @@ When you modify any of these, the listed pages/features update on the next page 
 - If you add a new model option, add it to `AVAILABLE_MODELS` in `ai_chat.py`
 - The system prompt is built dynamically — no manual updates needed when the meta_* tables change
 
+### Adding a New Metadata Page
+
+1. Add `render_*()` function to `src/metadata_pages.py`
+2. Import it in `app.py`
+3. Add a sidebar button in `app.py` (Metadata section)
+4. Add routing in the page router in `app.py`
+5. Update `README.md`: change metadata page count in Overview paragraph, add description to Metadata Pages section
+6. Update `CLAUDE.md`: change metadata page count in Key modules table
+7. Update module docstring at top of `metadata_pages.py`
+
 ### Updating the README
 
 Update `README.md` whenever:
@@ -123,6 +133,7 @@ Update `README.md` whenever:
 - Test count changes (Running Tests section — verify with `pytest tests/ -q | tail -1`)
 - A new dependency is added (`requirements.txt` → Dependencies table in README)
 - Setup steps change
+- KPI count changes (Metrics Reference intro + table)
 
 ---
 
@@ -169,44 +180,23 @@ The `.env` file is not committed. All other tabs work without it.
 
 ## Code Conventions
 
-For the complete standards reference, see `.claude/skills/standards.md`. Key rules:
-
-- **SQL:** parameterized `?` placeholders — never f-strings with user input
-- **Metrics:** every `query_*` function must accept `FilterParams` and use `build_filter_cte(fp)`
-- **Caching:** `@st.cache_data(ttl=3600)` for DB reads in `app.py`; pass `db_path` for test injection
-- **Error handling:** metadata queries and `execute_sql_tool()` must catch exceptions and return graceful empty results (empty DataFrame or `{"error": msg}`) — never crash the page
-- **Client modules:** return `None` when external service unavailable; callers fall back to DuckDB
+See `.claude/skills/standards.md` for the complete reference.
 
 ---
 
 ## Development Workflow
 
-Every non-trivial change follows this 6-stage process. See `.claude/skills/feature-workflow.md` for the full orchestration.
+Every non-trivial change follows this 6-stage process. See `.claude/skills/feature-workflow.md` for full details.
 
 ```
 1. PLAN → 2. APPROVE → 3. CODE → 4. VERIFY → 5. REVIEW → 6. DEPLOY
 ```
 
-| Stage | What happens | Gate |
-|-------|-------------|------|
-| **1. Plan** | Write plan: what changes, which files, acceptance criteria, test plan | — |
-| **2. Approve** | User reviews and approves the plan before coding starts | User says "proceed" |
-| **3. Code** | Implement against approved plan; follow standards; write tests | — |
-| **4. Verify** | `make verify` (tests + lint), then `/verify-gates` for full 5-gate check | All gates pass |
-| **5. Review** | `/pre-commit-review` (local, before commit) | No 🔴 issues |
-| **6. Deploy** | Commit, push; `/code-review` or `/review-pr` for PR review | — |
-
-**Skills and when to use them:**
 | Skill / Command | When | What it does |
 |----------------|------|-------------|
-| `/feature-workflow` | Starting any feature | Orchestrates all 6 stages |
+| `/feature-workflow` | Starting any feature | Orchestrates all 6 stages (includes verification gates + pre-commit review) |
 | `/standards` | During coding + review | Project conventions reference |
-| `/verify-gates` | After coding, before review | 5 automated gates (tests, lint, coverage, docs, standards) |
-| `/pre-commit-review` | Before committing | Simplify + structural review + quality checks + standards |
-| `/code-review` | After PR is created | GitHub PR review with parallel bug-finding agents |
-| `/review-pr` | After PR is created | Comprehensive multi-agent PR review (tests, errors, types, comments) |
-
-> **`make verify`** runs tests + lint only (fast gate). **`/verify-gates`** adds coverage, docs, and standards checks (thorough gate).
+| `/review-pr` | After PR is created | Multi-agent PR review (tests, errors, comments, code quality) |
 
 **Quick commands:**
 ```bash
