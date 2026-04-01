@@ -57,7 +57,6 @@ import plotly.express as px
 import plotly.graph_objects as go
 import plotly.io as pio
 import streamlit as st
-import streamlit_shadcn_ui as ui
 from plotly.subplots import make_subplots
 from streamlit_extras.metric_cards import style_metric_cards
 
@@ -185,6 +184,7 @@ st.markdown("""
         font-family: 'Plus Jakarta Sans', sans-serif;
     }
     .metric-card p { margin: 0; font-size: 0.875rem; color: #64748b; font-weight: 500; }
+    .metric-label { font-size: 0.82rem; font-weight: 600; color: #475569; margin: 0 0 6px 0; letter-spacing: 0.01em; }
     /* Status variants — tinted gradient background + colored left border */
     .metric-good { border-left-color: #10B981; background: linear-gradient(135deg, #f0fdf4 0%, #ffffff 60%); }
     .metric-warn { border-left-color: #F59E0B; background: linear-gradient(135deg, #fffbeb 0%, #ffffff 60%); }
@@ -314,8 +314,8 @@ def metric_card(label, value, benchmark="", status="neutral"):
     Render a styled KPI card with color coding based on performance status.
 
     Args:
-        label:     KPI name (e.g., "Days in A/R")
-        value:     KPI value to display (e.g., "32.5")
+        label:     KPI name (e.g., "Days in A/R") — displayed as card title
+        value:     KPI value to display (e.g., "32.5") — displayed large
         benchmark: Industry benchmark text (e.g., "Benchmark: < 35 days")
         status:    "good", "warn", "bad", or "neutral" — controls card color
     """
@@ -330,17 +330,17 @@ def metric_card(label, value, benchmark="", status="neutral"):
     icon = _icons.get(status, "")
     icon_color = _icon_colors.get(status, "#1E6FBF")
     icon_html = (
-        f'<span style="font-size:0.7rem;font-weight:800;color:{icon_color};'
-        f'background:{icon_color}1a;border-radius:50%;width:18px;height:18px;'
+        f'<span style="font-size:0.6rem;font-weight:800;color:{icon_color};'
+        f'background:{icon_color}1a;border-radius:50%;width:16px;height:16px;'
         f'display:inline-flex;align-items:center;justify-content:center;'
-        f'margin-right:8px;flex-shrink:0;vertical-align:middle">{icon}</span>'
+        f'margin-left:6px;flex-shrink:0;vertical-align:middle">{icon}</span>'
         if icon else ""
     )
     st.markdown(
         f'<div class="{css_class}">'
-        f'<div style="display:flex;align-items:center;gap:0">'
-        f'{icon_html}<h2 style="margin:0">{value}</h2></div>'
-        f'<p style="margin-top:4px">{label}</p>{bench_html}</div>',
+        f'<p class="metric-label">{label}{icon_html}</p>'
+        f'<h2 style="margin:0">{value}</h2>'
+        f'{bench_html}</div>',
         unsafe_allow_html=True,
     )
 
@@ -967,34 +967,33 @@ with tab1:
     # KPIs are pre-computed above the tabs so the sidebar alert system
     # can reference them without issuing duplicate database queries.
 
-    # Top-level KPI cards — shadcn ui.metric_card for polished design
     col1, col2, col3, col4 = st.columns(4)
     with col1:
-        dar_status = "✅" if dar_val < 35 else ("⚠️" if dar_val < 50 else "🔴")
-        ui.metric_card(title="Days in A/R", content=f"{dar_val}", description=f"{dar_status} Benchmark: < 35 days", key="card_dar")
+        _s = "good" if dar_val < 35 else ("warn" if dar_val < 50 else "bad")
+        metric_card("Days in A/R", f"{dar_val}", "Benchmark: < 35 days", _s)
     with col2:
-        ncr_status = "✅" if ncr_val > 95 else ("⚠️" if ncr_val > 90 else "🔴")
-        ui.metric_card(title="Net Collection Rate", content=f"{ncr_val}%", description=f"{ncr_status} Benchmark: > 95%", key="card_ncr")
+        _s = "good" if ncr_val > 95 else ("warn" if ncr_val > 90 else "bad")
+        metric_card("Net Collection Rate", f"{ncr_val}%", "Benchmark: > 95%", _s)
     with col3:
-        ccr_status = "✅" if ccr_val > 90 else ("⚠️" if ccr_val > 80 else "🔴")
-        ui.metric_card(title="Clean Claim Rate", content=f"{ccr_val}%", description=f"{ccr_status} Benchmark: > 90%", key="card_ccr")
+        _s = "good" if ccr_val > 90 else ("warn" if ccr_val > 80 else "bad")
+        metric_card("Clean Claim Rate", f"{ccr_val}%", "Benchmark: > 90%", _s)
     with col4:
-        denial_status = "✅" if denial_val < 10 else ("⚠️" if denial_val < 15 else "🔴")
-        ui.metric_card(title="Denial Rate", content=f"{denial_val}%", description=f"{denial_status} Benchmark: < 10%", key="card_denial")
+        _s = "good" if denial_val < 10 else ("warn" if denial_val < 15 else "bad")
+        metric_card("Denial Rate", f"{denial_val}%", "Benchmark: < 10%", _s)
 
     col5, col6, col7, col8 = st.columns(4)
     with col5:
-        gcr_status = "✅" if gcr_val > 70 else ("⚠️" if gcr_val > 55 else "🔴")
-        ui.metric_card(title="Gross Collection Rate", content=f"{gcr_val}%", description=f"{gcr_status} Benchmark: > 70%", key="card_gcr")
+        _s = "good" if gcr_val > 70 else ("warn" if gcr_val > 55 else "bad")
+        metric_card("Gross Collection Rate", f"{gcr_val}%", "Benchmark: > 70%", _s)
     with col6:
-        fpr_status = "✅" if fpr_val > 85 else ("⚠️" if fpr_val > 75 else "🔴")
-        ui.metric_card(title="First-Pass Rate", content=f"{fpr_val}%", description=f"{fpr_status} Benchmark: > 85%", key="card_fpr")
+        _s = "good" if fpr_val > 85 else ("warn" if fpr_val > 75 else "bad")
+        metric_card("First-Pass Rate", f"{fpr_val}%", "Benchmark: > 85%", _s)
     with col7:
-        acc_status = "✅" if accuracy_val > 95 else ("⚠️" if accuracy_val > 90 else "🔴")
-        ui.metric_card(title="Payment Accuracy", content=f"{accuracy_val}%", description=f"{acc_status} Benchmark: > 95%", key="card_acc")
+        _s = "good" if accuracy_val > 95 else ("warn" if accuracy_val > 90 else "bad")
+        metric_card("Payment Accuracy", f"{accuracy_val}%", "Benchmark: > 95%", _s)
     with col8:
-        bd_status = "✅" if bad_debt_val < 3 else ("⚠️" if bad_debt_val < 5 else "🔴")
-        ui.metric_card(title="Bad Debt Rate", content=f"{bad_debt_val}%", description=f"{bd_status} Benchmark: < 3%", key="card_bd")
+        _s = "good" if bad_debt_val < 3 else ("warn" if bad_debt_val < 5 else "bad")
+        metric_card("Bad Debt Rate", f"{bad_debt_val}%", "Benchmark: < 3%", _s)
 
     st.divider()
 
@@ -1060,16 +1059,18 @@ with tab2:
     # gcr, ncr, ctc, bad_debt are pre-computed above the tabs.
     avg_reimb, reimb_trend = query_avg_reimbursement(params)
 
-    # KPIs
     col1, col2, col3, col4 = st.columns(4)
     with col1:
-        st.metric("Gross Collection Rate", f"{gcr_val}%")
+        _s = "good" if gcr_val > 70 else ("warn" if gcr_val > 55 else "bad")
+        metric_card("Gross Collection Rate", f"{gcr_val}%", "Benchmark: > 70%", _s)
     with col2:
-        st.metric("Net Collection Rate", f"{ncr_val}%")
+        _s = "good" if ncr_val > 95 else ("warn" if ncr_val > 90 else "bad")
+        metric_card("Net Collection Rate", f"{ncr_val}%", "Benchmark: > 95%", _s)
     with col3:
-        st.metric("Cost to Collect", f"{ctc_val}%", help="Benchmark: 3-8%")
+        _s = "good" if ctc_val < 8 else ("warn" if ctc_val < 12 else "bad")
+        metric_card("Cost to Collect", f"{ctc_val}%", "Benchmark: 3-8%", _s)
     with col4:
-        st.metric("Avg Reimbursement / Claim", f"${avg_reimb:,.2f}")
+        metric_card("Avg Reimbursement / Claim", f"${avg_reimb:,.2f}")
 
     st.divider()
 
@@ -1175,16 +1176,19 @@ with tab3:
     charge_lag_val, charge_lag_trend, charge_lag_dist = query_charge_lag(params)
     appeal_rate, total_appealed, won_appeals = query_appeal_success_rate(params)
 
-    # KPIs
     col1, col2, col3, col4 = st.columns(4)
     with col1:
-        st.metric("Clean Claim Rate", f"{ccr_val}%", help="Benchmark: > 90%")
+        _s = "good" if ccr_val > 90 else ("warn" if ccr_val > 80 else "bad")
+        metric_card("Clean Claim Rate", f"{ccr_val}%", "Benchmark: > 90%", _s)
     with col2:
-        st.metric("Denial Rate", f"{denial_val}%", help="Benchmark: < 10%")
+        _s = "good" if denial_val < 10 else ("warn" if denial_val < 15 else "bad")
+        metric_card("Denial Rate", f"{denial_val}%", "Benchmark: < 10%", _s)
     with col3:
-        st.metric("First-Pass Rate", f"{fpr_val}%", help="Benchmark: > 85%")
+        _s = "good" if fpr_val > 85 else ("warn" if fpr_val > 75 else "bad")
+        metric_card("First-Pass Rate", f"{fpr_val}%", "Benchmark: > 85%", _s)
     with col4:
-        st.metric("Appeal Success Rate", f"{appeal_rate}%", help=f"{won_appeals} won of {total_appealed} appealed")
+        _s = "good" if appeal_rate > 50 else ("warn" if appeal_rate > 30 else "bad")
+        metric_card("Appeal Success Rate", f"{appeal_rate}%", f"{won_appeals} won of {total_appealed} appealed", _s)
 
     st.divider()
 
@@ -1288,12 +1292,12 @@ with tab3:
 
         ks1, ks2, ks3 = st.columns(3)
         with ks1:
-            st.metric("Dirty Claims", f"{total_dirty_claims:,}")
+            metric_card("Dirty Claims", f"{total_dirty_claims:,}", status="bad")
         with ks2:
-            st.metric("Charges at Risk", f"${total_dirty_charges:,.0f}")
+            metric_card("Charges at Risk", f"${total_dirty_charges:,.0f}", status="warn")
         with ks3:
-            top_reason = scrub_df.iloc[0]["label"] if not scrub_df.empty else "—"
-            st.metric("Top Fail Reason", top_reason)
+            top_reason = scrub_df.iloc[0]["label"] if not scrub_df.empty else "\u2014"
+            metric_card("Top Fail Reason", top_reason)
 
         col_sc1, col_sc2 = st.columns(2)
         with col_sc1:
@@ -1750,21 +1754,17 @@ with tab7:
 
         kp1, kp2, kp3, kp4 = st.columns(4)
         with kp1:
-            cr_status = "✅" if avg_prov_collection > 95 else ("⚠️" if avg_prov_collection > 85 else "🔴")
-            ui.metric_card(title="Avg Collection Rate", content=f"{avg_prov_collection:.1f}%",
-                           description=f"{cr_status} Benchmark: > 95%", key="prov_cr")
+            _s = "good" if avg_prov_collection > 95 else ("warn" if avg_prov_collection > 85 else "bad")
+            metric_card("Avg Collection Rate", f"{avg_prov_collection:.1f}%", "Benchmark: > 95%", _s)
         with kp2:
-            dr_status = "✅" if avg_prov_denial < 10 else ("⚠️" if avg_prov_denial < 15 else "🔴")
-            ui.metric_card(title="Avg Denial Rate", content=f"{avg_prov_denial:.1f}%",
-                           description=f"{dr_status} Benchmark: < 10%", key="prov_dr")
+            _s = "good" if avg_prov_denial < 10 else ("warn" if avg_prov_denial < 15 else "bad")
+            metric_card("Avg Denial Rate", f"{avg_prov_denial:.1f}%", "Benchmark: < 10%", _s)
         with kp3:
-            ccr_status = "✅" if avg_prov_ccr > 90 else ("⚠️" if avg_prov_ccr > 80 else "🔴")
-            ui.metric_card(title="Avg Clean Claim Rate", content=f"{avg_prov_ccr:.1f}%",
-                           description=f"{ccr_status} Benchmark: > 90%", key="prov_ccr")
+            _s = "good" if avg_prov_ccr > 90 else ("warn" if avg_prov_ccr > 80 else "bad")
+            metric_card("Avg Clean Claim Rate", f"{avg_prov_ccr:.1f}%", "Benchmark: > 90%", _s)
         with kp4:
-            out_status = "✅" if outlier_count == 0 else ("⚠️" if outlier_count <= 3 else "🔴")
-            ui.metric_card(title="High-Denial Providers", content=f"{outlier_count}",
-                           description=f"{out_status} Denial rate > 15%", key="prov_outliers")
+            _s = "good" if outlier_count == 0 else ("warn" if outlier_count <= 3 else "bad")
+            metric_card("High-Denial Providers", f"{outlier_count}", "Denial rate > 15%", _s)
 
         st.divider()
 
@@ -1912,18 +1912,14 @@ with tab8:
 
         kc1, kc2, kc3, kc4 = st.columns(4)
         with kc1:
-            ui.metric_card(title="Distinct CPT Codes", content=f"{total_cpt_codes:,}",
-                           description="Active procedure codes billed", key="cpt_count")
+            metric_card("Distinct CPT Codes", f"{total_cpt_codes:,}", "Active procedure codes billed")
         with kc2:
-            ui.metric_card(title="Total Charges", content=f"${total_cpt_charges:,.0f}",
-                           description="Across all CPT codes", key="cpt_charges")
+            metric_card("Total Charges", f"${total_cpt_charges:,.0f}", "Across all CPT codes")
         with kc3:
-            hd_status = "✅" if high_denial_cpts == 0 else ("⚠️" if high_denial_cpts <= 5 else "🔴")
-            ui.metric_card(title="High-Denial CPT Codes", content=f"{high_denial_cpts}",
-                           description=f"{hd_status} Denial rate > 15%", key="cpt_highdeny")
+            _s = "good" if high_denial_cpts == 0 else ("warn" if high_denial_cpts <= 5 else "bad")
+            metric_card("High-Denial CPT Codes", f"{high_denial_cpts}", "Denial rate > 15%", _s)
         with kc4:
-            ui.metric_card(title="Top-10 CPT Concentration", content=f"{top_cpt_pct:.1f}%",
-                           description="Revenue share from top 10 codes", key="cpt_concentration")
+            metric_card("Top-10 CPT Concentration", f"{top_cpt_pct:.1f}%", "Revenue share from top 10 codes")
 
         st.divider()
 
@@ -2025,22 +2021,17 @@ with tab9:
         overall_underpay_rate = (total_recovery / total_allowed * 100) if total_allowed > 0 else 0
         total_underpaid_claims = int(underpay_df["underpaid_count"].sum())
 
-        # ── Summary KPIs ──────────────────────────────────────────────
         ku1, ku2, ku3, ku4 = st.columns(4)
         with ku1:
-            ui.metric_card(title="Recovery Opportunity", content=f"${total_recovery:,.0f}",
-                           description="Total contractual underpayments", key="underpay_opp")
+            metric_card("Recovery Opportunity", f"${total_recovery:,.0f}", "Total contractual underpayments", "warn")
         with ku2:
-            ur_status = "✅" if overall_underpay_rate < 1 else ("⚠️" if overall_underpay_rate < 3 else "🔴")
-            ui.metric_card(title="Underpayment Rate", content=f"{overall_underpay_rate:.2f}%",
-                           description=f"{ur_status} Allowed vs. paid variance", key="underpay_rate")
+            _s = "good" if overall_underpay_rate < 1 else ("warn" if overall_underpay_rate < 3 else "bad")
+            metric_card("Underpayment Rate", f"{overall_underpay_rate:.2f}%", "Allowed vs. paid variance", _s)
         with ku3:
-            ui.metric_card(title="Underpaid Claims", content=f"{total_underpaid_claims:,}",
-                           description="Claims paid below contracted rate", key="underpay_claims")
+            metric_card("Underpaid Claims", f"{total_underpaid_claims:,}", "Claims paid below contracted rate")
         with ku4:
             avg_underpay = total_recovery / total_underpaid_claims if total_underpaid_claims > 0 else 0
-            ui.metric_card(title="Avg Underpayment / Claim", content=f"${avg_underpay:,.2f}",
-                           description="Average shortfall per underpaid claim", key="underpay_avg")
+            metric_card("Avg Underpayment / Claim", f"${avg_underpay:,.2f}", "Average shortfall per underpaid claim")
 
         st.divider()
 
@@ -2454,18 +2445,13 @@ with tab10:
     )
     ci1, ci2, ci3, ci4 = st.columns(4)
     with ci1:
-        st.metric("Denial Recovery (Annual)",  f"${monthly_recovery * 12:,.0f}")
+        metric_card("Denial Recovery (Annual)", f"${monthly_recovery * 12:,.0f}")
     with ci2:
-        st.metric("Cash Acceleration (1×)",    f"${cash_unlocked:,.0f}")
+        metric_card("Cash Acceleration (1\u00d7)", f"${cash_unlocked:,.0f}")
     with ci3:
-        st.metric("Rework Savings (Annual)",   f"${annual_rework_saved:,.0f}")
+        metric_card("Rework Savings (Annual)", f"${annual_rework_saved:,.0f}")
     with ci4:
-        ui.metric_card(
-            title="Total Opportunity",
-            content=f"${combined_annual:,.0f}",
-            description="Annual recurring + one-time impact",
-            key="combined_impact",
-        )
+        metric_card("Total Opportunity", f"${combined_annual:,.0f}", "Annual recurring + one-time impact", "good")
 
 
 # =====================================================================
@@ -2505,18 +2491,14 @@ with tab11:
 
         kpr1, kpr2, kpr3, kpr4 = st.columns(4)
         with kpr1:
-            ui.metric_card(title="Total Patient Responsibility", content=f"${total_pr:,.0f}",
-                           description="Patient-owed across all payers", key="pr_total")
+            metric_card("Total Patient Responsibility", f"${total_pr:,.0f}", "Patient-owed across all payers")
         with kpr2:
-            pr_status = "✅" if overall_pr_rate < 20 else ("⚠️" if overall_pr_rate < 35 else "🔴")
-            ui.metric_card(title="Patient Responsibility Rate", content=f"{overall_pr_rate:.1f}%",
-                           description=f"{pr_status} % of allowed amount", key="pr_rate")
+            _s = "good" if overall_pr_rate < 20 else ("warn" if overall_pr_rate < 35 else "bad")
+            metric_card("Patient Responsibility Rate", f"{overall_pr_rate:.1f}%", "% of allowed amount", _s)
         with kpr3:
-            ui.metric_card(title="Avg Patient Balance / Claim", content=f"${avg_pr_per_claim:,.2f}",
-                           description="Average patient-owed per claim", key="pr_avg")
+            metric_card("Avg Patient Balance / Claim", f"${avg_pr_per_claim:,.2f}", "Average patient-owed per claim")
         with kpr4:
-            ui.metric_card(title="Self-Pay Exposure", content=f"${self_pay_total:,.0f}",
-                           description="Patient responsibility from self-pay patients", key="pr_selfpay")
+            metric_card("Self-Pay Exposure", f"${self_pay_total:,.0f}", "Patient responsibility from self-pay patients")
 
         st.divider()
 
